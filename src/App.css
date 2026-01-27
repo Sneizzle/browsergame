@@ -1,42 +1,91 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap');
+
+:root {
+  --neon-blue: #00f2ff; --neon-pink: #ff007a; --neon-green: #00ff88;
+  --bg-dark: #02040a;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+body {
+  margin: 0; background: var(--bg-dark); color: #fff;
+  font-family: 'Orbitron', sans-serif; overflow: hidden;
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+/* --- UI LAYERS --- */
+.ui-layer {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; z-index: 100;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+.scifi-btn {
+  background: rgba(0, 242, 255, 0.1); border: 2px solid var(--neon-blue);
+  color: var(--neon-blue); padding: 15px 40px; margin: 10px;
+  font-size: 1rem; cursor: pointer; text-transform: uppercase;
+  letter-spacing: 2px; clip-path: polygon(10% 0, 100% 0, 90% 100%, 0 100%);
+  transition: 0.3s;
+}
+.scifi-btn:hover:not(:disabled) {
+  background: var(--neon-blue); color: #000; box-shadow: 0 0 30px var(--neon-blue);
 }
 
-.card {
-  padding: 2em;
+/* --- PERFECT SPHERE TILING --- */
+.planet {
+  position: absolute; border-radius: 50% !important;
+  cursor: pointer; transition: all 0.8s cubic-bezier(0.19, 1, 0.22, 1);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: inset 0 0 50px rgba(0,0,0,0.9), 0 0 30px rgba(0,0,0,0.5);
+  overflow: hidden; /* This creates the "cut" effect from the reference image */
+}
+.planet.focused { z-index: 500; cursor: default; }
+
+.hex-grid-container {
+  position: absolute; width: 100%; height: 100%;
+  opacity: 0; transition: 0.5s; pointer-events: none;
+  /* Simulates a slight 3D bulge */
+  transform: scale(1.1);
+}
+.focused .hex-grid-container { opacity: 1; pointer-events: auto; }
+
+.hex-unit {
+  position: absolute;
+  width: 50px; height: 58px; /* Precise aspect ratio for tiling */
+  background: rgba(255, 255, 255, 0.05);
+  clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  border: 0.1px solid rgba(255, 255, 255, 0.1);
+  transition: 0.2s;
+}
+.hex-unit:hover { 
+  background: var(--neon-green); 
+  z-index: 10; 
+  filter: brightness(1.5);
+}
+.hex-unit.active { 
+  background: var(--neon-blue); 
+  box-shadow: inset 0 0 15px white; 
 }
 
-.read-the-docs {
-  color: #888;
+/* --- COMBAT ARENA --- */
+.combat-world { width: 100vw; height: 100vh; background: #010206; position: relative; overflow: hidden; }
+.world-container { position: absolute; transition: transform 0.05s linear; }
+.world-border { 
+  position: absolute; width: 2000px; height: 2000px; 
+  border: 8px dashed rgba(255, 0, 122, 0.2); pointer-events: none; 
+}
+.player-sprite { 
+  position: absolute; width: 38px; height: 38px; background: var(--neon-blue); 
+  border-radius: 4px; box-shadow: 0 0 20px var(--neon-blue); z-index: 10; 
+}
+.enemy-sprite { 
+  position: absolute; width: 28px; height: 28px; background: var(--neon-pink); 
+  clip-path: polygon(50% 0%, 0% 100%, 100% 100%); 
+}
+.katana-slash {
+  position: absolute; width: 150px; height: 150px; border: 4px solid var(--neon-blue); border-radius: 50%;
+  border-top-color: transparent; border-left-color: transparent;
+  animation: slash-anim 0.3s ease-out forwards; pointer-events: none;
+}
+@keyframes slash-anim { 0% { transform: translate(-50%,-50%) rotate(0deg); opacity: 1; scale: 0.5; } 100% { transform: translate(-50%,-50%) rotate(280deg); opacity: 0; scale: 1.4; } }
+
+.hud {
+  position: absolute; top: 20px; left: 20px; z-index: 1000;
+  background: rgba(0,0,0,0.85); padding: 15px; border-left: 5px solid var(--neon-pink);
 }
