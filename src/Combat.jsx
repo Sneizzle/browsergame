@@ -314,7 +314,16 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
     if (!selectedWeapons.length) return;
 
     const loop = setInterval(() => {
-      if (paused) return;
+      if (pausedRef.current) return;
+      const currentPlayer = playerRef.current;
+      const currentStats = statsRef.current;
+      const currentEnemies = enemiesRef.current;
+      const currentBullets = bulletsRef.current;
+      const currentSlashes = slashesRef.current;
+      const currentXp = xpRef.current;
+      const currentXpTarget = xpTargetRef.current;
+      const currentWeapons = selectedWeaponsRef.current;
+      const currentWeaponLevels = weaponLevelsRef.current;
       elapsed.current += 16;
       setProgress(Math.min(1, elapsed.current / BOSS_TIME));
       setStats(s => {
@@ -346,7 +355,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
           const count = Math.min(2 + Math.floor(difficulty / 2), 12);
           const next = [...e];
           for (let i = 0; i < count; i += 1) {
-            next.push(spawnEnemy(player, difficulty));
+            next.push(spawnEnemy(currentPlayer, difficulty));
           }
           return next;
         });
@@ -354,7 +363,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
 
       if (!bossSpawned && elapsed.current > BOSS_TIME) {
         setBossSpawned(true);
-        setEnemies(e => [...e, spawnBoss(player)]);
+        setEnemies(e => [...e, spawnBoss(currentPlayer)]);
       }
 
       const movedEnemies = enemies.map(en => {
