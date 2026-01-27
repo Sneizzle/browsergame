@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 const ARENA_SIZE = 2000;
-const BOSS_TIME = 190000;
+const BOSS_TIME = 140000;
 
 const WEAPONS = [
   {
@@ -275,18 +275,6 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
   const lastDamage = useRef(0);
   const paused = upgradeOptions.length > 0 || victory || defeat;
 
-  const playerRef = useRef(player);
-  const statsRef = useRef(stats);
-  const enemiesRef = useRef(enemies);
-  const bulletsRef = useRef(bullets);
-  const slashesRef = useRef(slashes);
-  const orbsRef = useRef(orbs);
-  const xpRef = useRef(xp);
-  const xpTargetRef = useRef(xpTarget);
-  const selectedWeaponsRef = useRef(selectedWeapons);
-  const weaponLevelsRef = useRef(weaponLevels);
-  const pausedRef = useRef(paused);
-
   const weaponChoices = useMemo(() => WEAPONS, []);
   const crewDamageMult = useMemo(() => crew.reduce((acc, c) => acc * c.trait.dmg, 1), [crew]);
 
@@ -309,50 +297,6 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
       setDefeat(true);
     }
   }, [stats.hp, defeat]);
-
-  useEffect(() => {
-    playerRef.current = player;
-  }, [player]);
-
-  useEffect(() => {
-    statsRef.current = stats;
-  }, [stats]);
-
-  useEffect(() => {
-    enemiesRef.current = enemies;
-  }, [enemies]);
-
-  useEffect(() => {
-    bulletsRef.current = bullets;
-  }, [bullets]);
-
-  useEffect(() => {
-    slashesRef.current = slashes;
-  }, [slashes]);
-
-  useEffect(() => {
-    orbsRef.current = orbs;
-  }, [orbs]);
-
-  useEffect(() => {
-    xpRef.current = xp;
-  }, [xp]);
-
-  useEffect(() => {
-    xpTargetRef.current = xpTarget;
-  }, [xpTarget]);
-
-  useEffect(() => {
-    selectedWeaponsRef.current = selectedWeapons;
-  }, [selectedWeapons]);
-
-  useEffect(() => {
-    weaponLevelsRef.current = weaponLevels;
-  }, [weaponLevels]);
-
-  useEffect(() => {
-    pausedRef.current = paused;
-  }, [paused]);
 
   useEffect(() => {
     const handleKey = e => {
@@ -392,7 +336,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
         let ny = p.y;
         const baseSpeed = 5.6;
         const speedMult = crew.reduce((acc, c) => acc * c.trait.spd, 1);
-        const finalSpeed = baseSpeed * Math.min(speedMult, 1.4) * currentStats.moveSpeed;
+        const finalSpeed = baseSpeed * Math.min(speedMult, 1.4) * stats.moveSpeed;
         if (keys.current.w) ny -= finalSpeed;
         if (keys.current.s) ny += finalSpeed;
         if (keys.current.a) nx -= finalSpeed;
@@ -408,7 +352,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
       if (elapsed.current - lastSpawn.current > spawnInterval) {
         lastSpawn.current = elapsed.current;
         setEnemies(e => {
-          const count = Math.min(2 + Math.floor(difficulty / 2), 16);
+          const count = Math.min(2 + Math.floor(difficulty / 2), 12);
           const next = [...e];
           for (let i = 0; i < count; i += 1) {
             next.push(spawnEnemy(currentPlayer, difficulty));
@@ -422,9 +366,9 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
         setEnemies(e => [...e, spawnBoss(currentPlayer)]);
       }
 
-      const movedEnemies = currentEnemies.map(en => {
-        const dx = currentPlayer.x - en.x;
-        const dy = currentPlayer.y - en.y;
+      const movedEnemies = enemies.map(en => {
+        const dx = player.x - en.x;
+        const dy = player.y - en.y;
         const dist = Math.hypot(dx, dy) || 1;
         return {
           ...en,
@@ -433,11 +377,11 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
         };
       });
 
-      const movedBullets = currentBullets
+      const movedBullets = bullets
         .map(b => ({ ...b, x: b.x + b.vx, y: b.y + b.vy, life: b.life - 16 }))
         .filter(b => b.x > 0 && b.x < ARENA_SIZE && b.y > 0 && b.y < ARENA_SIZE && b.life > 0);
 
-      const movedSlashes = currentSlashes.filter(sl => sl.life > 0).map(sl => ({ ...sl, life: sl.life - 16 }));
+      const movedSlashes = slashes.filter(sl => sl.life > 0).map(sl => ({ ...sl, life: sl.life - 16 }));
 
       const bulletHits = new Map();
       const nextBullets = movedBullets.map(b => ({ ...b }));
@@ -493,8 +437,8 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
 
       setOrbs(prev => {
         const drifted = prev.map(o => {
-          const dx = currentPlayer.x - o.x;
-          const dy = currentPlayer.y - o.y;
+          const dx = player.x - o.x;
+          const dy = player.y - o.y;
           const dist = Math.hypot(dx, dy);
           if (dist < 110) {
             return { ...o, x: o.x + (dx / dist) * 2.6, y: o.y + (dy / dist) * 2.6 };
@@ -503,7 +447,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
         });
         const merged = mergeOrbs(drifted);
         return merged.filter(o => {
-          const dist = Math.hypot(o.x - currentPlayer.x, o.y - currentPlayer.y);
+          const dist = Math.hypot(o.x - player.x, o.y - player.y);
           if (dist < 34) {
             setXp(x => x + o.value);
             return false;
@@ -512,18 +456,18 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
         });
       });
 
-      if (currentXp >= currentXpTarget) {
-        setXp(x => x - currentXpTarget);
+      if (xp >= xpTarget) {
+        setXp(x => x - xpTarget);
         setLevel(l => l + 1);
         setXpTarget(t => Math.floor(t * 1.4));
-        setUpgradeOptions(rollUpgradeOptions(currentWeapons, currentWeaponLevels, currentStats));
+        setUpgradeOptions(rollUpgradeOptions(selectedWeapons, weaponLevels, stats));
       }
 
       const now = Date.now();
       if (now - lastDamage.current > 260) {
         let totalDamage = 0;
         movedEnemies.forEach(en => {
-          const dist = Math.hypot(en.x - currentPlayer.x, en.y - currentPlayer.y);
+          const dist = Math.hypot(en.x - player.x, en.y - player.y);
           if (dist < en.size * 0.55 + 16) {
             totalDamage += en.contactDamage || 8;
           }
@@ -534,13 +478,13 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
         }
       }
 
-      currentWeapons.forEach(id => {
+      selectedWeapons.forEach(id => {
         const weapon = WEAPONS.find(w => w.id === id);
         if (!weapon) return;
-        const level = currentWeaponLevels[id] || 1;
+        const level = weaponLevels[id] || 1;
         const weaponStats = buildWeaponStats(weapon, level);
         const last = lastFire.current[id] || 0;
-        const fireCooldown = weaponStats.cooldown / currentStats.attackSpeed;
+        const fireCooldown = weaponStats.cooldown / stats.attackSpeed;
         if (now - last < fireCooldown) return;
         lastFire.current[id] = now;
         if (!movedEnemies.length) return;
@@ -548,22 +492,22 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
           weapon.targeting === 'random'
             ? movedEnemies[Math.floor(Math.random() * movedEnemies.length)]
             : movedEnemies.reduce((closest, en) => {
-                const dist = Math.hypot(en.x - currentPlayer.x, en.y - currentPlayer.y);
+                const dist = Math.hypot(en.x - player.x, en.y - player.y);
                 if (!closest) return en;
-                const prevDist = Math.hypot(closest.x - currentPlayer.x, closest.y - currentPlayer.y);
+                const prevDist = Math.hypot(closest.x - player.x, closest.y - player.y);
                 return dist < prevDist ? en : closest;
               }, null);
         if (!target) return;
-        const angle = Math.atan2(target.y - currentPlayer.y, target.x - currentPlayer.x);
+        const angle = Math.atan2(target.y - player.y, target.x - player.x);
         if (weapon.id === 'KATANA') {
           const slashesToAdd = [];
           for (let i = 0; i < weaponStats.slashCount; i += 1) {
             slashesToAdd.push({
               id: Math.random(),
-              x: currentPlayer.x,
-              y: currentPlayer.y,
+              x: player.x,
+              y: player.y,
               range: weaponStats.range,
-              damage: weaponStats.damage * currentStats.damageMult * crewDamageMult,
+              damage: weaponStats.damage * stats.damageMult * crewDamageMult,
               life: 220
             });
           }
@@ -576,11 +520,11 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
             const a = angle + spread;
             nextBullets.push({
               id: Math.random(),
-              x: currentPlayer.x,
-              y: currentPlayer.y,
+              x: player.x,
+              y: player.y,
               vx: Math.cos(a) * weaponStats.bulletSpeed,
               vy: Math.sin(a) * weaponStats.bulletSpeed,
-              damage: weaponStats.damage * currentStats.damageMult * crewDamageMult,
+              damage: weaponStats.damage * stats.damageMult * crewDamageMult,
               color: weapon.color,
               life: 1000,
               width: weaponStats.width,
@@ -595,7 +539,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
     }, 16);
 
     return () => clearInterval(loop);
-  }, [crew, selectedWeapons.length, bossSpawned, crewDamageMult, tileDifficulty]);
+  }, [crew, paused, player, selectedWeapons, enemies, bullets, slashes, stats, xp, xpTarget, bossSpawned, weaponLevels, crewDamageMult, tileDifficulty]);
 
   const chooseUpgrade = option => {
     setStats(s => option.apply(s));
@@ -651,7 +595,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
 
       <div className="world-container" style={{ transform: `translate(${-camera.x}px,${-camera.y}px)` }}>
         <div className="world-border" />
-        <div className="player-tracer" style={{ left: player.x - 100, top: player.y - 100 }} />
+        <div className="player-tracer" style={{ left: player.x - 60, top: player.y - 60 }} />
         <div className="player-sprite" style={{ left: player.x, top: player.y }} />
         {slashes.map(s => (
           <div key={s.id} className="katana-slash" style={{ left: s.x, top: s.y }} />

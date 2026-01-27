@@ -35,7 +35,6 @@ export default function App() {
   const [selectedHexInfo, setSelectedHexInfo] = useState(null);
   const [clearedHexes, setClearedHexes] = useState({});
   const [crewXp, setCrewXp] = useState(0);
-  const [pendingReward, setPendingReward] = useState(0);
 
   const hexGrid = focusPlanet ? (() => {
     const arr = [];
@@ -74,8 +73,9 @@ export default function App() {
         return { ...prev, [focusPlanet.id]: Array.from(current) };
       });
     }
-    setCrewXp(xp => xp + (selectedHexInfo?.reward || pendingReward || 0));
-    setPendingReward(0);
+    if (selectedHexInfo) {
+      setCrewXp(xp => xp + selectedHexInfo.reward);
+    }
     setView('galaxy');
   };
 
@@ -109,7 +109,7 @@ export default function App() {
       )}
 
       {view === 'galaxy' && (
-        <div className="galaxy-container" onClick={() => { setFocusPlanet(null); setSelectedHex(null); setSelectedHexInfo(null); setPendingReward(0); }}>
+        <div className="galaxy-container" onClick={() => { setFocusPlanet(null); setSelectedHex(null); setSelectedHexInfo(null); }}>
           <div className="hud">
             <div>LIVES: {lives}</div>
             <div>CXP: {crewXp}</div>
@@ -136,10 +136,10 @@ export default function App() {
                       onClick={e => {
                         e.stopPropagation();
                         setSelectedHex(h.id);
-                        const difficulty = h.difficulty + (p.difficulty - 1);
-                        const reward = Math.max(20, difficulty * 25);
-                        setSelectedHexInfo({ difficulty, reward });
-                        setPendingReward(reward);
+                        setSelectedHexInfo({
+                          difficulty: h.difficulty + (p.difficulty - 1),
+                          reward: (h.difficulty + (p.difficulty - 1)) * 20
+                        });
                       }}
                     />
                   );

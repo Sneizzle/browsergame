@@ -80,19 +80,18 @@ body {
 }
 .player-tracer {
   position: absolute;
-  width: 200px;
-  height: 200px;
+  width: 120px;
+  height: 120px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(0, 242, 255, 0.6) 0%, rgba(0, 242, 255, 0.2) 35%, rgba(0, 242, 255, 0) 70%);
-  filter: blur(4px);
-  animation: tracer-pulse 1.6s ease-in-out infinite;
+  background: radial-gradient(circle, rgba(0, 242, 255, 0.45) 0%, rgba(0, 242, 255, 0) 70%);
+  filter: blur(2px);
+  animation: tracer-pulse 1.4s ease-in-out infinite;
   pointer-events: none;
-  box-shadow: 0 0 30px rgba(0, 242, 255, 0.4);
 }
 @keyframes tracer-pulse {
-  0% { transform: scale(0.8); opacity: 0.55; }
-  50% { transform: scale(1.08); opacity: 0.95; }
-  100% { transform: scale(0.8); opacity: 0.55; }
+  0% { transform: scale(0.85); opacity: 0.6; }
+  50% { transform: scale(1.05); opacity: 0.95; }
+  100% { transform: scale(0.85); opacity: 0.6; }
 }
 .enemy-sprite { 
   position: absolute; background: var(--neon-pink); 
