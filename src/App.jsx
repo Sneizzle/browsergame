@@ -6,11 +6,11 @@ import Combat from "./Combat.jsx";
 const API_URL = "https://69787eb6cd4fe130e3d91a96.mockapi.io/sessions";
 
 const PLANETS = [
-  { id: 1, name: 'Zog-Jungle', color: '#00ff88', x: -400, y: -150 },
-  { id: 2, name: 'Dune-9', color: '#ffcc00', x: 300, y: -250 },
-  { id: 3, name: 'Inferno', color: '#ff4400', x: 500, y: 180 },
-  { id: 4, name: 'Cryo-X', color: '#00f2ff', x: -450, y: 300 },
-  { id: 5, name: 'Void-Prime', color: '#ff007a', x: 0, y: 400 },
+  { id: 1, name: 'Zog-Jungle', color: '#00ff88', x: -400, y: -150, difficulty: 1 },
+  { id: 2, name: 'Dune-9', color: '#ffcc00', x: 300, y: -250, difficulty: 2 },
+  { id: 3, name: 'Inferno', color: '#ff4400', x: 500, y: 180, difficulty: 3 },
+  { id: 4, name: 'Cryo-X', color: '#00f2ff', x: -450, y: 300, difficulty: 2 },
+  { id: 5, name: 'Void-Prime', color: '#ff007a', x: 0, y: 400, difficulty: 4 },
 ];
 
 const TRAITS = [
@@ -32,7 +32,10 @@ export default function App() {
   const [draftOptions, setDraftOptions] = useState([genCrew(), genCrew(), genCrew()]);
   const [focusPlanet, setFocusPlanet] = useState(null);
   const [selectedHex, setSelectedHex] = useState(null);
+  const [selectedHexInfo, setSelectedHexInfo] = useState(null);
   const [clearedHexes, setClearedHexes] = useState({});
+  const [crewXp, setCrewXp] = useState(0);
+  const [pendingReward, setPendingReward] = useState(0);
 
   const hexGrid = focusPlanet ? (() => {
     const arr = [];
@@ -44,7 +47,9 @@ export default function App() {
       for (let c = 0; c < cols; c++) {
         const x = (c * hexWidth) + (r % 2 ? hexWidth / 2 : 0) - (cols * hexWidth / 2);
         const y = (r * hexHeight * 0.75) - (rows * hexHeight * 0.38);
-        arr.push({ id: `${r}-${c}`, x, y });
+        const dist = Math.hypot(r - rows / 2, c - cols / 2);
+        const difficulty = Math.min(5, Math.max(1, Math.ceil(dist / 4)));
+        arr.push({ id: `${r}-${c}`, x, y, difficulty });
       }
     }
     return arr;
@@ -69,6 +74,8 @@ export default function App() {
         return { ...prev, [focusPlanet.id]: Array.from(current) };
       });
     }
+    setCrewXp(xp => xp + (selectedHexInfo?.reward || pendingReward || 0));
+    setPendingReward(0);
     setView('galaxy');
   };
 
@@ -102,8 +109,11 @@ export default function App() {
       )}
 
       {view === 'galaxy' && (
-        <div className="galaxy-container" onClick={() => { setFocusPlanet(null); setSelectedHex(null); }}>
-          <div className="hud">LIVES: {lives}</div>
+        <div className="galaxy-container" onClick={() => { setFocusPlanet(null); setSelectedHex(null); setSelectedHexInfo(null); setPendingReward(0); }}>
+          <div className="hud">
+            <div>LIVES: {lives}</div>
+            <div>CXP: {crewXp}</div>
+          </div>
           {PLANETS.map(p => (
             <div key={p.id} className={`planet ${focusPlanet?.id === p.id ? 'focused' : ''}`}
               style={{
@@ -123,7 +133,14 @@ export default function App() {
                   return (
                     <div key={h.id} className={`hex-unit ${selectedHex === h.id ? 'active' : ''} ${cleared ? 'cleared' : ''}`}
                       style={{ left: `calc(50% + ${h.x}px)`, top: `calc(50% + ${h.y}px)`, transform: 'translate(-50%,-50%)' }}
-                      onClick={e => { e.stopPropagation(); setSelectedHex(h.id); }}
+                      onClick={e => {
+                        e.stopPropagation();
+                        setSelectedHex(h.id);
+                        const difficulty = h.difficulty + (p.difficulty - 1);
+                        const reward = Math.max(20, difficulty * 25);
+                        setSelectedHexInfo({ difficulty, reward });
+                        setPendingReward(reward);
+                      }}
                     />
                   );
                 })}
@@ -135,12 +152,30 @@ export default function App() {
               DEPLOY {selectedHex}
             </button>
           )}
+          {focusPlanet && selectedHexInfo && (
+            <div className="tile-panel" onClick={e => e.stopPropagation()}>
+              <h3>{focusPlanet.name} / TILE {selectedHex}</h3>
+              <div className="tile-row">
+                <span>Difficulty</span>
+                <strong>{selectedHexInfo.difficulty}</strong>
+              </div>
+              <div className="tile-row">
+                <span>Crew Rewards</span>
+                <strong>+{selectedHexInfo.reward} CXP</strong>
+              </div>
+              <div className="tile-row">
+                <span>Squad CXP</span>
+                <strong>{crewXp}</strong>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {view === 'combat' && (
         <Combat
           crew={crew}
+          tileDifficulty={(selectedHexInfo?.difficulty || 1)}
           onExit={() => {
             setLives(l => l - 1);
             setView('galaxy');
