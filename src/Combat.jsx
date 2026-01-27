@@ -1,12 +1,12 @@
 // Combat.jsx (FULL FILE - COPY/PASTE)
-// Katana now does REAL directional sword cuts + upgrades into multi-angle swings + stabs.
-// Also fixes enemy spawning (no more spawn->erase bug) and avoids missing refs.
+// Fixes: illegal hooks, duplicated hitFx, katana visuals, SMG strength/targeting, cleaner VFX.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 const ARENA_SIZE = 2000;
 const BOSS_TIME = 140000;
 
+// ---------- angle helpers ----------
 const normAngle = a => {
   let x = a;
   while (x <= -Math.PI) x += Math.PI * 2;
@@ -23,16 +23,16 @@ const WEAPONS = [
     targeting: 'closest',
     color: '#e9f7ff',
     levels: [
-      { title: 'Rifle I', description: 'Single precision shot.', stats: { cooldown: 560, bulletSpeed: 15, damage: 9, pellets: 1, spread: 0.08, width: 12, height: 4, pierce: 0 } },
-      { title: 'Rifle II', description: 'Tighter burst cadence.', stats: { cooldown: 520, damage: 11 } },
-      { title: 'Rifle III', description: 'Two-round burst.', stats: { pellets: 2, spread: 0.14, damage: 10 } },
-      { title: 'Rifle IV', description: 'Piercing calibration.', stats: { pierce: 1, damage: 13 } },
-      { title: 'Rifle V', description: 'Triple fan burst.', stats: { pellets: 3, spread: 0.22, damage: 12 } }
+      { title: 'Rifle I', description: 'Single precision shot.', stats: { cooldown: 520, bulletSpeed: 15.5, damage: 11, pellets: 1, spread: 0.06, width: 12, height: 4, pierce: 0 } },
+      { title: 'Rifle II', description: 'Tighter cadence.', stats: { cooldown: 490, damage: 13 } },
+      { title: 'Rifle III', description: 'Two-round burst.', stats: { pellets: 2, spread: 0.10, damage: 12, pierce: 1 } },
+      { title: 'Rifle IV', description: 'Piercing calibration.', stats: { pierce: 2, damage: 14 } },
+      { title: 'Rifle V', description: 'Triple fan burst.', stats: { pellets: 3, spread: 0.18, damage: 13, pierce: 3 } }
     ]
   },
 
   // =========================
-  // KATANA: TRUE SWORD CUTS
+  // KATANA: REAL SWORD CUTS
   // =========================
   {
     id: 'KATANA',
@@ -42,97 +42,89 @@ const WEAPONS = [
     levels: [
       {
         title: 'Katana I',
-        description: 'One partial spinning arc slash.',
+        description: 'One shaziiing crescent cut.',
         stats: {
           cooldown: 900,
           damage: 18,
-          range: 150,
-          // partial spin = 3 staggered swings that rotate a bit
+          range: 165,
           slashPattern: [
-            { delay: 0,   offset: -0.35, arc: Math.PI * 0.55, type: 'swing', dmgMult: 1.0 },
-            { delay: 80,  offset:  0.00, arc: Math.PI * 0.55, type: 'swing', dmgMult: 1.0 },
-            { delay: 160, offset:  0.35, arc: Math.PI * 0.55, type: 'swing', dmgMult: 1.0 }
+            // single sharp directional crescent
+            { delay: 0, offset: 0.00, arc: Math.PI * 0.34, kind: 'crescent', dmgMult: 1.0 }
           ]
         }
       },
       {
         title: 'Katana II',
-        description: 'Katana I + diagonal slash into a spin.',
+        description: 'Crescent + simultaneous zig cut.',
         stats: {
           cooldown: 860,
-          damage: 20,
-          range: 160,
-          // Keep L1 partial spin + add diagonal that continues rotation
+          damage: 19,
+          range: 175,
           slashPattern: [
-            { delay: 0,   offset: -0.35, arc: Math.PI * 0.55, type: 'swing', dmgMult: 1.0 },
-            { delay: 80,  offset:  0.00, arc: Math.PI * 0.55, type: 'swing', dmgMult: 1.0 },
-            { delay: 160, offset:  0.35, arc: Math.PI * 0.55, type: 'swing', dmgMult: 1.0 },
-            // diagonal follow-through (feels like a turning slash)
-            { delay: 240, offset:  0.85, arc: Math.PI * 0.50, type: 'swing', dmgMult: 1.0 }
+            { delay: 0, offset: 0.00, arc: Math.PI * 0.34, kind: 'crescent', dmgMult: 1.0 },
+            // zig: two tight slashes that feel like a “Z” flick
+            { delay: 0, offset: +0.55, arc: Math.PI * 0.24, kind: 'zig', dmgMult: 0.75 },
+            { delay: 70, offset: -0.35, arc: Math.PI * 0.22, kind: 'zig', dmgMult: 0.70 }
           ]
         }
       },
       {
         title: 'Katana III',
-        description: 'Adds simultaneous stabs + wider swing angles.',
+        description: 'Spin slash x3 + keeps the other cuts.',
         stats: {
           cooldown: 820,
-          damage: 22,
-          range: 175,
+          damage: 21,
+          range: 185,
           slashPattern: [
-            // spin swings
-            { delay: 0,   offset: -0.45, arc: Math.PI * 0.60, type: 'swing', dmgMult: 1.0 },
-            { delay: 90,  offset:  0.00, arc: Math.PI * 0.60, type: 'swing', dmgMult: 1.0 },
-            { delay: 180, offset:  0.45, arc: Math.PI * 0.60, type: 'swing', dmgMult: 1.0 },
-            // simultaneous dual stabs (narrow arcs) on the first beat
-            { delay: 0,   offset: -0.18, arc: Math.PI * 0.22, type: 'stab', dmgMult: 0.85 },
-            { delay: 0,   offset:  0.18, arc: Math.PI * 0.22, type: 'stab', dmgMult: 0.85 }
+            // keep crescent + zig package
+            { delay: 0, offset: 0.00, arc: Math.PI * 0.34, kind: 'crescent', dmgMult: 1.0 },
+            { delay: 0, offset: +0.55, arc: Math.PI * 0.24, kind: 'zig', dmgMult: 0.75 },
+            { delay: 70, offset: -0.35, arc: Math.PI * 0.22, kind: 'zig', dmgMult: 0.70 },
+
+            // spin trio (low dmg each, huge feel)
+            { delay: 0, offset: 0.00, arc: Math.PI * 0.42, kind: 'spin', dmgMult: 0.55 },
+            { delay: 90, offset: 2.10, arc: Math.PI * 0.42, kind: 'spin', dmgMult: 0.55 },
+            { delay: 180, offset: 4.20, arc: Math.PI * 0.42, kind: 'spin', dmgMult: 0.55 }
           ]
         }
       },
       {
         title: 'Katana IV',
-        description: 'Multi-angle swings + triple stabs (chaos).',
+        description: 'Bigger cuts + faster rhythm.',
         stats: {
           cooldown: 760,
-          damage: 24,
-          range: 185,
+          damage: 23,
+          range: 200,
           slashPattern: [
-            // 5-beat spin
-            { delay: 0,   offset: -0.55, arc: Math.PI * 0.62, type: 'swing', dmgMult: 1.0 },
-            { delay: 70,  offset: -0.20, arc: Math.PI * 0.62, type: 'swing', dmgMult: 1.0 },
-            { delay: 140, offset:  0.15, arc: Math.PI * 0.62, type: 'swing', dmgMult: 1.0 },
-            { delay: 210, offset:  0.50, arc: Math.PI * 0.62, type: 'swing', dmgMult: 1.0 },
-            { delay: 280, offset:  0.85, arc: Math.PI * 0.62, type: 'swing', dmgMult: 1.0 },
-
-            // triple stabs at different angles (simultaneous)
-            { delay: 0, offset: 0.00, arc: Math.PI * 0.18, type: 'stab', dmgMult: 0.95 },
-            { delay: 0, offset: 0.28, arc: Math.PI * 0.18, type: 'stab', dmgMult: 0.95 },
-            { delay: 0, offset: -0.28, arc: Math.PI * 0.18, type: 'stab', dmgMult: 0.95 }
+            { delay: 0, offset: 0.00, arc: Math.PI * 0.38, kind: 'crescent', dmgMult: 1.0 },
+            { delay: 0, offset: +0.60, arc: Math.PI * 0.26, kind: 'zig', dmgMult: 0.75 },
+            { delay: 60, offset: -0.40, arc: Math.PI * 0.24, kind: 'zig', dmgMult: 0.70 },
+            { delay: 0, offset: 0.00, arc: Math.PI * 0.46, kind: 'spin', dmgMult: 0.58 },
+            { delay: 80, offset: 2.10, arc: Math.PI * 0.46, kind: 'spin', dmgMult: 0.58 },
+            { delay: 160, offset: 4.20, arc: Math.PI * 0.46, kind: 'spin', dmgMult: 0.58 }
           ]
         }
       },
       {
         title: 'Katana V',
-        description: 'Rift combo: big spin + quad stabs from many angles.',
+        description: 'Carnage: extra crescents + wider spin.',
         stats: {
           cooldown: 700,
-          damage: 28,
-          range: 200,
+          damage: 26,
+          range: 220,
           slashPattern: [
-            // long spin (screen-filling melee chaos)
-            { delay: 0,   offset: -0.80, arc: Math.PI * 0.70, type: 'swing', dmgMult: 1.0 },
-            { delay: 60,  offset: -0.45, arc: Math.PI * 0.70, type: 'swing', dmgMult: 1.0 },
-            { delay: 120, offset: -0.10, arc: Math.PI * 0.70, type: 'swing', dmgMult: 1.0 },
-            { delay: 180, offset:  0.25, arc: Math.PI * 0.70, type: 'swing', dmgMult: 1.0 },
-            { delay: 240, offset:  0.60, arc: Math.PI * 0.70, type: 'swing', dmgMult: 1.0 },
-            { delay: 300, offset:  0.95, arc: Math.PI * 0.70, type: 'swing', dmgMult: 1.0 },
+            { delay: 0, offset: 0.00, arc: Math.PI * 0.40, kind: 'crescent', dmgMult: 1.0 },
+            { delay: 0, offset: +0.62, arc: Math.PI * 0.28, kind: 'zig', dmgMult: 0.78 },
+            { delay: 55, offset: -0.42, arc: Math.PI * 0.26, kind: 'zig', dmgMult: 0.72 },
 
-            // quad stabs at cardinal-ish angles (simultaneous)
-            { delay: 0, offset: 0.00, arc: Math.PI * 0.16, type: 'stab', dmgMult: 1.05 },
-            { delay: 0, offset: Math.PI * 0.50, arc: Math.PI * 0.16, type: 'stab', dmgMult: 1.05 },
-            { delay: 0, offset: Math.PI, arc: Math.PI * 0.16, type: 'stab', dmgMult: 1.05 },
-            { delay: 0, offset: Math.PI * 1.50, arc: Math.PI * 0.16, type: 'stab', dmgMult: 1.05 }
+            // spin
+            { delay: 0, offset: 0.00, arc: Math.PI * 0.50, kind: 'spin', dmgMult: 0.62 },
+            { delay: 75, offset: 2.10, arc: Math.PI * 0.50, kind: 'spin', dmgMult: 0.62 },
+            { delay: 150, offset: 4.20, arc: Math.PI * 0.50, kind: 'spin', dmgMult: 0.62 },
+
+            // extra “follow-through” crescents (big feel, modest dmg)
+            { delay: 120, offset: +0.25, arc: Math.PI * 0.34, kind: 'crescent', dmgMult: 0.55 },
+            { delay: 180, offset: -0.25, arc: Math.PI * 0.34, kind: 'crescent', dmgMult: 0.55 }
           ]
         }
       }
@@ -142,29 +134,32 @@ const WEAPONS = [
   {
     id: 'SMG',
     name: 'SMG',
-    targeting: 'random',
+    targeting: 'closest', // ✅ FIX: closest, not random
     color: '#ffe58f',
     levels: [
-      { title: 'SMG I', description: 'Short random bursts.', stats: { cooldown: 170, bulletSpeed: 16, damage: 5, pellets: 1, spread: 0.32, width: 10, height: 4, pierce: 0 } },
-      { title: 'SMG II', description: 'Improved control.', stats: { cooldown: 150, damage: 6 } },
-      { title: 'SMG III', description: 'Double burst.', stats: { pellets: 2, spread: 0.38, damage: 5 } },
-      { title: 'SMG IV', description: 'Rattle fire.', stats: { cooldown: 130, damage: 6 } },
-      { title: 'SMG V', description: 'Wide strafing spray.', stats: { pellets: 3, spread: 0.46, damage: 6 } }
+      // ✅ FIX: lvl1 no longer trash
+      { title: 'SMG I', description: 'Close target bursts.', stats: { cooldown: 120, bulletSpeed: 17, damage: 7, pellets: 1, spread: 0.22, width: 10, height: 4, pierce: 0 } },
+      { title: 'SMG II', description: 'Improved control.', stats: { cooldown: 110, damage: 8, spread: 0.20 } },
+      { title: 'SMG III', description: 'Double burst.', stats: { pellets: 2, spread: 0.28, damage: 6 } },
+      { title: 'SMG IV', description: 'Rattle fire.', stats: { cooldown: 98, damage: 7 } },
+      { title: 'SMG V', description: 'Wide triple spray.', stats: { pellets: 3, spread: 0.40, damage: 6 } }
     ]
   },
+
   {
     id: 'SHOTGUN',
     name: 'Shotgun',
-    targeting: 'random',
+    targeting: 'closest',
     color: '#ffd36b',
     levels: [
-      { title: 'Shotgun I', description: 'Close arc blast.', stats: { cooldown: 980, bulletSpeed: 13, damage: 7, pellets: 5, spread: 0.72, width: 14, height: 5, pierce: 0 } },
-      { title: 'Shotgun II', description: 'Denser spread.', stats: { pellets: 6, damage: 7 } },
-      { title: 'Shotgun III', description: 'Shrapnel punch.', stats: { pellets: 7, damage: 8 } },
-      { title: 'Shotgun IV', description: 'High density surge.', stats: { pellets: 8, spread: 0.78, damage: 8 } },
-      { title: 'Shotgun V', description: 'Meteor cluster.', stats: { pellets: 10, spread: 0.9, damage: 9 } }
+      { title: 'Shotgun I', description: 'Close arc blast.', stats: { cooldown: 900, bulletSpeed: 13, damage: 9, pellets: 6, spread: 0.70, width: 14, height: 5, pierce: 0 } },
+      { title: 'Shotgun II', description: 'Denser spread.', stats: { pellets: 7, damage: 9 } },
+      { title: 'Shotgun III', description: 'Shrapnel punch.', stats: { pellets: 8, damage: 9 } },
+      { title: 'Shotgun IV', description: 'High density surge.', stats: { pellets: 9, spread: 0.78, damage: 10 } },
+      { title: 'Shotgun V', description: 'Meteor cluster.', stats: { pellets: 12, spread: 0.90, damage: 10 } }
     ]
   },
+
   {
     id: 'LASER',
     name: 'Laser',
@@ -178,6 +173,7 @@ const WEAPONS = [
       { title: 'Laser V', description: 'Tri-beam burst.', stats: { pellets: 3, spread: 0.12, damage: 26 } }
     ]
   },
+
   {
     id: 'SNIPER',
     name: 'Sniper',
@@ -293,14 +289,18 @@ const mergeOrbs = (orbs) => {
   return merged;
 };
 
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
 export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) {
   const [player, setPlayer] = useState({ x: 1000, y: 1000 });
   const [stats, setStats] = useState({ hp: 120, maxHp: 120, regen: 0, damageMult: 1, attackSpeed: 1, moveSpeed: 1 });
   const [camera, setCamera] = useState({ x: 0, y: 0 });
+
   const [enemies, setEnemies] = useState([]);
   const [bullets, setBullets] = useState([]);
   const [slashes, setSlashes] = useState([]);
   const [orbs, setOrbs] = useState([]);
+
   const [selectedWeapons, setSelectedWeapons] = useState([]);
   const [weaponLevels, setWeaponLevels] = useState({});
   const [xp, setXp] = useState(0);
@@ -311,6 +311,10 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
   const [victory, setVictory] = useState(false);
   const [defeat, setDefeat] = useState(false);
   const [progress, setProgress] = useState(0);
+
+  // ✅ ONLY ONE hitFx state, INSIDE component
+  const [hitFx, setHitFx] = useState({});
+  const [deathFx, setDeathFx] = useState([]);
 
   const keys = useRef({});
   const lastFire = useRef({});
@@ -349,6 +353,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
 
   const weaponChoices = useMemo(() => WEAPONS, []);
   const crewDamageMult = useMemo(() => crew.reduce((acc, c) => acc * c.trait.dmg, 1), [crew]);
+  const crewSpeedMult = useMemo(() => crew.reduce((acc, c) => acc * c.trait.spd, 1), [crew]);
 
   useEffect(() => {
     if (victory) {
@@ -387,6 +392,9 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
       elapsed.current += 16;
       setProgress(Math.min(1, elapsed.current / BOSS_TIME));
 
+      // decay death fx
+      setDeathFx(fx => fx.filter(f => Date.now() - f.t < 260));
+
       // regen
       if (statsRef.current.regen > 0) {
         setStats(prev => ({ ...prev, hp: Math.min(prev.maxHp, prev.hp + prev.regen * 0.016) }));
@@ -398,16 +406,16 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
         let ny = prev.y;
 
         const baseSpeed = 5.6;
-        const speedMult = crew.reduce((acc, c) => acc * c.trait.spd, 1);
-        const finalSpeed = baseSpeed * Math.min(speedMult, 1.4) * (statsRef.current.moveSpeed || 1);
+        const speedMult = Math.min(crewSpeedMult, 1.4);
+        const finalSpeed = baseSpeed * speedMult * (statsRef.current.moveSpeed || 1);
 
         if (keys.current.w) ny -= finalSpeed;
         if (keys.current.s) ny += finalSpeed;
         if (keys.current.a) nx -= finalSpeed;
         if (keys.current.d) nx += finalSpeed;
 
-        nx = Math.max(0, Math.min(ARENA_SIZE, nx));
-        ny = Math.max(0, Math.min(ARENA_SIZE, ny));
+        nx = clamp(nx, 0, ARENA_SIZE);
+        ny = clamp(ny, 0, ARENA_SIZE);
 
         setCamera({ x: nx - window.innerWidth / 2, y: ny - window.innerHeight / 2 });
         return { x: nx, y: ny };
@@ -415,9 +423,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
 
       const p = playerRef.current;
 
-      // =========================
-      // ENEMY SPAWN (LOCAL, NOT ERASED)
-      // =========================
+      // Enemy spawn
       const difficulty = tileDifficulty + Math.floor(elapsed.current / 20000);
       const spawnInterval = Math.max(200, 1500 - difficulty * 90);
 
@@ -479,9 +485,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
           const activeEnd = activeStart + (sl.activeMs || 120);
           if ((sl.age || 0) < activeStart || (sl.age || 0) > activeEnd) return;
 
-          const dx = en.x - sl.x;
-          const dy = en.y - sl.y;
-          const dist = Math.hypot(dx, dy);
+          const dist = Math.hypot(en.x - sl.x, en.y - sl.y);
           if (dist > sl.range) return;
 
           const enemyAngle = Math.atan2(en.y - sl.y, en.x - sl.x);
@@ -490,16 +494,21 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
           totalDamage += sl.damage;
         });
 
-        return totalDamage > 0 ? { ...en, hp: en.hp - totalDamage } : en;
+        if (totalDamage > 0) {
+          setHitFx(prev => ({ ...prev, [en.id]: Date.now() }));
+          return { ...en, hp: en.hp - totalDamage };
+        }
+        return en;
       });
 
-      // deaths -> orbs
+      // deaths -> orbs + death pop
       const alive = [];
       const newOrbs = [];
       withDamage.forEach(en => {
         if (en.hp > 0) {
           alive.push(en);
         } else {
+          setDeathFx(fx => [...fx, { id: Math.random(), x: en.x, y: en.y, t: Date.now(), size: en.size }]);
           const orbCount = Math.max(1, Math.round(en.xp / 10));
           for (let i = 0; i < orbCount; i += 1) {
             newOrbs.push({
@@ -521,7 +530,6 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
       // orbs: attract + merge + pickup
       setOrbs(prev => {
         const pp = playerRef.current;
-
         const drifted = prev.map(o => {
           const dx = pp.x - o.x;
           const dy = pp.y - o.y;
@@ -569,7 +577,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
         }
       }
 
-      // firing (uses alive enemies so targeting feels responsive)
+      // firing
       const now2 = Date.now();
       const pp = playerRef.current;
       const currentEnemies = alive;
@@ -604,18 +612,20 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
         if (weapon.id === 'KATANA') {
           const pattern = (wStats.slashPattern && wStats.slashPattern.length)
             ? wStats.slashPattern
-            : [{ delay: 0, offset: 0, arc: Math.PI * 0.55, type: 'swing', dmgMult: 1 }];
+            : [{ delay: 0, offset: 0, arc: Math.PI * 0.34, kind: 'crescent', dmgMult: 1 }];
 
           const baseDamage = (wStats.damage || 10) * (statsRef.current.damageMult || 1) * crewDamageMult;
-          const baseRange = wStats.range || 150;
+          const baseRange = wStats.range || 165;
 
           const toAdd = pattern.map(pat => {
             const dmg = baseDamage * (pat.dmgMult || 1);
-            const arc = pat.arc || Math.PI * 0.55;
+            const arc = pat.arc || Math.PI * 0.34;
             const delay = pat.delay || 0;
 
-            // stab = shorter active window (snappy), swing = longer
-            const activeMs = pat.type === 'stab' ? 80 : 120;
+            const activeMs =
+              pat.kind === 'zig' ? 90 :
+              pat.kind === 'spin' ? 120 :
+              120;
 
             return {
               id: Math.random(),
@@ -628,8 +638,8 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
               delay,
               activeMs,
               age: 0,
-              life: delay + 220,
-              type: pat.type || 'swing'
+              life: delay + 240,
+              kind: pat.kind || 'crescent'
             };
           });
 
@@ -661,7 +671,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
     }, 16);
 
     return () => clearInterval(loop);
-  }, [crew, selectedWeapons.length, tileDifficulty, crewDamageMult]);
+  }, [crew, selectedWeapons.length, tileDifficulty, crewDamageMult, crewSpeedMult]);
 
   const chooseUpgrade = option => {
     setStats(s => option.apply(s));
@@ -690,7 +700,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
             {weaponChoices.map(w => (
               <button key={w.id} className="weapon-card" onClick={() => selectWeapon(w.id)}>
                 <span>{w.name}</span>
-                <small>{w.id === 'KATANA' ? 'Melee sword cuts' : 'Ranged weapon'}</small>
+                <small>{w.id === 'KATANA' ? 'Directional sword cuts' : 'Ranged weapon'}</small>
               </button>
             ))}
           </div>
@@ -703,7 +713,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
           <span>LVL {level}</span>
         </div>
         <div className="hp-bar">
-          <div className="hp-bar-fill" style={{ width: `${(stats.hp / stats.maxHp) * 100}%` }} />
+          <div className="hp-bar-fill" style={{ width: `${clamp((stats.hp / stats.maxHp) * 100, 0, 100)}%` }} />
           <span>HP {Math.max(0, Math.round((stats.hp / stats.maxHp) * 100))}%</span>
         </div>
         <div className="progress-bar">
@@ -718,35 +728,34 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
         <div className="player-tracer" style={{ left: player.x - 60, top: player.y - 60 }} />
         <div className="player-sprite" style={{ left: player.x, top: player.y }} />
 
-        {/* Sword visuals: directional conic wedge (no CSS required) */}
-        {slashes.map(s => {
-          const size = Math.max(170, s.range * 2);
-          const start = -s.arc / 2;
-          const end = s.arc / 2;
+        {/* death pop */}
+        {deathFx.map(f => (
+          <div
+            key={f.id}
+            className="death-pop"
+            style={{ left: f.x, top: f.y, width: f.size * 1.6, height: f.size * 1.6 }}
+          />
+        ))}
 
-          // Hide before delay so it feels like timed hits
+        {/* katana arcs */}
+        {slashes.map(s => {
+          const size = Math.max(200, s.range * 2);
           const visible = (s.age || 0) >= (s.delay || 0);
+          const arcSize = s.arc || (Math.PI * 0.34);
+          const arcStart = -arcSize / 2;
 
           return (
             <div
               key={s.id}
+              className={`katana-arc ${s.kind || 'crescent'}`}
               style={{
-                position: 'absolute',
                 left: s.x,
                 top: s.y,
-                width: size,
-                height: size,
-                transform: `translate(-50%, -50%) rotate(${s.angle}rad)`,
-                borderRadius: '50%',
-                pointerEvents: 'none',
-                opacity: visible ? (s.type === 'stab' ? 0.95 : 0.75) : 0,
-                // cone wedge + ring mask = sword arc
-                background: `conic-gradient(from ${start}rad, rgba(0,242,255,0) 0rad, rgba(0,242,255,0.95) ${(end - start) * 0.45}rad, rgba(0,242,255,0.15) ${(end - start)}rad, rgba(0,242,255,0) 0rad)`,
-                WebkitMask: 'radial-gradient(closest-side, transparent 72%, #000 74%, #000 84%, transparent 86%)',
-                mask: 'radial-gradient(closest-side, transparent 72%, #000 74%, #000 84%, transparent 86%)',
-                filter: s.type === 'stab'
-                  ? 'drop-shadow(0 0 16px rgba(0,242,255,0.75))'
-                  : 'drop-shadow(0 0 10px rgba(0,242,255,0.55))'
+                opacity: visible ? 1 : 0,
+                '--rot': `${s.angle}rad`,
+                '--size': `${size}px`,
+                '--arcStart': `${arcStart}rad`,
+                '--arcSize': `${arcSize}rad`
               }}
             />
           );
@@ -777,13 +786,17 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
           />
         ))}
 
-        {enemies.map(e => (
-          <div
-            key={e.id}
-            className={`enemy-sprite ${e.type}`}
-            style={{ left: e.x, top: e.y, width: e.size, height: e.size, background: e.color }}
-          />
-        ))}
+        {enemies.map(e => {
+          const t = hitFx[e.id] || 0;
+          const recentlyHit = Date.now() - t < 85;
+          return (
+            <div
+              key={e.id}
+              className={`enemy-sprite ${e.type} ${recentlyHit ? 'hit' : ''}`}
+              style={{ left: e.x, top: e.y, width: e.size, height: e.size, background: e.color }}
+            />
+          );
+        })}
       </div>
 
       {upgradeOptions.length > 0 && (
