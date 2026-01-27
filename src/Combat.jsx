@@ -1,7 +1,20 @@
+// Combat.jsx (FULL FILE - COPY/PASTE)
+// Katana now does REAL directional sword cuts + upgrades into multi-angle swings + stabs.
+// Also fixes enemy spawning (no more spawn->erase bug) and avoids missing refs.
+
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 const ARENA_SIZE = 2000;
 const BOSS_TIME = 140000;
+
+const normAngle = a => {
+  let x = a;
+  while (x <= -Math.PI) x += Math.PI * 2;
+  while (x > Math.PI) x -= Math.PI * 2;
+  return x;
+};
+const angleDiff = (a, b) => Math.abs(normAngle(a - b));
+const withinArc = (centerAngle, arcSize, enemyAngle) => angleDiff(enemyAngle, centerAngle) <= arcSize / 2;
 
 const WEAPONS = [
   {
@@ -17,19 +30,115 @@ const WEAPONS = [
       { title: 'Rifle V', description: 'Triple fan burst.', stats: { pellets: 3, spread: 0.22, damage: 12 } }
     ]
   },
+
+  // =========================
+  // KATANA: TRUE SWORD CUTS
+  // =========================
   {
     id: 'KATANA',
     name: 'Katana',
     targeting: 'closest',
     color: '#8efaff',
     levels: [
-      { title: 'Katana I', description: 'Single arc slash.', stats: { cooldown: 820, damage: 20, range: 135, slashCount: 1 } },
-      { title: 'Katana II', description: 'Twin patterned slashes.', stats: { slashCount: 2, damage: 22 } },
-      { title: 'Katana III', description: 'Extended arc reach.', stats: { range: 165, damage: 24 } },
-      { title: 'Katana IV', description: 'Triple spin strike.', stats: { slashCount: 3, damage: 26 } },
-      { title: 'Katana V', description: 'Rifted dual ring.', stats: { slashCount: 4, range: 190, damage: 30 } }
+      {
+        title: 'Katana I',
+        description: 'One partial spinning arc slash.',
+        stats: {
+          cooldown: 900,
+          damage: 18,
+          range: 150,
+          // partial spin = 3 staggered swings that rotate a bit
+          slashPattern: [
+            { delay: 0,   offset: -0.35, arc: Math.PI * 0.55, type: 'swing', dmgMult: 1.0 },
+            { delay: 80,  offset:  0.00, arc: Math.PI * 0.55, type: 'swing', dmgMult: 1.0 },
+            { delay: 160, offset:  0.35, arc: Math.PI * 0.55, type: 'swing', dmgMult: 1.0 }
+          ]
+        }
+      },
+      {
+        title: 'Katana II',
+        description: 'Katana I + diagonal slash into a spin.',
+        stats: {
+          cooldown: 860,
+          damage: 20,
+          range: 160,
+          // Keep L1 partial spin + add diagonal that continues rotation
+          slashPattern: [
+            { delay: 0,   offset: -0.35, arc: Math.PI * 0.55, type: 'swing', dmgMult: 1.0 },
+            { delay: 80,  offset:  0.00, arc: Math.PI * 0.55, type: 'swing', dmgMult: 1.0 },
+            { delay: 160, offset:  0.35, arc: Math.PI * 0.55, type: 'swing', dmgMult: 1.0 },
+            // diagonal follow-through (feels like a turning slash)
+            { delay: 240, offset:  0.85, arc: Math.PI * 0.50, type: 'swing', dmgMult: 1.0 }
+          ]
+        }
+      },
+      {
+        title: 'Katana III',
+        description: 'Adds simultaneous stabs + wider swing angles.',
+        stats: {
+          cooldown: 820,
+          damage: 22,
+          range: 175,
+          slashPattern: [
+            // spin swings
+            { delay: 0,   offset: -0.45, arc: Math.PI * 0.60, type: 'swing', dmgMult: 1.0 },
+            { delay: 90,  offset:  0.00, arc: Math.PI * 0.60, type: 'swing', dmgMult: 1.0 },
+            { delay: 180, offset:  0.45, arc: Math.PI * 0.60, type: 'swing', dmgMult: 1.0 },
+            // simultaneous dual stabs (narrow arcs) on the first beat
+            { delay: 0,   offset: -0.18, arc: Math.PI * 0.22, type: 'stab', dmgMult: 0.85 },
+            { delay: 0,   offset:  0.18, arc: Math.PI * 0.22, type: 'stab', dmgMult: 0.85 }
+          ]
+        }
+      },
+      {
+        title: 'Katana IV',
+        description: 'Multi-angle swings + triple stabs (chaos).',
+        stats: {
+          cooldown: 760,
+          damage: 24,
+          range: 185,
+          slashPattern: [
+            // 5-beat spin
+            { delay: 0,   offset: -0.55, arc: Math.PI * 0.62, type: 'swing', dmgMult: 1.0 },
+            { delay: 70,  offset: -0.20, arc: Math.PI * 0.62, type: 'swing', dmgMult: 1.0 },
+            { delay: 140, offset:  0.15, arc: Math.PI * 0.62, type: 'swing', dmgMult: 1.0 },
+            { delay: 210, offset:  0.50, arc: Math.PI * 0.62, type: 'swing', dmgMult: 1.0 },
+            { delay: 280, offset:  0.85, arc: Math.PI * 0.62, type: 'swing', dmgMult: 1.0 },
+
+            // triple stabs at different angles (simultaneous)
+            { delay: 0, offset: 0.00, arc: Math.PI * 0.18, type: 'stab', dmgMult: 0.95 },
+            { delay: 0, offset: 0.28, arc: Math.PI * 0.18, type: 'stab', dmgMult: 0.95 },
+            { delay: 0, offset: -0.28, arc: Math.PI * 0.18, type: 'stab', dmgMult: 0.95 }
+          ]
+        }
+      },
+      {
+        title: 'Katana V',
+        description: 'Rift combo: big spin + quad stabs from many angles.',
+        stats: {
+          cooldown: 700,
+          damage: 28,
+          range: 200,
+          slashPattern: [
+            // long spin (screen-filling melee chaos)
+            { delay: 0,   offset: -0.80, arc: Math.PI * 0.70, type: 'swing', dmgMult: 1.0 },
+            { delay: 60,  offset: -0.45, arc: Math.PI * 0.70, type: 'swing', dmgMult: 1.0 },
+            { delay: 120, offset: -0.10, arc: Math.PI * 0.70, type: 'swing', dmgMult: 1.0 },
+            { delay: 180, offset:  0.25, arc: Math.PI * 0.70, type: 'swing', dmgMult: 1.0 },
+            { delay: 240, offset:  0.60, arc: Math.PI * 0.70, type: 'swing', dmgMult: 1.0 },
+            { delay: 300, offset:  0.95, arc: Math.PI * 0.70, type: 'swing', dmgMult: 1.0 },
+
+            // quad stabs at cardinal-ish angles (simultaneous)
+            { delay: 0, offset: 0.00, arc: Math.PI * 0.16, type: 'stab', dmgMult: 1.05 },
+            { delay: 0, offset: Math.PI * 0.50, arc: Math.PI * 0.16, type: 'stab', dmgMult: 1.05 },
+            { delay: 0, offset: Math.PI, arc: Math.PI * 0.16, type: 'stab', dmgMult: 1.05 },
+            { delay: 0, offset: Math.PI * 1.50, arc: Math.PI * 0.16, type: 'stab', dmgMult: 1.05 }
+          ]
+        }
+      }
     ]
   },
+
   {
     id: 'SMG',
     name: 'SMG',
@@ -85,92 +194,32 @@ const WEAPONS = [
 ];
 
 const UPGRADES = [
-  {
-    id: 'REGEN',
-    title: 'Nanite Regen',
-    description: '+0.35 HP/sec',
-    apply: stats => ({ ...stats, regen: stats.regen + 0.35 })
-  },
-  {
-    id: 'MAX_HP',
-    title: 'Reinforced Plating',
-    description: '+30 Max HP',
-    apply: stats => ({ ...stats, maxHp: stats.maxHp + 30, hp: stats.hp + 30 })
-  },
-  {
-    id: 'DAMAGE',
-    title: 'Damage Boost',
-    description: '+10% damage',
-    apply: stats => ({ ...stats, damageMult: stats.damageMult * 1.1 })
-  },
-  {
-    id: 'ATTACK_SPEED',
-    title: 'Attack Speed',
-    description: '+10% rate',
-    apply: stats => ({ ...stats, attackSpeed: stats.attackSpeed * 1.1 })
-  },
-  {
-    id: 'MOVE_SPEED',
-    title: 'Kinetic Thrusters',
-    description: '+8% move speed',
-    apply: stats => ({ ...stats, moveSpeed: stats.moveSpeed * 1.08 })
-  }
+  { id: 'REGEN', title: 'Nanite Regen', description: '+0.35 HP/sec', apply: s => ({ ...s, regen: s.regen + 0.35 }) },
+  { id: 'MAX_HP', title: 'Reinforced Plating', description: '+30 Max HP', apply: s => ({ ...s, maxHp: s.maxHp + 30, hp: s.hp + 30 }) },
+  { id: 'DAMAGE', title: 'Damage Boost', description: '+10% damage', apply: s => ({ ...s, damageMult: s.damageMult * 1.1 }) },
+  { id: 'ATTACK_SPEED', title: 'Attack Speed', description: '+10% rate', apply: s => ({ ...s, attackSpeed: s.attackSpeed * 1.1 }) },
+  { id: 'MOVE_SPEED', title: 'Kinetic Thrusters', description: '+8% move speed', apply: s => ({ ...s, moveSpeed: (s.moveSpeed || 1) * 1.08 }) }
 ];
 
-const spawnEnemy = (player, difficulty) => {
+const spawnEnemy = (difficulty) => {
   const side = Math.floor(Math.random() * 4);
   const margin = 20;
   const edgeX = Math.random() * (ARENA_SIZE - margin * 2) + margin;
   const edgeY = Math.random() * (ARENA_SIZE - margin * 2) + margin;
   const x = side === 0 ? margin : side === 1 ? ARENA_SIZE - margin : edgeX;
   const y = side === 2 ? margin : side === 3 ? ARENA_SIZE - margin : edgeY;
+
   const roll = Math.random();
   if (roll > 0.92) {
-    return {
-      id: Math.random(),
-      type: 'brute',
-      x,
-      y,
-      hp: 120 + difficulty * 14,
-      maxHp: 120 + difficulty * 14,
-      speed: 1.1 + difficulty * 0.04,
-      size: 52,
-      xp: 24,
-      contactDamage: 16,
-      color: '#ff6b6b'
-    };
+    return { id: Math.random(), type: 'brute', x, y, hp: 120 + difficulty * 14, maxHp: 120 + difficulty * 14, speed: 1.1 + difficulty * 0.04, size: 52, xp: 24, contactDamage: 16, color: '#ff6b6b' };
   }
   if (roll > 0.7) {
-    return {
-      id: Math.random(),
-      type: 'sprinter',
-      x,
-      y,
-      hp: 30 + difficulty * 5,
-      maxHp: 30 + difficulty * 5,
-      speed: 3.1 + difficulty * 0.1,
-      size: 22,
-      xp: 12,
-      contactDamage: 10,
-      color: '#ff2fd2'
-    };
+    return { id: Math.random(), type: 'sprinter', x, y, hp: 30 + difficulty * 5, maxHp: 30 + difficulty * 5, speed: 3.1 + difficulty * 0.1, size: 22, xp: 12, contactDamage: 10, color: '#ff2fd2' };
   }
-  return {
-    id: Math.random(),
-    type: 'grunt',
-    x,
-    y,
-    hp: 55 + difficulty * 9,
-    maxHp: 55 + difficulty * 9,
-    speed: 1.9 + difficulty * 0.06,
-    size: 28,
-    xp: 14,
-    contactDamage: 12,
-    color: '#ff007a'
-  };
+  return { id: Math.random(), type: 'grunt', x, y, hp: 55 + difficulty * 9, maxHp: 55 + difficulty * 9, speed: 1.9 + difficulty * 0.06, size: 28, xp: 14, contactDamage: 12, color: '#ff007a' };
 };
 
-const spawnBoss = player => ({
+const spawnBoss = (player) => ({
   id: 'boss',
   type: 'boss',
   x: Math.min(Math.max(player.x + 380, 100), ARENA_SIZE - 100),
@@ -184,15 +233,13 @@ const spawnBoss = player => ({
   color: '#ffda6b'
 });
 
-const buildWeaponStats = (weapon, level) => {
-  return weapon.levels
-    .slice(0, level)
-    .reduce((acc, entry) => ({ ...acc, ...entry.stats }), {});
-};
+const buildWeaponStats = (weapon, level) =>
+  weapon.levels.slice(0, level).reduce((acc, entry) => ({ ...acc, ...entry.stats }), {});
 
 const rollUpgradeOptions = (ownedWeapons, weaponLevels, stats) => {
   const upgrades = [...UPGRADES].map(u => ({ ...u }));
   const unowned = WEAPONS.filter(w => !ownedWeapons.includes(w.id));
+
   if (unowned.length) {
     const weaponPick = unowned[Math.floor(Math.random() * unowned.length)];
     upgrades.push({
@@ -203,6 +250,7 @@ const rollUpgradeOptions = (ownedWeapons, weaponLevels, stats) => {
       apply: s => ({ ...s })
     });
   }
+
   ownedWeapons.forEach(id => {
     const level = weaponLevels[id] || 1;
     if (level < 5) {
@@ -218,23 +266,19 @@ const rollUpgradeOptions = (ownedWeapons, weaponLevels, stats) => {
       });
     }
   });
+
   const picks = [];
   while (picks.length < 3 && upgrades.length) {
     const idx = Math.floor(Math.random() * upgrades.length);
     picks.push(upgrades.splice(idx, 1)[0]);
   }
   if (picks.length < 3) {
-    picks.push({
-      id: 'HEAL',
-      title: 'Repair Kit',
-      description: 'Restore 40 HP',
-      apply: s => ({ ...s, hp: Math.min(s.maxHp, s.hp + 40) })
-    });
+    picks.push({ id: 'HEAL', title: 'Repair Kit', description: 'Restore 40 HP', apply: s => ({ ...s, hp: Math.min(s.maxHp, s.hp + 40) }) });
   }
   return picks.map(option => ({ ...option, statsSnapshot: stats }));
 };
 
-const mergeOrbs = orbs => {
+const mergeOrbs = (orbs) => {
   const merged = [];
   orbs.forEach(o => {
     const target = merged.find(m => Math.hypot(m.x - o.x, m.y - o.y) < 20);
@@ -273,35 +317,59 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
   const lastSpawn = useRef(0);
   const elapsed = useRef(0);
   const lastDamage = useRef(0);
+
   const paused = upgradeOptions.length > 0 || victory || defeat;
+
+  // ---- refs to avoid stale state inside interval ----
+  const pausedRef = useRef(paused);
+  const playerRef = useRef(player);
+  const statsRef = useRef(stats);
+  const enemiesRef = useRef(enemies);
+  const bulletsRef = useRef(bullets);
+  const slashesRef = useRef(slashes);
+  const orbsRef = useRef(orbs);
+  const xpRef = useRef(xp);
+  const xpTargetRef = useRef(xpTarget);
+  const selectedWeaponsRef = useRef(selectedWeapons);
+  const weaponLevelsRef = useRef(weaponLevels);
+  const bossSpawnedRef = useRef(bossSpawned);
+
+  useEffect(() => { pausedRef.current = paused; }, [paused]);
+  useEffect(() => { playerRef.current = player; }, [player]);
+  useEffect(() => { statsRef.current = stats; }, [stats]);
+  useEffect(() => { enemiesRef.current = enemies; }, [enemies]);
+  useEffect(() => { bulletsRef.current = bullets; }, [bullets]);
+  useEffect(() => { slashesRef.current = slashes; }, [slashes]);
+  useEffect(() => { orbsRef.current = orbs; }, [orbs]);
+  useEffect(() => { xpRef.current = xp; }, [xp]);
+  useEffect(() => { xpTargetRef.current = xpTarget; }, [xpTarget]);
+  useEffect(() => { selectedWeaponsRef.current = selectedWeapons; }, [selectedWeapons]);
+  useEffect(() => { weaponLevelsRef.current = weaponLevels; }, [weaponLevels]);
+  useEffect(() => { bossSpawnedRef.current = bossSpawned; }, [bossSpawned]);
 
   const weaponChoices = useMemo(() => WEAPONS, []);
   const crewDamageMult = useMemo(() => crew.reduce((acc, c) => acc * c.trait.dmg, 1), [crew]);
 
   useEffect(() => {
     if (victory) {
-      const timer = setTimeout(() => onVictory(), 1800);
-      return () => clearTimeout(timer);
+      const t = setTimeout(() => onVictory(), 1800);
+      return () => clearTimeout(t);
     }
   }, [victory, onVictory]);
 
   useEffect(() => {
     if (defeat) {
-      const timer = setTimeout(() => onExit(), 1800);
-      return () => clearTimeout(timer);
+      const t = setTimeout(() => onExit(), 1800);
+      return () => clearTimeout(t);
     }
   }, [defeat, onExit]);
 
   useEffect(() => {
-    if (stats.hp <= 0 && !defeat) {
-      setDefeat(true);
-    }
+    if (stats.hp <= 0 && !defeat) setDefeat(true);
   }, [stats.hp, defeat]);
 
   useEffect(() => {
-    const handleKey = e => {
-      keys.current[e.key.toLowerCase()] = e.type === 'keydown';
-    };
+    const handleKey = e => { keys.current[e.key.toLowerCase()] = e.type === 'keydown'; };
     window.addEventListener('keydown', handleKey);
     window.addEventListener('keyup', handleKey);
     return () => {
@@ -315,76 +383,80 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
 
     const loop = setInterval(() => {
       if (pausedRef.current) return;
-      const currentPlayer = playerRef.current;
-      const currentStats = statsRef.current;
-      const currentEnemies = enemiesRef.current;
-      const currentBullets = bulletsRef.current;
-      const currentSlashes = slashesRef.current;
-      const currentXp = xpRef.current;
-      const currentXpTarget = xpTargetRef.current;
-      const currentWeapons = selectedWeaponsRef.current;
-      const currentWeaponLevels = weaponLevelsRef.current;
+
       elapsed.current += 16;
       setProgress(Math.min(1, elapsed.current / BOSS_TIME));
-      setStats(s => {
-        if (s.regen <= 0) return s;
-        return { ...s, hp: Math.min(s.maxHp, s.hp + s.regen * 0.016) };
-      });
 
-      setPlayer(p => {
-        let nx = p.x;
-        let ny = p.y;
+      // regen
+      if (statsRef.current.regen > 0) {
+        setStats(prev => ({ ...prev, hp: Math.min(prev.maxHp, prev.hp + prev.regen * 0.016) }));
+      }
+
+      // move player + camera
+      setPlayer(prev => {
+        let nx = prev.x;
+        let ny = prev.y;
+
         const baseSpeed = 5.6;
         const speedMult = crew.reduce((acc, c) => acc * c.trait.spd, 1);
-        const finalSpeed = baseSpeed * Math.min(speedMult, 1.4) * stats.moveSpeed;
+        const finalSpeed = baseSpeed * Math.min(speedMult, 1.4) * (statsRef.current.moveSpeed || 1);
+
         if (keys.current.w) ny -= finalSpeed;
         if (keys.current.s) ny += finalSpeed;
         if (keys.current.a) nx -= finalSpeed;
         if (keys.current.d) nx += finalSpeed;
+
         nx = Math.max(0, Math.min(ARENA_SIZE, nx));
         ny = Math.max(0, Math.min(ARENA_SIZE, ny));
+
         setCamera({ x: nx - window.innerWidth / 2, y: ny - window.innerHeight / 2 });
         return { x: nx, y: ny };
       });
 
+      const p = playerRef.current;
+
+      // =========================
+      // ENEMY SPAWN (LOCAL, NOT ERASED)
+      // =========================
       const difficulty = tileDifficulty + Math.floor(elapsed.current / 20000);
       const spawnInterval = Math.max(200, 1500 - difficulty * 90);
+
+      let nextEnemies = [...enemiesRef.current];
+
       if (elapsed.current - lastSpawn.current > spawnInterval) {
         lastSpawn.current = elapsed.current;
-        setEnemies(e => {
-          const count = Math.min(2 + Math.floor(difficulty / 2), 12);
-          const next = [...e];
-          for (let i = 0; i < count; i += 1) {
-            next.push(spawnEnemy(currentPlayer, difficulty));
-          }
-          return next;
-        });
+        const count = Math.min(2 + Math.floor(difficulty / 2), 12);
+        for (let i = 0; i < count; i += 1) nextEnemies.push(spawnEnemy(difficulty));
       }
 
-      if (!bossSpawned && elapsed.current > BOSS_TIME) {
+      if (!bossSpawnedRef.current && elapsed.current > BOSS_TIME) {
+        bossSpawnedRef.current = true;
         setBossSpawned(true);
-        setEnemies(e => [...e, spawnBoss(currentPlayer)]);
+        nextEnemies.push(spawnBoss(p));
       }
 
-      const movedEnemies = enemies.map(en => {
-        const dx = player.x - en.x;
-        const dy = player.y - en.y;
+      // move enemies
+      const movedEnemies = nextEnemies.map(en => {
+        const dx = p.x - en.x;
+        const dy = p.y - en.y;
         const dist = Math.hypot(dx, dy) || 1;
-        return {
-          ...en,
-          x: en.x + (dx / dist) * en.speed,
-          y: en.y + (dy / dist) * en.speed
-        };
+        return { ...en, x: en.x + (dx / dist) * en.speed, y: en.y + (dy / dist) * en.speed };
       });
 
-      const movedBullets = bullets
+      // bullets
+      const movedBullets = bulletsRef.current
         .map(b => ({ ...b, x: b.x + b.vx, y: b.y + b.vy, life: b.life - 16 }))
         .filter(b => b.x > 0 && b.x < ARENA_SIZE && b.y > 0 && b.y < ARENA_SIZE && b.life > 0);
 
-      const movedSlashes = slashes.filter(sl => sl.life > 0).map(sl => ({ ...sl, life: sl.life - 16 }));
+      // slashes (age-based for delayed hits)
+      const movedSlashes = slashesRef.current
+        .map(sl => ({ ...sl, age: (sl.age || 0) + 16 }))
+        .filter(sl => (sl.age || 0) <= sl.life);
 
+      // bullet hits (pierce)
       const bulletHits = new Map();
       const nextBullets = movedBullets.map(b => ({ ...b }));
+
       nextBullets.forEach(b => {
         if (b.hit) return;
         movedEnemies.forEach(en => {
@@ -393,22 +465,35 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
           if (dist < en.size * 0.7) {
             bulletHits.set(en.id, (bulletHits.get(en.id) || 0) + b.damage);
             b.pierce = (b.pierce ?? 0) - 1;
-            if (b.pierce < 0) {
-              b.hit = true;
-            }
+            if (b.pierce < 0) b.hit = true;
           }
         });
       });
 
+      // apply damage (bullets + sword arcs)
       const withDamage = movedEnemies.map(en => {
         let totalDamage = bulletHits.get(en.id) || 0;
+
         movedSlashes.forEach(sl => {
-          const dist = Math.hypot(sl.x - en.x, sl.y - en.y);
-          if (dist < sl.range) totalDamage += sl.damage;
+          const activeStart = sl.delay || 0;
+          const activeEnd = activeStart + (sl.activeMs || 120);
+          if ((sl.age || 0) < activeStart || (sl.age || 0) > activeEnd) return;
+
+          const dx = en.x - sl.x;
+          const dy = en.y - sl.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist > sl.range) return;
+
+          const enemyAngle = Math.atan2(en.y - sl.y, en.x - sl.x);
+          if (!withinArc(sl.angle, sl.arc, enemyAngle)) return;
+
+          totalDamage += sl.damage;
         });
-        if (totalDamage <= 0) return en;
-        return { ...en, hp: en.hp - totalDamage };
+
+        return totalDamage > 0 ? { ...en, hp: en.hp - totalDamage } : en;
       });
+
+      // deaths -> orbs
       const alive = [];
       const newOrbs = [];
       withDamage.forEach(en => {
@@ -424,122 +509,159 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
               value: Math.ceil(en.xp / orbCount)
             });
           }
-          if (en.type === 'boss') {
-            setVictory(true);
-          }
+          if (en.type === 'boss') setVictory(true);
         }
       });
-      if (newOrbs.length) setOrbs(o => [...o, ...newOrbs]);
-      setEnemies(alive);
 
+      setEnemies(alive);
       setBullets(nextBullets.filter(b => !b.hit));
       setSlashes(movedSlashes);
+      if (newOrbs.length) setOrbs(prev => [...prev, ...newOrbs]);
 
+      // orbs: attract + merge + pickup
       setOrbs(prev => {
+        const pp = playerRef.current;
+
         const drifted = prev.map(o => {
-          const dx = player.x - o.x;
-          const dy = player.y - o.y;
+          const dx = pp.x - o.x;
+          const dy = pp.y - o.y;
           const dist = Math.hypot(dx, dy);
-          if (dist < 110) {
+          if (dist > 0 && dist < 110) {
             return { ...o, x: o.x + (dx / dist) * 2.6, y: o.y + (dy / dist) * 2.6 };
           }
           return o;
         });
+
         const merged = mergeOrbs(drifted);
-        return merged.filter(o => {
-          const dist = Math.hypot(o.x - player.x, o.y - player.y);
-          if (dist < 34) {
-            setXp(x => x + o.value);
-            return false;
-          }
-          return true;
+
+        const kept = [];
+        let gained = 0;
+        merged.forEach(o => {
+          const dist = Math.hypot(o.x - pp.x, o.y - pp.y);
+          if (dist < 34) gained += o.value;
+          else kept.push(o);
         });
+
+        if (gained > 0) setXp(x => x + gained);
+        return kept;
       });
 
-      if (xp >= xpTarget) {
-        setXp(x => x - xpTarget);
+      // level up
+      if (xpRef.current >= xpTargetRef.current) {
+        setXp(x => x - xpTargetRef.current);
         setLevel(l => l + 1);
         setXpTarget(t => Math.floor(t * 1.4));
-        setUpgradeOptions(rollUpgradeOptions(selectedWeapons, weaponLevels, stats));
+        setUpgradeOptions(rollUpgradeOptions(selectedWeaponsRef.current, weaponLevelsRef.current, statsRef.current));
       }
 
+      // contact damage
       const now = Date.now();
       if (now - lastDamage.current > 260) {
         let totalDamage = 0;
-        movedEnemies.forEach(en => {
-          const dist = Math.hypot(en.x - player.x, en.y - player.y);
-          if (dist < en.size * 0.55 + 16) {
-            totalDamage += en.contactDamage || 8;
-          }
+        const pp = playerRef.current;
+        alive.forEach(en => {
+          const dist = Math.hypot(en.x - pp.x, en.y - pp.y);
+          if (dist < en.size * 0.55 + 16) totalDamage += en.contactDamage || 8;
         });
         if (totalDamage > 0) {
           lastDamage.current = now;
-          setStats(s => ({ ...s, hp: Math.max(0, s.hp - totalDamage) }));
+          setStats(prev => ({ ...prev, hp: Math.max(0, prev.hp - totalDamage) }));
         }
       }
 
-      selectedWeapons.forEach(id => {
+      // firing (uses alive enemies so targeting feels responsive)
+      const now2 = Date.now();
+      const pp = playerRef.current;
+      const currentEnemies = alive;
+      if (!currentEnemies.length) return;
+
+      selectedWeaponsRef.current.forEach(id => {
         const weapon = WEAPONS.find(w => w.id === id);
         if (!weapon) return;
-        const level = weaponLevels[id] || 1;
-        const weaponStats = buildWeaponStats(weapon, level);
+
+        const lvl = weaponLevelsRef.current[id] || 1;
+        const wStats = buildWeaponStats(weapon, lvl);
+
         const last = lastFire.current[id] || 0;
-        const fireCooldown = weaponStats.cooldown / stats.attackSpeed;
-        if (now - last < fireCooldown) return;
-        lastFire.current[id] = now;
-        if (!movedEnemies.length) return;
+        const fireCooldown = (wStats.cooldown || 600) / (statsRef.current.attackSpeed || 1);
+        if (now2 - last < fireCooldown) return;
+        lastFire.current[id] = now2;
+
         const target =
           weapon.targeting === 'random'
-            ? movedEnemies[Math.floor(Math.random() * movedEnemies.length)]
-            : movedEnemies.reduce((closest, en) => {
-                const dist = Math.hypot(en.x - player.x, en.y - player.y);
+            ? currentEnemies[Math.floor(Math.random() * currentEnemies.length)]
+            : currentEnemies.reduce((closest, en) => {
+                const d = Math.hypot(en.x - pp.x, en.y - pp.y);
                 if (!closest) return en;
-                const prevDist = Math.hypot(closest.x - player.x, closest.y - player.y);
-                return dist < prevDist ? en : closest;
+                const cd = Math.hypot(closest.x - pp.x, closest.y - pp.y);
+                return d < cd ? en : closest;
               }, null);
+
         if (!target) return;
-        const angle = Math.atan2(target.y - player.y, target.x - player.x);
+
+        const baseAngle = Math.atan2(target.y - pp.y, target.x - pp.x);
+
         if (weapon.id === 'KATANA') {
-          const slashesToAdd = [];
-          for (let i = 0; i < weaponStats.slashCount; i += 1) {
-            slashesToAdd.push({
+          const pattern = (wStats.slashPattern && wStats.slashPattern.length)
+            ? wStats.slashPattern
+            : [{ delay: 0, offset: 0, arc: Math.PI * 0.55, type: 'swing', dmgMult: 1 }];
+
+          const baseDamage = (wStats.damage || 10) * (statsRef.current.damageMult || 1) * crewDamageMult;
+          const baseRange = wStats.range || 150;
+
+          const toAdd = pattern.map(pat => {
+            const dmg = baseDamage * (pat.dmgMult || 1);
+            const arc = pat.arc || Math.PI * 0.55;
+            const delay = pat.delay || 0;
+
+            // stab = shorter active window (snappy), swing = longer
+            const activeMs = pat.type === 'stab' ? 80 : 120;
+
+            return {
               id: Math.random(),
-              x: player.x,
-              y: player.y,
-              range: weaponStats.range,
-              damage: weaponStats.damage * stats.damageMult * crewDamageMult,
-              life: 220
-            });
-          }
-          setSlashes(s => [...s, ...slashesToAdd]);
+              x: pp.x,
+              y: pp.y,
+              range: baseRange,
+              damage: dmg,
+              angle: baseAngle + (pat.offset || 0),
+              arc,
+              delay,
+              activeMs,
+              age: 0,
+              life: delay + 220,
+              type: pat.type || 'swing'
+            };
+          });
+
+          setSlashes(prev => [...prev, ...toAdd]);
         } else {
-          const pellets = weaponStats.pellets || 1;
-          const nextBullets = [];
+          const pellets = wStats.pellets || 1;
+          const next = [];
           for (let i = 0; i < pellets; i += 1) {
-            const spread = (Math.random() - 0.5) * weaponStats.spread;
-            const a = angle + spread;
-            nextBullets.push({
+            const spread = (Math.random() - 0.5) * (wStats.spread || 0);
+            const a = baseAngle + spread;
+            next.push({
               id: Math.random(),
-              x: player.x,
-              y: player.y,
-              vx: Math.cos(a) * weaponStats.bulletSpeed,
-              vy: Math.sin(a) * weaponStats.bulletSpeed,
-              damage: weaponStats.damage * stats.damageMult * crewDamageMult,
+              x: pp.x,
+              y: pp.y,
+              vx: Math.cos(a) * wStats.bulletSpeed,
+              vy: Math.sin(a) * wStats.bulletSpeed,
+              damage: (wStats.damage || 1) * (statsRef.current.damageMult || 1) * crewDamageMult,
               color: weapon.color,
               life: 1000,
-              width: weaponStats.width,
-              height: weaponStats.height,
-              pierce: weaponStats.pierce ?? 0,
-              flashy: weaponStats.flashy
+              width: wStats.width,
+              height: wStats.height,
+              pierce: wStats.pierce ?? 0,
+              flashy: wStats.flashy
             });
           }
-          setBullets(b => [...b, ...nextBullets]);
+          setBullets(prev => [...prev, ...next]);
         }
       });
     }, 16);
 
     return () => clearInterval(loop);
-  }, [crew, paused, player, selectedWeapons, enemies, bullets, slashes, stats, xp, xpTarget, bossSpawned, weaponLevels, crewDamageMult, tileDifficulty]);
+  }, [crew, selectedWeapons.length, tileDifficulty, crewDamageMult]);
 
   const chooseUpgrade = option => {
     setStats(s => option.apply(s));
@@ -568,7 +690,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
             {weaponChoices.map(w => (
               <button key={w.id} className="weapon-card" onClick={() => selectWeapon(w.id)}>
                 <span>{w.name}</span>
-                <small>{w.id === 'KATANA' ? 'Melee strike' : 'Ranged weapon'}</small>
+                <small>{w.id === 'KATANA' ? 'Melee sword cuts' : 'Ranged weapon'}</small>
               </button>
             ))}
           </div>
@@ -588,18 +710,48 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
           <div className="progress-bar-fill" style={{ width: `${progress * 100}%` }} />
           <span>Boss {Math.floor(progress * 100)}%</span>
         </div>
-        {bossSpawned && !victory && (
-          <div className="boss-warning">BOSS ENGAGED</div>
-        )}
+        {bossSpawned && !victory && <div className="boss-warning">BOSS ENGAGED</div>}
       </div>
 
       <div className="world-container" style={{ transform: `translate(${-camera.x}px,${-camera.y}px)` }}>
         <div className="world-border" />
         <div className="player-tracer" style={{ left: player.x - 60, top: player.y - 60 }} />
         <div className="player-sprite" style={{ left: player.x, top: player.y }} />
-        {slashes.map(s => (
-          <div key={s.id} className="katana-slash" style={{ left: s.x, top: s.y }} />
-        ))}
+
+        {/* Sword visuals: directional conic wedge (no CSS required) */}
+        {slashes.map(s => {
+          const size = Math.max(170, s.range * 2);
+          const start = -s.arc / 2;
+          const end = s.arc / 2;
+
+          // Hide before delay so it feels like timed hits
+          const visible = (s.age || 0) >= (s.delay || 0);
+
+          return (
+            <div
+              key={s.id}
+              style={{
+                position: 'absolute',
+                left: s.x,
+                top: s.y,
+                width: size,
+                height: size,
+                transform: `translate(-50%, -50%) rotate(${s.angle}rad)`,
+                borderRadius: '50%',
+                pointerEvents: 'none',
+                opacity: visible ? (s.type === 'stab' ? 0.95 : 0.75) : 0,
+                // cone wedge + ring mask = sword arc
+                background: `conic-gradient(from ${start}rad, rgba(0,242,255,0) 0rad, rgba(0,242,255,0.95) ${(end - start) * 0.45}rad, rgba(0,242,255,0.15) ${(end - start)}rad, rgba(0,242,255,0) 0rad)`,
+                WebkitMask: 'radial-gradient(closest-side, transparent 72%, #000 74%, #000 84%, transparent 86%)',
+                mask: 'radial-gradient(closest-side, transparent 72%, #000 74%, #000 84%, transparent 86%)',
+                filter: s.type === 'stab'
+                  ? 'drop-shadow(0 0 16px rgba(0,242,255,0.75))'
+                  : 'drop-shadow(0 0 10px rgba(0,242,255,0.55))'
+              }}
+            />
+          );
+        })}
+
         {bullets.map(b => (
           <div
             key={b.id}
@@ -607,6 +759,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
             style={{ left: b.x, top: b.y, background: b.color, width: b.width, height: b.height }}
           />
         ))}
+
         {orbs.map(o => (
           <div
             key={o.id}
@@ -623,6 +776,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
             }}
           />
         ))}
+
         {enemies.map(e => (
           <div
             key={e.id}
