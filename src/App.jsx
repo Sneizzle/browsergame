@@ -36,6 +36,10 @@ export default function App() {
   const [clearedHexes, setClearedHexes] = useState({});
   const [crewXp, setCrewXp] = useState(0);
 
+  // ✅ NEW: resources currency + combat context (minimal + safe)
+  const [resources, setResources] = useState(0);
+  const [combatCtx, setCombatCtx] = useState(null);
+
   const hexGrid = focusPlanet ? (() => {
     const arr = [];
     const hexWidth = 50;
@@ -55,6 +59,13 @@ export default function App() {
   })() : [];
 
   const dropToHex = async () => {
+    // ✅ NEW: lock-in the exact planet/tile at deploy time (fixes cleared tile not sticking)
+    setCombatCtx({
+      planetId: focusPlanet?.id,
+      hexId: selectedHex,
+      reward: selectedHexInfo?.reward || 0
+    });
+
     try {
       await fetch(API_URL, {
         method: 'POST',
@@ -66,16 +77,27 @@ export default function App() {
   };
 
   const handleVictory = () => {
-    if (focusPlanet && selectedHex) {
+    // ✅ NEW: mark cleared + award XP/resources ONLY ONCE, using locked combatCtx
+    if (combatCtx?.planetId && combatCtx?.hexId) {
       setClearedHexes(prev => {
-        const current = new Set(prev[focusPlanet.id] || []);
-        current.add(selectedHex);
-        return { ...prev, [focusPlanet.id]: Array.from(current) };
+        const current = new Set(prev[combatCtx.planetId] || []);
+        const already = current.has(combatCtx.hexId);
+
+        if (!already) {
+          current.add(combatCtx.hexId);
+
+          // award only the first clear
+          const reward = combatCtx.reward || 0;
+          if (reward > 0) {
+            setCrewXp(xp => xp + reward);
+            setResources(r => r + reward);
+          }
+        }
+
+        return { ...prev, [combatCtx.planetId]: Array.from(current) };
       });
     }
-    if (selectedHexInfo) {
-      setCrewXp(xp => xp + selectedHexInfo.reward);
-    }
+
     setView('galaxy');
   };
 
@@ -109,13 +131,20 @@ export default function App() {
       )}
 
       {view === 'galaxy' && (
-        <div className="galaxy-container" onClick={() => { setFocusPlanet(null); setSelectedHex(null); setSelectedHexInfo(null); }}>
+        <div
+          className="galaxy-container"
+          onClick={() => { setFocusPlanet(null); setSelectedHex(null); setSelectedHexInfo(null); }}
+        >
           <div className="hud">
             <div>LIVES: {lives}</div>
             <div>CXP: {crewXp}</div>
+            <div>RES: {resources}</div>
           </div>
+
           {PLANETS.map(p => (
-            <div key={p.id} className={`planet ${focusPlanet?.id === p.id ? 'focused' : ''}`}
+            <div
+              key={p.id}
+              className={`planet ${focusPlanet?.id === p.id ? 'focused' : ''}`}
               style={{
                 width: focusPlanet?.id === p.id ? '620px' : '100px',
                 height: focusPlanet?.id === p.id ? '620px' : '100px',
@@ -125,13 +154,29 @@ export default function App() {
                 background: focusPlanet?.id === p.id ? '#050a15' : p.color,
                 border: focusPlanet?.id === p.id ? `4px solid ${p.color}` : 'none'
               }}
-              onClick={e => { e.stopPropagation(); if (!focusPlanet) setFocusPlanet(p); }}
+              // ✅ FIX: switching planets now always works; clicking focused planet defocuses
+              onClick={e => {
+                e.stopPropagation();
+
+                if (focusPlanet?.id === p.id) {
+                  setFocusPlanet(null);
+                  setSelectedHex(null);
+                  setSelectedHexInfo(null);
+                  return;
+                }
+
+                setFocusPlanet(p);
+                setSelectedHex(null);
+                setSelectedHexInfo(null);
+              }}
             >
               <div className="hex-grid-container">
                 {hexGrid.map(h => {
                   const cleared = (clearedHexes[p.id] || []).includes(h.id);
                   return (
-                    <div key={h.id} className={`hex-unit ${selectedHex === h.id ? 'active' : ''} ${cleared ? 'cleared' : ''}`}
+                    <div
+                      key={h.id}
+                      className={`hex-unit ${selectedHex === h.id ? 'active' : ''} ${cleared ? 'cleared' : ''}`}
                       style={{ left: `calc(50% + ${h.x}px)`, top: `calc(50% + ${h.y}px)`, transform: 'translate(-50%,-50%)' }}
                       onClick={e => {
                         e.stopPropagation();
@@ -147,11 +192,17 @@ export default function App() {
               </div>
             </div>
           ))}
+
           {focusPlanet && selectedHex && (
-            <button className="scifi-btn" style={{ position: 'absolute', bottom: 60, left: '50%', transform: 'translateX(-50%)' }} onClick={dropToHex}>
+            <button
+              className="scifi-btn"
+              style={{ position: 'absolute', bottom: 60, left: '50%', transform: 'translateX(-50%)' }}
+              onClick={dropToHex}
+            >
               DEPLOY {selectedHex}
             </button>
           )}
+
           {focusPlanet && selectedHexInfo && (
             <div className="tile-panel" onClick={e => e.stopPropagation()}>
               <h3>{focusPlanet.name} / TILE {selectedHex}</h3>
@@ -166,6 +217,10 @@ export default function App() {
               <div className="tile-row">
                 <span>Squad CXP</span>
                 <strong>{crewXp}</strong>
+              </div>
+              <div className="tile-row">
+                <span>Resources</span>
+                <strong>{resources}</strong>
               </div>
             </div>
           )}
