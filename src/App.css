@@ -541,3 +541,11 @@ body {
   70%{opacity:0.95; transform:translate(-50%,-50%) scale(1.25);}
   100%{opacity:0; transform:translate(-50%,-50%) scale(1.70);}
 }
+/* --- FORCE CLEARED TILE TO STAY GREEN (wins over hover/active) --- */
+.hex-unit.cleared,
+.hex-unit.cleared:hover,
+.hex-unit.cleared.active {
+  background: rgba(0, 255, 136, 0.4) !important;
+  box-shadow: inset 0 0 18px rgba(0, 255, 136, 0.9) !important;
+  filter: brightness(1.25) !important;
+}
