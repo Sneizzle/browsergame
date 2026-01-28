@@ -596,14 +596,14 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
     const e = elapsed.current;
 
     // ACT1 -> SWARM (power fantasy + recovery)
-    if (e > 32000 && !flagsRef.current.swarm1) {
+    if (e > 45000 && !flagsRef.current.swarm1) {
       flagsRef.current.swarm1 = true;
       startEvent('SWARM');
       juicePunch(0.65, 0.65);
     }
 
     // positional twist: wall / encroaching ring
-    if (e > 62000 && !flagsRef.current.wall1) {
+    if (e > 72000 && !flagsRef.current.wall1) {
       flagsRef.current.wall1 = true;
       startEvent('WALL');
       juicePunch(0.85, 0.8);
@@ -1401,7 +1401,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
       }
 
       // -------------------- FIRING (skip during hitstop) --------------------
-      if (inHitstop || freezeWorld) return;
+      if (inHitstop) return;
 
       const now3 = Date.now();
       const pp = playerRef.current;
