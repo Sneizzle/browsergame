@@ -1,3 +1,4 @@
+// App.jsx
 import React, { useState } from 'react';
 import './App.css';
 import MainMenu from "./MainMenu.jsx";
@@ -6,7 +7,16 @@ import Combat from "./Combat.jsx";
 import droppod from "./assets/droppod.mp4";
 import missionsuccess from "./assets/missionsucess.mp4";
 
-
+// hero portraits
+import hero1 from "./assets/hero/hero1.png";
+import hero2 from "./assets/hero/hero2.png";
+import hero3 from "./assets/hero/hero3.png";
+import hero4 from "./assets/hero/hero4.png";
+import hero5 from "./assets/hero/hero5.png";
+import hero6 from "./assets/hero/hero6.png";
+import hero7 from "./assets/hero/hero7.png";
+import hero8 from "./assets/hero/hero8.png";
+import hero9 from "./assets/hero/hero9.png";
 const API_URL = "https://69787eb6cd4fe130e3d91a96.mockapi.io/sessions";
 
 const PLANETS = [
@@ -17,31 +27,67 @@ const PLANETS = [
   { id: 5, name: 'Void-Prime', color: '#ff007a', x: 0, y: 400, difficulty: 4 },
 ];
 
+// kept for Combat prop compatibility
 const TRAITS = [
   { id: 'gunner', label: 'GUNNER', color: '#ff9d00', dmg: 1.2, spd: 1 },
   { id: 'scout', label: 'SCOUT', color: '#00f2ff', dmg: 1, spd: 1.4 },
   { id: 'tank', label: 'TANK', color: '#ff007a', dmg: 1, spd: 0.8 }
 ];
 
-const genCrew = () => ({
-  id: Math.random(),
-  name: ["Axel", "Kira", "Voss", "Nyx", "Zane"][Math.floor(Math.random() * 5)] + "-" + Math.floor(Math.random() * 99),
-  trait: TRAITS[Math.floor(Math.random() * TRAITS.length)]
-});
+// --- HERO SELECTION (placeholder only) ---
+const HERO_FIRST = ["Nyx", "Orion", "Vega", "Kira", "Zane", "Sable", "Riven", "Astra", "Voss", "Kael"];
+const HERO_LAST  = ["Drayke", "Voidrunner", "Starborn", "Quell", "Kestrel", "Nightfall", "Xarn", "Solari", "Nebulus", "Ashen"];
+const HERO_TRAITS = [
+  { id: "gunner", label: "GUNNER", color: "#ff9d00" },
+  { id: "scout",  label: "SCOUT",  color: "#00f2ff" },
+  { id: "tank",   label: "TANK",   color: "#ff007a" },
+];
+const HERO_PORTRAITS = [hero1, hero2, hero3, hero4, hero5, hero6, hero7, hero8, hero9];
+
+const rand = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// ✅ ALWAYS returns 5 options with UNIQUE portraits (no duplicate pictures)
+function genUniqueHeroOptions(count = 5) {
+  if (HERO_PORTRAITS.length < count) {
+    console.warn(`Need at least ${count} hero portraits for uniqueness. Currently: ${HERO_PORTRAITS.length}`);
+  }
+  const picks = shuffle(HERO_PORTRAITS).slice(0, Math.min(count, HERO_PORTRAITS.length));
+  return picks.map((portrait) => ({
+    id: crypto?.randomUUID?.() ?? Math.random().toString(16).slice(2),
+    name: `${rand(HERO_FIRST)} ${rand(HERO_LAST)}`,
+    trait: rand(HERO_TRAITS),
+    portrait,
+  }));
+}
 
 export default function App() {
   const [view, setView] = useState('menu');
   const [lives, setLives] = useState(5);
-  const [crew, setCrew] = useState([]);
-  const [draftOptions, setDraftOptions] = useState([genCrew(), genCrew(), genCrew()]);
+
+  const [crew, setCrew] = useState([]); // kept for Combat prop compatibility
   const [focusPlanet, setFocusPlanet] = useState(null);
   const [selectedHex, setSelectedHex] = useState(null);
   const [selectedHexInfo, setSelectedHexInfo] = useState(null);
   const [clearedHexes, setClearedHexes] = useState({});
+
+  // ✅ This is your "my xp" (reward for defeating a tile)
   const [crewXp, setCrewXp] = useState(0);
 
   const [resources, setResources] = useState(0);
   const [combatCtx, setCombatCtx] = useState(null);
+
+  // hero selection screen state
+  const [heroOptions, setHeroOptions] = useState(() => genUniqueHeroOptions(5));
+  const [selectedHero, setSelectedHero] = useState(null);
 
   const hexGrid = focusPlanet ? (() => {
     const arr = [];
@@ -72,16 +118,15 @@ export default function App() {
       await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ planet: focusPlanet.name, hex: selectedHex, squadSize: crew.length })
+        // crew draft removed; treat hero as squad size 1
+        body: JSON.stringify({ planet: focusPlanet.name, hex: selectedHex, squadSize: 1 })
       });
     } catch {}
 
-    // play droppod first
     setView('deploy_video');
   };
 
   const handleVictory = () => {
-    // mark cleared + award XP/resources ONLY ONCE, using locked combatCtx
     if (combatCtx?.planetId && combatCtx?.hexId) {
       setClearedHexes(prev => {
         const current = new Set(prev[combatCtx.planetId] || []);
@@ -101,7 +146,6 @@ export default function App() {
       });
     }
 
-    // ✅ only if you beat the match: play success video, then return to star map
     setView('mission_success');
   };
 
@@ -109,38 +153,131 @@ export default function App() {
     <div className="game-container">
 
       {view === 'menu' && (
-        <MainMenu onStart={() => setView('crew_draft')} />
+        <MainMenu
+          onStart={() => {
+            setHeroOptions(genUniqueHeroOptions(5)); // ✅ unique
+            setSelectedHero(null);
+            setView('hero_select');
+          }}
+        />
       )}
 
-      {view === 'crew_draft' && (
-        <div className="ui-layer" style={{ background: 'rgba(0,0,0,0.85)' }}>
-          <h1>RECRUIT ({crew.length}/5)</h1>
-          <div style={{ display: 'flex', gap: 20 }}>
-            {draftOptions.map((o, i) => (
-              <div
-                key={o.id}
-                className="crew-card"
-                onClick={() => {
-                  if (crew.length < 5) {
-                    setCrew([...crew, o]);
-                    const n = [...draftOptions];
-                    n[i] = genCrew();
-                    setDraftOptions(n);
-                  }
-                }}
-              >
-                <b>{o.name}</b>
-                <div className="trait-tag" style={{ background: o.trait.color }}>{o.trait.label}</div>
-              </div>
-            ))}
-          </div>
-          <button
-            className="scifi-btn"
-            disabled={crew.length < 5}
-            onClick={() => setView('galaxy')}
+      {/* Hero selection screen */}
+      {view === 'hero_select' && (
+        <div className="ui-layer" style={{ background: "rgba(0,0,0,0.85)", padding: 24 }}>
+          <h1 style={{ marginTop: 0, letterSpacing: 6 }}>CHOOSE YOUR OPERATIVE</h1>
+          <p style={{ opacity: 0.85, marginTop: 6 }}>Pick one. Traits are placeholder only.</p>
+
+          <div
+            style={{
+              width: "min(1100px, 100%)",
+              margin: "18px auto 0",
+              display: "grid",
+              gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+              gap: 14,
+            }}
           >
-            LAUNCH
-          </button>
+            {heroOptions.map((h) => {
+              const active = selectedHero?.id === h.id;
+
+              return (
+                <button
+                  key={h.id}
+                  type="button"
+                  onClick={() => setSelectedHero(h)}
+                  style={{
+                    cursor: "pointer",
+                    padding: 12,
+                    borderRadius: 14,
+                    border: active ? "2px solid var(--neon-pink)" : "1px solid rgba(255,255,255,0.22)",
+                    background: active ? "rgba(255,0,122,0.12)" : "rgba(0,0,0,0.45)",
+                    color: "white",
+                    textAlign: "left",
+                    outline: "none",
+                    boxShadow: active ? "0 0 16px rgba(255,0,122,0.35)" : "none",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "100%",
+                      aspectRatio: "1 / 1",
+                      borderRadius: 12,
+                      background: "#fff",
+                      border: "1px solid rgba(0,0,0,0.25)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      overflow: "hidden",
+                      marginBottom: 10,
+                    }}
+                  >
+                    <img
+                      src={h.portrait}
+                      alt=""
+                      draggable={false}
+                      style={{
+                        width: "92%",
+                        height: "92%",
+                        objectFit: "contain",
+                        imageRendering: "auto",
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ fontWeight: 800 }}>{h.name}</div>
+
+                  <div
+                    style={{
+                      marginTop: 8,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "6px 10px",
+                      borderRadius: 999,
+                      border: "1px solid rgba(255,255,255,0.18)",
+                      background: "rgba(0,0,0,0.35)",
+                      fontSize: 12,
+                    }}
+                  >
+                    <span style={{ width: 10, height: 10, borderRadius: 999, background: h.trait.color }} />
+                    <span>{h.trait.label}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ marginTop: 18, display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+            <button className="scifi-btn" onClick={() => setView("menu")}>
+              BACK
+            </button>
+
+            {/* ✅ REROLL (unique portraits) */}
+            <button
+              className="scifi-btn"
+              onClick={() => {
+                setHeroOptions(genUniqueHeroOptions(5));
+                setSelectedHero(null);
+              }}
+            >
+              REROLL
+            </button>
+
+            <button
+              className="scifi-btn"
+              disabled={!selectedHero}
+              onClick={() => {
+                setCrew([]); // optional
+                setView("galaxy");
+              }}
+            >
+              CONFIRM
+            </button>
+          </div>
+
+          <div style={{ marginTop: 10, opacity: 0.8, fontSize: 12, textAlign: "center" }}>
+            Lives remain {lives}. (No changes)
+          </div>
         </div>
       )}
 
@@ -149,11 +286,35 @@ export default function App() {
           className="galaxy-container"
           onClick={() => { setFocusPlanet(null); setSelectedHex(null); setSelectedHexInfo(null); }}
         >
+          {/* ✅ HUD changed to: My Name + My XP + Resources */}
           <div className="hud">
-            <div>LIVES: {lives}</div>
-            <div>CXP: {crewXp}</div>
+            <div>NAME: {selectedHero?.name || "UNKNOWN"}</div>
+            <div>XP: {crewXp}</div>
             <div>RES: {resources}</div>
           </div>
+
+          {/* ✅ Show-all / unfocus button ONLY when focused */}
+          {focusPlanet && (
+            <button
+              className="scifi-btn"
+              style={{
+                position: "fixed",
+                left: 24,
+                top: 110,     // sits under HUD
+                zIndex: 9100,
+                padding: "10px 14px",
+                letterSpacing: 2,
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setFocusPlanet(null);
+                setSelectedHex(null);
+                setSelectedHexInfo(null);
+              }}
+            >
+              SHOW ALL
+            </button>
+          )}
 
           {PLANETS.map(p => (
             <div
@@ -210,41 +371,80 @@ export default function App() {
             </div>
           ))}
 
-          {focusPlanet && selectedHex && (
-            <button
-              className="scifi-btn"
-              style={{ position: 'absolute', bottom: 60, left: '50%', transform: 'translateX(-50%)' }}
-              onClick={dropToHex}
-            >
-              DEPLOY {selectedHex}
-            </button>
-          )}
-
+          {/* Sci-fi info panel with DEPLOY button inside it */}
           {focusPlanet && selectedHexInfo && (
-            <div className="tile-panel" onClick={e => e.stopPropagation()}>
-              <h3>{focusPlanet.name} / TILE {selectedHex}</h3>
-              <div className="tile-row">
-                <span>Difficulty</span>
+            <div
+              className="tile-panel"
+              onClick={e => e.stopPropagation()}
+              style={{
+                position: "fixed",
+                right: 60,
+                top: 120,
+                width: 360,
+                zIndex: 9000,
+                border: "1px solid rgba(0,242,255,0.35)",
+                background: "rgba(0,0,0,0.65)",
+                boxShadow: "0 0 30px rgba(0,242,255,0.08)",
+                padding: 18
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12 }}>
+                <h3 style={{ margin: 0, letterSpacing: 2 }}>
+                  {focusPlanet.name} / TILE {selectedHex}
+                </h3>
+                <div style={{ fontSize: 12, opacity: 0.8 }}>SCAN</div>
+              </div>
+
+              <div style={{ height: 1, background: "rgba(0,242,255,0.18)", margin: "12px 0" }} />
+
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                <span style={{ opacity: 0.8 }}>Difficulty</span>
                 <strong>{selectedHexInfo.difficulty}</strong>
               </div>
-              <div className="tile-row">
-                <span>Crew Rewards</span>
-                <strong>+{selectedHexInfo.reward} CXP</strong>
-              </div>
-              <div className="tile-row">
-                <span>Squad CXP</span>
-                <strong>{crewXp}</strong>
-              </div>
-              <div className="tile-row">
-                <span>Resources</span>
+
+              {(() => {
+                const reward = selectedHexInfo.reward || 0;
+
+                let rewardColor = "rgba(255,255,255,0.65)"; // meh
+                if (reward >= 200) rewardColor = "#ff007a";      // huge
+                else if (reward >= 140) rewardColor = "#ff9d00"; // big
+                else if (reward >= 80) rewardColor = "#00f2ff";  // solid
+
+                return (
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                    <span style={{ opacity: 0.8 }}>Rewards</span>
+                    <strong style={{ color: rewardColor, letterSpacing: 1 }}>
+                      +{reward}
+                    </strong>
+                  </div>
+                );
+              })()}
+
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
+                <span style={{ opacity: 0.8 }}>Resources</span>
                 <strong>{resources}</strong>
+              </div>
+
+              <div style={{ height: 1, background: "rgba(0,242,255,0.18)", margin: "14px 0" }} />
+
+              <button
+                className="scifi-btn"
+                style={{ width: "100%", padding: "14px 16px", letterSpacing: 3 }}
+                onClick={dropToHex}
+                disabled={!selectedHex}
+              >
+                DEPLOY {selectedHex}
+              </button>
+
+              <div style={{ marginTop: 10, fontSize: 12, opacity: 0.75 }}>
+                Confirm drop coordinates and deploy.
               </div>
             </div>
           )}
         </div>
       )}
 
-      {/* ✅ droppod.mp4 interstitial (contain avoids stretching/upscaling) */}
+      {/* droppod.mp4 interstitial */}
       {view === 'deploy_video' && (
         <div
           className="video-layer"
@@ -273,7 +473,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ✅ mission success video (ONLY reached via victory) */}
+      {/* mission success video */}
       {view === 'mission_success' && (
         <div
           className="video-layer"
