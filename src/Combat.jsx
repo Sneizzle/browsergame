@@ -458,7 +458,9 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
   const [player, setPlayer] = useState({ x: 1400, y: 1400 });
   const [stats, setStats] = useState({ hp: 120, maxHp: 120, regen: 0, damageMult: 1, attackSpeed: 1, moveSpeed: 1 });
   const [camera, setCamera] = useState({ x: 0, y: 0 });
-
+  const cameraRef = useRef({ x: 0, y: 0 });
+const canvasRef = useRef(null);
+const ctxRef = useRef(null);
   const [enemies, setEnemies] = useState([]);
   const [bullets, setBullets] = useState([]);
   const [beams, setBeams] = useState([]); // LASER beams
@@ -531,6 +533,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
 
   useEffect(() => { pausedRef.current = paused; }, [paused]);
   useEffect(() => { playerRef.current = player; }, [player]);
+  useEffect(() => { cameraRef.current = camera; }, [camera]);
   useEffect(() => { statsRef.current = stats; }, [stats]);
   useEffect(() => { enemiesRef.current = enemies; }, [enemies]);
   useEffect(() => { bulletsRef.current = bullets; }, [bullets]);
@@ -575,6 +578,20 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
   useEffect(() => {
     if (stats.hp <= 0 && !defeat) setDefeat(true);
   }, [stats.hp, defeat]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (!canvasRef.current) return;
+      // Match the canvas pixel buffer to the viewport (prevents blur / black clears)
+      canvasRef.current.width = window.innerWidth;
+      canvasRef.current.height = window.innerHeight;
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    handleResize(); // initial size
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     const handleKey = (e) => { keys.current[e.key.toLowerCase()] = e.type === 'keydown'; };
@@ -679,14 +696,26 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
   };
 
   // -------------------- MAIN LOOP --------------------
-  useEffect(() => {
-    if (!selectedWeapons.length) return;
+useEffect(() => {
+  if (!selectedWeapons.length) return;
 
-    const loop = setInterval(() => {
-      if (pausedRef.current) return;
+  // Initialize Canvas
+  if (canvasRef.current) {
+    ctxRef.current = canvasRef.current.getContext('2d');
+    // Set internal resolution to match screen
+    canvasRef.current.width = window.innerWidth;
+    canvasRef.current.height = window.innerHeight;
+  }
+
+  const loop = setInterval(() => {
+    if (pausedRef.current) return;
 
       const now = Date.now();
       const inHitstop = now < hitstopUntil.current;
+
+
+
+
 
       // minimal juice decay
       juice.current.chroma *= 0.88;
@@ -694,9 +723,68 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
       if (juice.current.chroma < 0.01) juice.current.chroma = 0;
       if (juice.current.punch < 0.01) juice.current.punch = 0;
       setScreenFx({ chroma: juice.current.chroma, punch: juice.current.punch });
+// --- CANVAS DRAWING START ---
+    const ctx = ctxRef.current;
+    const cam = cameraRef.current;
+    if (ctx && canvasRef.current) {
+      // 1. Clear the screen
+      ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
 
+      const w = canvasRef.current.width;
+      const h = canvasRef.current.height;
+      const pad = 120;
+      const viewL = cam.x - pad;
+      const viewR = cam.x + w + pad;
+      const viewT = cam.y - pad;
+      const viewB = cam.y + h + pad;
+
+
+      // 2. Draw Orbs (500+ orbs now render instantly)
+      orbsRef.current.forEach(orb => {
+        if (orb.x < viewL || orb.x > viewR || orb.y < viewT || orb.y > viewB) return;
+
+        const colors = ['#00ff88', '#00f2ff', '#bf00ff', '#ff007a', '#ffae00'];
+        ctx.fillStyle = colors[orb.rank] || '#fff';
+        ctx.beginPath();
+        ctx.arc(orb.x - cam.x, orb.y - cam.y, 4 + (orb.rank * 2), 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // 3. Draw Bullets
+      bulletsRef.current.forEach(b => {
+        if (b.x < viewL || b.x > viewR || b.y < viewT || b.y > viewB) return;
+
+        ctx.fillStyle = b.color || '#fff';
+        ctx.save();
+        ctx.translate(b.x - cam.x, b.y - cam.y);
+        const ang = Number.isFinite(b.angle) ? b.angle : Math.atan2(b.vy || 0, b.vx || 0);
+        const bw = b.width || 10;
+        const bh = b.height || 4;
+        ctx.rotate(ang);
+        ctx.fillRect(-bw / 2, -bh / 2, bw, bh);
+        ctx.restore();
+      });
+
+      // 4. Draw Enemies
+      enemiesRef.current.forEach(e => {
+        if (e.x < viewL || e.x > viewR || e.y < viewT || e.y > viewB) return;
+
+        ctx.fillStyle = e.color || '#ff007a';
+        ctx.fillRect(e.x - cam.x - e.size/2, e.y - cam.y - e.size/2, e.size, e.size);
+        
+        // Health Bar
+        if (e.hp < e.maxHp) {
+          ctx.fillStyle = '#222';
+          ctx.fillRect(e.x - cam.x - e.size/2, e.y - cam.y - e.size/2 - 8, e.size, 4);
+          ctx.fillStyle = '#ff007a';
+          ctx.fillRect(e.x - cam.x - e.size/2, e.y - cam.y - e.size/2 - 8, e.size * (e.hp / e.maxHp), 4);
+        }
+      });
+    }
+    // --- CANVAS DRAWING END ---
       // advance progress timer (even during hitstop)
       elapsed.current += 16;
+
       setProgress(Math.min(1, elapsed.current / BOSS_TIME));
 
       // scripted beats
@@ -1672,7 +1760,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
     }, 16);
 
     return () => clearInterval(loop);
-  }, [crew, selectedWeapons.length, tileDifficulty, crewDamageMult, crewSpeedMult]);
+  }, [selectedWeapons.length, tileDifficulty, crewDamageMult, crewSpeedMult]);
 
   const chooseUpgrade = (option) => {
     setStats((s) => option.apply(s));
@@ -1902,31 +1990,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
         })}
 
         {/* bullets */}
-        {bullets.map((b) => (
-          <div
-            key={b.id}
-            className={`bullet ${b.flashy ? 'sniper' : ''}`}
-            style={{
-              left: b.x,
-              top: b.y,
-              background: b.color,
-              width: b.width,
-              height: b.height,
-              borderRadius: b.isHoming ? 6 : undefined,
-              boxShadow:
-                b.isHoming
-                  ? '0 0 10px rgba(255,200,170,0.85), 0 0 26px rgba(255,90,40,0.35)'
-                  : b.pull
-                    ? '0 0 16px rgba(190,120,255,0.55), 0 0 32px rgba(120,40,255,0.25)'
-                    : b.flashy
-                      ? '0 0 16px rgba(180,255,245,0.8), 0 0 38px rgba(180,255,245,0.35)'
-                      : b.burn
-                        ? '0 0 14px rgba(255,160,70,0.65), 0 0 26px rgba(255,70,0,0.20)'
-                        : ''
-            }}
-          />
-        ))}
-
+       
         {/* power pickups */}
         {pickups.map((pk) => (
           <div
@@ -1951,56 +2015,22 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
           />
         ))}
 
-        {/* XP orbs */}
-        {orbs.map((o) => {
-          const rank = o.rank ?? orbRankFromValue(o.value);
-          const s = orbStyle(rank);
-          const sz = 12 + Math.min(40, Math.sqrt(o.value) * 4.8);
 
-          return (
-            <div
-              key={o.id}
-              className="xp-orb"
-              style={{
-                left: o.x,
-                top: o.y,
-                width: sz,
-                height: sz,
-                background: s.bg,
-                boxShadow: s.shadow
-              }}
-            />
-          );
-        })}
 
-        {/* enemies */}
-        {enemies.map((e) => {
-          const t = hitFx[e.id] || 0;
-          const recentlyHit = Date.now() - t < 85;
-          const stunned = e.stunnedUntil && Date.now() < e.stunnedUntil;
-          const slowed = e.slowUntil && Date.now() < e.slowUntil;
-          const isMini = String(e.type).startsWith('mini_');
-
-          return (
-            <div
-              key={e.id}
-              className={`enemy-sprite ${e.type} ${recentlyHit ? 'hit' : ''}`}
-              style={{
-                left: e.x,
-                top: e.y,
-                width: e.size,
-                height: e.size,
-                background: e.color,
-                filter: stunned ? 'brightness(1.5) saturate(1.25)' : slowed ? 'saturate(0.82)' : '',
-                boxShadow:
-                  stunned ? '0 0 14px rgba(170,220,255,0.75)' :
-                    isMini ? '0 0 14px rgba(255,220,140,0.35)' :
-                      e.type === 'boss' ? '0 0 18px rgba(255,220,140,0.45)' : ''
-              }}
-            />
-          );
-        })}
+       
       </div>
+
+      {/* Canvas render layer (viewport-space). Keep OUTSIDE world-container so camera translate isn't applied twice. */}
+      <canvas
+        ref={canvasRef}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          pointerEvents: 'none',
+          zIndex: 5
+        }}
+      />
+
 
       {upgradeOptions.length > 0 && (
         <div className="ui-layer" style={{ background: 'rgba(1,2,6,0.92)' }}>
