@@ -377,6 +377,15 @@ body {
   100% { opacity: 0; transform: translate(-50%,-50%) scale(1.35); }
 }
 
+.move-overlay{
+  position: fixed;
+  inset: 0;
+  z-index: 50;      /* below HUD/menus, above game world */
+  touch-action: none; /* crucial for mobile drag */
+  background: transparent;
+}
+
+
 /* Kill explosions / carnage pulses */
 .kill-burst {
   position: absolute;
@@ -545,4 +554,36 @@ body {
   background: rgba(0, 255, 136, 0.4) !important;
   box-shadow: inset 0 0 18px rgba(0, 255, 136, 0.9) !important;
   filter: brightness(1.25) !important;
+}
+
+/* --- Pickups: bigger, glowier, animated --- */
+.pickup {
+  position: absolute;
+  transform: translateZ(0);
+  animation: pickupFloat 1.45s ease-in-out infinite, pickupPulse 1.05s ease-in-out infinite;
+  will-change: transform, filter, opacity;
+  filter: drop-shadow(0 0 10px rgba(255,255,255,0.45)) drop-shadow(0 0 26px rgba(255,255,255,0.30));
+}
+
+.pickup::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  border-radius: 999px;
+  border: 2px solid rgba(255,255,255,0.18);
+  box-shadow: 0 0 18px rgba(255,255,255,0.22);
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+@keyframes pickupFloat {
+  0% { transform: translateY(0px) scale(1.00); }
+  50% { transform: translateY(-6px) scale(1.02); }
+  100% { transform: translateY(0px) scale(1.00); }
+}
+
+@keyframes pickupPulse {
+  0% { opacity: 0.92; }
+  50% { opacity: 1.0; }
+  100% { opacity: 0.92; }
 }

@@ -1,11 +1,14 @@
 // App.jsx
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import './App.css';
 import MainMenu from "./MainMenu.jsx";
 import Combat from "./Combat.jsx";
 
 import droppod from "./assets/droppod.mp4";
 import missionsuccess from "./assets/missionsucess.mp4";
+
+// tutorial portrait
+import tubbe from "./assets/hero/tubbe.png";
 
 // hero portraits
 import hero1 from "./assets/hero/hero1.png";
@@ -17,10 +20,28 @@ import hero6 from "./assets/hero/hero6.png";
 import hero7 from "./assets/hero/hero7.png";
 import hero8 from "./assets/hero/hero8.png";
 import hero9 from "./assets/hero/hero9.png";
+import hero10 from "./assets/hero/hero10.png";
+import hero11 from "./assets/hero/hero11.png";
+import hero12 from "./assets/hero/hero12.png";
+import hero13 from "./assets/hero/hero13.png";
+import hero14 from "./assets/hero/hero14.png";
+import hero15 from "./assets/hero/hero15.png";
+import hero16 from "./assets/hero/hero16.png";
+import hero17 from "./assets/hero/hero17.png";
+import hero18 from "./assets/hero/hero18.png";
+import hero19 from "./assets/hero/hero19.png";
+import hero20 from "./assets/hero/hero20.png";
+import hero21 from "./assets/hero/hero21.png";
+import hero22 from "./assets/hero/hero22.png";
+import hero23 from "./assets/hero/hero23.png";
+import hero24 from "./assets/hero/hero24.png";
+import hero25 from "./assets/hero/hero25.png";
+import hero26 from "./assets/hero/hero26.png";
+
 const API_URL = "https://69787eb6cd4fe130e3d91a96.mockapi.io/sessions";
 
 const PLANETS = [
-  { id: 1, name: 'Zog-Jungle', color: '#00ff88', x: -400, y: -150, difficulty: 1 },
+  { id: 1, name: 'Zog-Jungle', color: '#00ff88', x: -400, y: -150, difficulty: 1 }, // green planet (tutorial target)
   { id: 2, name: 'Dune-9', color: '#ffcc00', x: 300, y: -250, difficulty: 2 },
   { id: 3, name: 'Inferno', color: '#ff4400', x: 500, y: 180, difficulty: 3 },
   { id: 4, name: 'Cryo-X', color: '#00f2ff', x: -450, y: 300, difficulty: 2 },
@@ -35,14 +56,19 @@ const TRAITS = [
 ];
 
 // --- HERO SELECTION (placeholder only) ---
-const HERO_FIRST = ["Nyx", "Orion", "Vega", "Kira", "Zane", "Sable", "Riven", "Astra", "Voss", "Kael"];
-const HERO_LAST  = ["Drayke", "Voidrunner", "Starborn", "Quell", "Kestrel", "Nightfall", "Xarn", "Solari", "Nebulus", "Ashen"];
+const HERO_FIRST = ["Nyx", "Orion", "Vega", "Kira", "Zane", "Sable", "Riven", "Astra", "Voss", "Kael", "Freya", "Miti", "Sonia", "Andra", ];
+const HERO_LAST  = ["Drayke", "Voidrunner", "Starborn", "Quell", "Kestrel", "Nightfall", "Xarn", "Solari", "Nebulus", "Ashen", "Biju", "Sandu"];
 const HERO_TRAITS = [
   { id: "gunner", label: "GUNNER", color: "#ff9d00" },
   { id: "scout",  label: "SCOUT",  color: "#00f2ff" },
   { id: "tank",   label: "TANK",   color: "#ff007a" },
 ];
-const HERO_PORTRAITS = [hero1, hero2, hero3, hero4, hero5, hero6, hero7, hero8, hero9];
+
+const HERO_PORTRAITS = [
+  hero1, hero2, hero3, hero4, hero5, hero6, hero7, hero8, hero9, hero10, hero11,
+  hero12, hero13, hero14, hero15, hero16, hero17, hero18, hero19, hero20, hero21,
+  hero22, hero23, hero24, hero25, hero26
+];
 
 const rand = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
@@ -69,6 +95,9 @@ function genUniqueHeroOptions(count = 5) {
   }));
 }
 
+// ✅ once per PAGE REFRESH (session), but NOT when returning from combat
+const TUTORIAL_SESSION_KEY = "xeno_purge_tutorial_shown_session_v1";
+
 export default function App() {
   const [view, setView] = useState('menu');
   const [lives, setLives] = useState(5);
@@ -79,7 +108,15 @@ export default function App() {
   const [selectedHexInfo, setSelectedHexInfo] = useState(null);
   const [clearedHexes, setClearedHexes] = useState({});
 
-  // ✅ This is your "my xp" (reward for defeating a tile)
+
+const resetTutorialForNewRun = () => {
+  try { sessionStorage.removeItem(TUTORIAL_SESSION_KEY); } catch {}
+  setTutorialShownThisSession(false);
+  setTutorialVisible(false);
+};
+
+
+  // ✅ XP (reward for defeating a tile)
   const [crewXp, setCrewXp] = useState(0);
 
   const [resources, setResources] = useState(0);
@@ -88,6 +125,73 @@ export default function App() {
   // hero selection screen state
   const [heroOptions, setHeroOptions] = useState(() => genUniqueHeroOptions(5));
   const [selectedHero, setSelectedHero] = useState(null);
+
+  // ✅ tutorial: show once per refresh (sessionStorage resets on refresh)
+  const [tutorialShownThisSession, setTutorialShownThisSession] = useState(() => {
+    try { return sessionStorage.getItem(TUTORIAL_SESSION_KEY) === "1"; } catch { return false; }
+  });
+  const [tutorialVisible, setTutorialVisible] = useState(false);
+
+  // ✅ Planet refs so the arrow can point to the REAL rendered planet position
+  const planetRefs = useRef({});
+
+  // ✅ Arrow position anchored to the green planet DOM rect
+  const [arrowPos, setArrowPos] = useState(null);
+
+  // ✅ show tutorial only on first arrival to galaxy this session (not on match return)
+  useEffect(() => {
+    if (view === "galaxy" && !tutorialShownThisSession) {
+      setTutorialVisible(true);
+      setTutorialShownThisSession(true);
+      try { sessionStorage.setItem(TUTORIAL_SESSION_KEY, "1"); } catch {}
+    }
+
+    if (view !== "galaxy") {
+      setTutorialVisible(false);
+    }
+  }, [view, tutorialShownThisSession]);
+
+  // ✅ keep arrow locked onto the green planet while tutorial is visible
+  useEffect(() => {
+    if (!(view === "galaxy" && tutorialVisible)) return;
+
+    const targetId = 1; // green planet id
+    let raf = 0;
+
+    const update = () => {
+      const el = planetRefs.current[targetId];
+      if (!el) {
+        setArrowPos(null);
+        return;
+      }
+
+      const r = el.getBoundingClientRect();
+
+      // Place arrow just LEFT of planet center, pointing RIGHT at it
+      setArrowPos({
+        left: r.left - 70,
+        top: r.top + r.height / 2 - 26,
+      });
+    };
+
+    const tick = () => {
+      update();
+      raf = requestAnimationFrame(tick);
+    };
+
+    tick();
+
+    const onResize = () => update();
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [view, tutorialVisible]);
+
+  // ✅ GAME OVER overlay
+  const gameOver = lives <= 0;
 
   const hexGrid = focusPlanet ? (() => {
     const arr = [];
@@ -107,7 +211,17 @@ export default function App() {
     return arr;
   })() : [];
 
+  // ✅ helper: is currently selected tile already cleared?
+  const selectedIsCleared = useMemo(() => {
+    if (!focusPlanet?.id || !selectedHex) return false;
+    return (clearedHexes[focusPlanet.id] || []).includes(selectedHex);
+  }, [focusPlanet?.id, selectedHex, clearedHexes]);
+
   const dropToHex = async () => {
+    // ✅ block re-deploy to cleared tile
+    if (!focusPlanet?.id || !selectedHex) return;
+    if ((clearedHexes[focusPlanet.id] || []).includes(selectedHex)) return;
+
     setCombatCtx({
       planetId: focusPlanet?.id,
       hexId: selectedHex,
@@ -152,15 +266,47 @@ export default function App() {
   return (
     <div className="game-container">
 
-      {view === 'menu' && (
-        <MainMenu
-          onStart={() => {
-            setHeroOptions(genUniqueHeroOptions(5)); // ✅ unique
-            setSelectedHero(null);
-            setView('hero_select');
+      {/* ✅ GAME OVER overlay (click to reload = restart trick) */}
+      {gameOver && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 20000,
+            background: "rgba(0,0,0,0.92)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            textAlign: "center",
+            padding: 24,
           }}
-        />
+          onClick={() => window.location.reload()}
+        >
+          <div style={{ maxWidth: 720 }}>
+            <h1 style={{ margin: 0, letterSpacing: 6 }}>GAME OVER</h1>
+            <p style={{ marginTop: 12, opacity: 0.85, lineHeight: 1.5 }}>
+              Your squad has been overrun. The Xenos don’t negotiate—only multiply.
+              <br />
+              Click to reboot the campaign.
+            </p>
+            <div style={{ marginTop: 18, opacity: 0.6, fontSize: 12 }}>
+              (Click anywhere)
+            </div>
+          </div>
+        </div>
       )}
+
+      {view === 'menu' && (
+  <MainMenu
+    onStart={() => {
+      resetTutorialForNewRun();          // ✅ show tutorial again for this new character run
+      setHeroOptions(genUniqueHeroOptions(5));
+      setSelectedHero(null);
+      setView('hero_select');
+    }}
+  />
+)}
+
 
       {/* Hero selection screen */}
       {view === 'hero_select' && (
@@ -286,12 +432,111 @@ export default function App() {
           className="galaxy-container"
           onClick={() => { setFocusPlanet(null); setSelectedHex(null); setSelectedHexInfo(null); }}
         >
-          {/* ✅ HUD changed to: My Name + My XP + Resources */}
+          {/* ✅ HUD changed to: My Name + My XP + Resources + HP */}
           <div className="hud">
             <div>NAME: {selectedHero?.name || "UNKNOWN"}</div>
             <div>XP: {crewXp}</div>
             <div>RES: {resources}</div>
+            <div>HP: {Math.max(0, lives)}</div>
           </div>
+
+          {/* ✅ Tutorial overlay (once per refresh, NOT on match return) */}
+          {tutorialVisible && (
+            <>
+              <style>
+                {`
+                  @keyframes xenoArrowNudge {
+                    0%, 100% { transform: translateX(0); opacity: 0.95; }
+                    50% { transform: translateX(10px); opacity: 1; }
+                  }
+                `}
+              </style>
+
+              {/* arrow pointing to the green planet (anchored to DOM position) */}
+              {arrowPos && (
+                <div
+                  style={{
+                    position: "fixed",
+                    left: arrowPos.left,
+                    top: arrowPos.top,
+                    zIndex: 9500,
+                    pointerEvents: "none",
+                    filter: "drop-shadow(0 0 12px rgba(0,255,136,0.55))",
+                    fontSize: 64,
+                    lineHeight: 1,
+                    transform: "translateZ(0)",
+                    animation: "xenoArrowNudge 0.9s ease-in-out infinite",
+                  }}
+                >
+                  ➜
+                </div>
+              )}
+
+              {/* panel (centered) */}
+              <div
+                style={{
+                  position: "fixed",
+                  left: "50%",
+                  bottom: 40,
+                  transform: "translateX(-50%)",
+                  width: "min(860px, calc(100vw - 80px))",
+                  zIndex: 9600,
+                  pointerEvents: "none", // ✅ won't block clicks
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 16,
+                    alignItems: "stretch",
+                    borderRadius: 18,
+                    border: "1px solid rgba(0,242,255,0.35)",
+                    background: "rgba(0,0,0,0.72)",
+                    boxShadow: "0 0 30px rgba(0,242,255,0.10)",
+                    padding: 16,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 160,
+                      minWidth: 160,
+                      borderRadius: 14,
+                      background: "rgba(255,255,255,0.06)",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <img
+                      src={tubbe}
+                      alt=""
+                      draggable={false}
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  </div>
+
+                  <div style={{ flex: 1 }}>
+                    <div style={{ letterSpacing: 3, fontWeight: 900, marginBottom: 6 }}>
+                      ADMIRAL TOBIAS — XENO PURGE BRIEFING
+                    </div>
+                    <div style={{ opacity: 0.9, lineHeight: 1.45 }}>
+                      ohh. you dont look like i expected. But listen—my fleet is on its last nerve and these
+                      disgusting Xenos are breeding like a bad rumor.
+                      <br /><br />
+                      Click a <strong>planet</strong>, then pick a <strong>Zone</strong> to purge. Drop in, crush the defenses,
+                      then <strong>evacuate</strong>—and I will personally authorize the <strong>nuclear sterilization</strong>.
+                      No survivors. No spores. No “mystery eggs.”
+                      <br /><br />
+                      Clear enough Zones to conquer the whole planet and Command pays out <strong>massive rewards</strong>.
+                      Now stop staring into the void—start with the <strong>green world</strong>.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
 
           {/* ✅ Show-all / unfocus button ONLY when focused */}
           {focusPlanet && (
@@ -300,7 +545,7 @@ export default function App() {
               style={{
                 position: "fixed",
                 left: 24,
-                top: 110,     // sits under HUD
+                top: 110, // sits under HUD
                 zIndex: 9100,
                 padding: "10px 14px",
                 letterSpacing: 2,
@@ -319,6 +564,7 @@ export default function App() {
           {PLANETS.map(p => (
             <div
               key={p.id}
+              ref={(el) => { if (el) planetRefs.current[p.id] = el; }}
               className={`planet ${focusPlanet?.id === p.id ? 'focused' : ''}`}
               style={{
                 width: focusPlanet?.id === p.id ? '620px' : '100px',
@@ -331,6 +577,11 @@ export default function App() {
               }}
               onClick={e => {
                 e.stopPropagation();
+
+                // ✅ hide tutorial ONLY when clicking the green planet (doesn't return until refresh)
+                if (tutorialVisible && p.id === 1) {
+                  setTutorialVisible(false);
+                }
 
                 if (focusPlanet?.id === p.id) {
                   setFocusPlanet(null);
@@ -358,6 +609,10 @@ export default function App() {
                       }}
                       onClick={e => {
                         e.stopPropagation();
+
+                        // ✅ cannot select a cleared tile (prevents conquering same tile twice)
+                        if (cleared) return;
+
                         setSelectedHex(h.id);
                         setSelectedHexInfo({
                           difficulty: h.difficulty + (p.difficulty - 1),
@@ -420,6 +675,12 @@ export default function App() {
                 );
               })()}
 
+              {/* ✅ HP underneath Rewards */}
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                <span style={{ opacity: 0.8 }}>HP</span>
+                <strong>{Math.max(0, lives)}</strong>
+              </div>
+
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
                 <span style={{ opacity: 0.8 }}>Resources</span>
                 <strong>{resources}</strong>
@@ -431,13 +692,13 @@ export default function App() {
                 className="scifi-btn"
                 style={{ width: "100%", padding: "14px 16px", letterSpacing: 3 }}
                 onClick={dropToHex}
-                disabled={!selectedHex}
+                disabled={!selectedHex || selectedIsCleared}
               >
-                DEPLOY {selectedHex}
+                {selectedIsCleared ? "CLEARED" : `DEPLOY ${selectedHex}`}
               </button>
 
               <div style={{ marginTop: 10, fontSize: 12, opacity: 0.75 }}>
-                Confirm drop coordinates and deploy.
+                {selectedIsCleared ? "Zone already sterilized. Choose a new tile." : "Confirm drop coordinates and deploy."}
               </div>
             </div>
           )}
