@@ -1411,6 +1411,7 @@ useEffect(() => {
       const nextBullets = movedBullets.map((b) => ({ ...b }));
 
       const spawnedBullets = [];
+      const spawnedSlashes = [];
 
       const pickRicochetTarget = (fromEnemy, allEnemies) => {
         const maxRange2 = 360 * 360;
@@ -1706,7 +1707,7 @@ useEffect(() => {
             };
           });
 
-          slashesRef.current = [...(slashesRef.current || []), ...toAdd];
+          spawnedSlashes.push(...toAdd);
           juicePunch(0.30, 0.35);
           return;
         }
@@ -1826,11 +1827,12 @@ useEffect(() => {
       }
 
       // -------------------- APPLY DAMAGE (bullets + sword arcs) --------------------
+      const allSlashes = [...movedSlashes, ...spawnedSlashes];
       const withDamage = movedEnemies.map((en0) => {
         let en = en0;
         let totalDamage = bulletHits.get(en.id) || 0;
 
-        movedSlashes.forEach((sl) => {
+        allSlashes.forEach((sl) => {
           const activeStart = sl.delay || 0;
           const activeEnd = activeStart + (sl.activeMs || 120);
           if ((sl.age || 0) < activeStart || (sl.age || 0) > activeEnd) return;
@@ -1984,7 +1986,7 @@ useEffect(() => {
 
       enemiesRef.current = alive;
       bulletsRef.current = [...nextBullets.filter((b) => !b.hit), ...spawnedBullets];
-      slashesRef.current = movedSlashes;
+      slashesRef.current = allSlashes;
       if (newOrbs.length) orbsRef.current = [...(orbsRef.current || []), ...newOrbs];
 
       // -------------------- ORBS: attract + cluster + merge + pickup --------------------
