@@ -56,8 +56,8 @@ const TRAITS = [
 ];
 
 // --- HERO SELECTION (placeholder only) ---
-const HERO_FIRST = ["Nyx", "Orion", "Vega", "Kira", "Zane", "Sable", "Riven", "Astra", "Voss", "Kael", "Freya"];
-const HERO_LAST  = ["Drayke", "Voidrunner", "Starborn", "Quell", "Kestrel", "Nightfall", "Xarn", "Solari", "Nebulus", "Ashen"];
+const HERO_FIRST = ["Nyx", "Orion", "Vega", "Kira", "Zane", "Sable", "Riven", "Astra", "Voss", "Kael", "Freya", "Miti", "Sonia", "Andra", ];
+const HERO_LAST  = ["Drayke", "Voidrunner", "Starborn", "Quell", "Kestrel", "Nightfall", "Xarn", "Solari", "Nebulus", "Ashen", "Biju", "Sandu"];
 const HERO_TRAITS = [
   { id: "gunner", label: "GUNNER", color: "#ff9d00" },
   { id: "scout",  label: "SCOUT",  color: "#00f2ff" },
@@ -107,6 +107,14 @@ export default function App() {
   const [selectedHex, setSelectedHex] = useState(null);
   const [selectedHexInfo, setSelectedHexInfo] = useState(null);
   const [clearedHexes, setClearedHexes] = useState({});
+
+
+const resetTutorialForNewRun = () => {
+  try { sessionStorage.removeItem(TUTORIAL_SESSION_KEY); } catch {}
+  setTutorialShownThisSession(false);
+  setTutorialVisible(false);
+};
+
 
   // ✅ XP (reward for defeating a tile)
   const [crewXp, setCrewXp] = useState(0);
@@ -289,14 +297,16 @@ export default function App() {
       )}
 
       {view === 'menu' && (
-        <MainMenu
-          onStart={() => {
-            setHeroOptions(genUniqueHeroOptions(5)); // ✅ unique
-            setSelectedHero(null);
-            setView('hero_select');
-          }}
-        />
-      )}
+  <MainMenu
+    onStart={() => {
+      resetTutorialForNewRun();          // ✅ show tutorial again for this new character run
+      setHeroOptions(genUniqueHeroOptions(5));
+      setSelectedHero(null);
+      setView('hero_select');
+    }}
+  />
+)}
+
 
       {/* Hero selection screen */}
       {view === 'hero_select' && (

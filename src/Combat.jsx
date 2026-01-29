@@ -540,6 +540,8 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
   const hitFxRef = useRef({});
   const deathFxRef = useRef([]);
   const keys = useRef({});
+  const pointerMove = useRef({ active: false, x: 0, y: 0, id: null });
+
   const lastFire = useRef({});
   const lastSpawn = useRef(0);
   const elapsed = useRef(0);
@@ -594,6 +596,33 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
   const selectedWeaponsRef = useRef(selectedWeapons);
   const weaponLevelsRef = useRef(weaponLevels);
   const bossSpawnedRef = useRef(bossSpawned);
+
+const startPointerMove = (e) => {
+  // left click only for mouse; allow touch/pen
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+  e.preventDefault();
+  pointerMove.current.active = true;
+  pointerMove.current.x = e.clientX;
+  pointerMove.current.y = e.clientY;
+  pointerMove.current.id = e.pointerId;
+
+  // keep receiving moves even if finger drifts
+  e.currentTarget.setPointerCapture?.(e.pointerId);
+};
+
+const updatePointerMove = (e) => {
+  if (!pointerMove.current.active) return;
+  pointerMove.current.x = e.clientX;
+  pointerMove.current.y = e.clientY;
+};
+
+const endPointerMove = (e) => {
+  if (pointerMove.current.id !== null && e.pointerId !== pointerMove.current.id) return;
+  pointerMove.current.active = false;
+  pointerMove.current.id = null;
+};
+
 
   // Perf: keep simulation values in refs; sync React UI at low Hz
   const levelRef = useRef(level);
@@ -1126,6 +1155,21 @@ useEffect(() => {
         if (keys.current.s) ny += finalSpeed;
         if (keys.current.a) nx -= finalSpeed;
         if (keys.current.d) nx += finalSpeed;
+        // Hold-click / touch-hold movement: move toward pointer direction.
+// Player is camera-centered here (camera uses window.innerWidth/2, innerHeight/2). :contentReference[oaicite:3]{index=3}
+if (pointerMove.current.active) {
+  const dx = pointerMove.current.x - window.innerWidth / 2;
+  const dy = pointerMove.current.y - window.innerHeight / 2;
+
+  const dist = Math.hypot(dx, dy);
+  const deadZone = 18; // pixels near center = no move
+
+  if (dist > deadZone) {
+    nx += (dx / dist) * finalSpeed;
+    ny += (dy / dist) * finalSpeed;
+  }
+}
+
 
         nx = clamp(nx, 0, ARENA_SIZE);
         ny = clamp(ny, 0, ARENA_SIZE);

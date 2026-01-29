@@ -377,6 +377,15 @@ body {
   100% { opacity: 0; transform: translate(-50%,-50%) scale(1.35); }
 }
 
+.move-overlay{
+  position: fixed;
+  inset: 0;
+  z-index: 50;      /* below HUD/menus, above game world */
+  touch-action: none; /* crucial for mobile drag */
+  background: transparent;
+}
+
+
 /* Kill explosions / carnage pulses */
 .kill-burst {
   position: absolute;
