@@ -71,9 +71,15 @@ body {
 .combat-world { width: 100vw; height: 100vh; background: #010206; position: relative; overflow: hidden; }
 .world-container { position: absolute; transition: transform 0.05s linear; }
 .world-border { 
-  position: absolute; width: 2000px; height: 2000px; 
-  border: 8px dashed rgba(255, 0, 122, 0.2); pointer-events: none; 
+  position: absolute;
+  width: 2800px;
+  height: 2800px;
+  border: 8px dashed rgba(255, 0, 122, 0.2);
+  pointer-events: none;
+  left: 0;
+  top: 0;
 }
+
 .player-sprite { 
   position: absolute; width: 38px; height: 38px; background: var(--neon-blue); 
   border-radius: 4px; box-shadow: 0 0 20px var(--neon-blue); z-index: 10; 

@@ -3,6 +3,9 @@ import './App.css';
 import MainMenu from "./MainMenu.jsx";
 import Combat from "./Combat.jsx";
 
+import droppod from "./assets/droppod.mp4";
+import missionsuccess from "./assets/missionsucess.mp4";
+
 const API_URL = "https://69787eb6cd4fe130e3d91a96.mockapi.io/sessions";
 
 const PLANETS = [
@@ -36,7 +39,6 @@ export default function App() {
   const [clearedHexes, setClearedHexes] = useState({});
   const [crewXp, setCrewXp] = useState(0);
 
-  // ✅ NEW: resources currency + combat context (minimal + safe)
   const [resources, setResources] = useState(0);
   const [combatCtx, setCombatCtx] = useState(null);
 
@@ -59,7 +61,6 @@ export default function App() {
   })() : [];
 
   const dropToHex = async () => {
-    // ✅ NEW: lock-in the exact planet/tile at deploy time (fixes cleared tile not sticking)
     setCombatCtx({
       planetId: focusPlanet?.id,
       hexId: selectedHex,
@@ -73,11 +74,13 @@ export default function App() {
         body: JSON.stringify({ planet: focusPlanet.name, hex: selectedHex, squadSize: crew.length })
       });
     } catch {}
-    setView('combat');
+
+    // play droppod first
+    setView('deploy_video');
   };
 
   const handleVictory = () => {
-    // ✅ NEW: mark cleared + award XP/resources ONLY ONCE, using locked combatCtx
+    // mark cleared + award XP/resources ONLY ONCE, using locked combatCtx
     if (combatCtx?.planetId && combatCtx?.hexId) {
       setClearedHexes(prev => {
         const current = new Set(prev[combatCtx.planetId] || []);
@@ -86,7 +89,6 @@ export default function App() {
         if (!already) {
           current.add(combatCtx.hexId);
 
-          // award only the first clear
           const reward = combatCtx.reward || 0;
           if (reward > 0) {
             setCrewXp(xp => xp + reward);
@@ -98,7 +100,8 @@ export default function App() {
       });
     }
 
-    setView('galaxy');
+    // ✅ only if you beat the match: play success video, then return to star map
+    setView('mission_success');
   };
 
   return (
@@ -113,20 +116,30 @@ export default function App() {
           <h1>RECRUIT ({crew.length}/5)</h1>
           <div style={{ display: 'flex', gap: 20 }}>
             {draftOptions.map((o, i) => (
-              <div key={o.id} className="crew-card" onClick={() => {
-                if (crew.length < 5) {
-                  setCrew([...crew, o]);
-                  const n = [...draftOptions];
-                  n[i] = genCrew();
-                  setDraftOptions(n);
-                }
-              }}>
+              <div
+                key={o.id}
+                className="crew-card"
+                onClick={() => {
+                  if (crew.length < 5) {
+                    setCrew([...crew, o]);
+                    const n = [...draftOptions];
+                    n[i] = genCrew();
+                    setDraftOptions(n);
+                  }
+                }}
+              >
                 <b>{o.name}</b>
                 <div className="trait-tag" style={{ background: o.trait.color }}>{o.trait.label}</div>
               </div>
             ))}
           </div>
-          <button className="scifi-btn" disabled={crew.length < 5} onClick={() => setView('galaxy')}>LAUNCH</button>
+          <button
+            className="scifi-btn"
+            disabled={crew.length < 5}
+            onClick={() => setView('galaxy')}
+          >
+            LAUNCH
+          </button>
         </div>
       )}
 
@@ -154,7 +167,6 @@ export default function App() {
                 background: focusPlanet?.id === p.id ? '#050a15' : p.color,
                 border: focusPlanet?.id === p.id ? `4px solid ${p.color}` : 'none'
               }}
-              // ✅ FIX: switching planets now always works; clicking focused planet defocuses
               onClick={e => {
                 e.stopPropagation();
 
@@ -177,7 +189,11 @@ export default function App() {
                     <div
                       key={h.id}
                       className={`hex-unit ${selectedHex === h.id ? 'active' : ''} ${cleared ? 'cleared' : ''}`}
-                      style={{ left: `calc(50% + ${h.x}px)`, top: `calc(50% + ${h.y}px)`, transform: 'translate(-50%,-50%)' }}
+                      style={{
+                        left: `calc(50% + ${h.x}px)`,
+                        top: `calc(50% + ${h.y}px)`,
+                        transform: 'translate(-50%,-50%)'
+                      }}
                       onClick={e => {
                         e.stopPropagation();
                         setSelectedHex(h.id);
@@ -224,6 +240,64 @@ export default function App() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ✅ droppod.mp4 interstitial (contain avoids stretching/upscaling) */}
+      {view === 'deploy_video' && (
+        <div
+          className="video-layer"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            background: "black"
+          }}
+        >
+          <video
+            src={droppod}
+            autoPlay
+            muted
+            playsInline
+            onEnded={() => setView('combat')}
+            style={{ width: "100%", height: "100%", objectFit: "contain" }}
+          />
+          <button
+            className="scifi-btn"
+            style={{ position: "absolute", right: 20, bottom: 20 }}
+            onClick={() => setView('combat')}
+          >
+            SKIP
+          </button>
+        </div>
+      )}
+
+      {/* ✅ mission success video (ONLY reached via victory) */}
+      {view === 'mission_success' && (
+        <div
+          className="video-layer"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            background: "black"
+          }}
+        >
+          <video
+            src={missionsuccess}
+            autoPlay
+            muted
+            playsInline
+            onEnded={() => setView('galaxy')}
+            style={{ width: "100%", height: "100%", objectFit: "contain" }}
+          />
+          <button
+            className="scifi-btn"
+            style={{ position: "absolute", right: 20, bottom: 20 }}
+            onClick={() => setView('galaxy')}
+          >
+            CONTINUE
+          </button>
         </div>
       )}
 
