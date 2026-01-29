@@ -566,6 +566,15 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
   const playerSpriteRef = useRef(null);
   const playerTracerRef = useRef(null);
   const canvasRef = useRef(null);
+  const dragMoveRef = useRef({
+  active: false,
+  pointerId: null,
+  startX: 0,
+  startY: 0,
+  vecX: 0,
+  vecY: 0
+});
+
   const ctxRef = useRef(null);
   const [enemies, setEnemies] = useState([]);
   const [bullets, setBullets] = useState([]);
@@ -623,6 +632,65 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
   const freezeUntil = useRef(0);
   const overdriveUntil = useRef(0);
   const shieldUntil = useRef(0);
+
+const shouldIgnorePointer = (e) => {
+  if (pausedRef.current) return true;
+  const el = e.target;
+  if (el && typeof el.closest === 'function') {
+    if (el.closest('button') || el.closest('.ui-layer') || el.closest('.combat-hud')) return true;
+  }
+  return false;
+};
+
+const beginDragMove = (e) => {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  if (shouldIgnorePointer(e)) return;
+
+  dragMoveRef.current.active = true;
+  dragMoveRef.current.pointerId = e.pointerId;
+  dragMoveRef.current.startX = e.clientX;
+  dragMoveRef.current.startY = e.clientY;
+  dragMoveRef.current.vecX = 0;
+  dragMoveRef.current.vecY = 0;
+
+  try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+};
+
+const updateDragMove = (e) => {
+  const d = dragMoveRef.current;
+  if (!d.active || d.pointerId !== e.pointerId) return;
+
+  const dx = e.clientX - d.startX;
+  const dy = e.clientY - d.startY;
+
+  const dead = 8;
+  const maxR = 78;
+  const dist = Math.hypot(dx, dy);
+
+  if (dist < dead) {
+    d.vecX = 0;
+    d.vecY = 0;
+    return;
+  }
+
+  const scale = Math.min(1, dist / maxR);
+  d.vecX = (dx / dist) * scale;
+  d.vecY = (dy / dist) * scale;
+};
+
+const endDragMove = (e) => {
+  const d = dragMoveRef.current;
+  if (d.pointerId !== e.pointerId) return;
+
+  d.active = false;
+  d.pointerId = null;
+  d.vecX = 0;
+  d.vecY = 0;
+
+  try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+};
+
+
 
   const paused = upgradeOptions.length > 0 || victory || defeat;
 
@@ -1203,6 +1271,11 @@ useEffect(() => {
         if (keys.current.s) ny += finalSpeed;
         if (keys.current.a) nx -= finalSpeed;
         if (keys.current.d) nx += finalSpeed;
+        if (dragMoveRef.current.active) {
+  nx += dragMoveRef.current.vecX * finalSpeed;
+  ny += dragMoveRef.current.vecY * finalSpeed;
+}
+
 
         nx = clamp(nx, 0, ARENA_SIZE);
         ny = clamp(ny, 0, ARENA_SIZE);
@@ -2318,7 +2391,13 @@ useEffect(() => {
   const showFreeze = Date.now() < freezeUntil.current;
 
   return (
-    <div className="combat-world">
+    <div className="combat-world"
+  style={{ touchAction: 'none' }}
+    onPointerDown={beginDragMove}
+    onPointerMove={updateDragMove}
+    onPointerUp={endDragMove}
+    onPointerCancel={endDragMove}
+  >
       {!selectedWeapons.length && (
         <div className="ui-layer" style={{ background: 'rgba(0,0,0,0.95)' }}>
           <h1>SELECT TECH</h1>
