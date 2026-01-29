@@ -67,68 +67,60 @@ const WEAPONS = [
       },
       {
         title: 'Katana II',
-        description: 'Crescent + simultaneous zig cut.',
+        description: 'Wider sweep + delayed follow-through (other side).',
         stats: {
           cooldown: 860,
           damage: 19,
-          range: 175,
+          range: 178,
           slashPattern: [
-            { delay: 0, offset: 0.0, arc: Math.PI * 0.34, kind: 'crescent', dmgMult: 1.0 },
-            { delay: 0, offset: +0.55, arc: Math.PI * 0.24, kind: 'zig', dmgMult: 0.75 },
-            { delay: 70, offset: -0.35, arc: Math.PI * 0.22, kind: 'zig', dmgMult: 0.70 }
+            { delay: 0, offset: 0.0, arc: Math.PI * 0.42, kind: 'crescent', dmgMult: 1.0 },
+            { delay: 160, offset: Math.PI, arc: Math.PI * 0.36, kind: 'crescent', dmgMult: 0.95 }
           ]
         }
       },
       {
         title: 'Katana III',
-        description: 'Spin slash x3 + keeps the other cuts.',
+        description: 'Combo becomes a blender (sweep → follow → spin).',
         stats: {
           cooldown: 820,
           damage: 21,
-          range: 185,
+          range: 190,
           slashPattern: [
-            { delay: 0, offset: 0.0, arc: Math.PI * 0.34, kind: 'crescent', dmgMult: 1.0 },
-            { delay: 0, offset: +0.55, arc: Math.PI * 0.24, kind: 'zig', dmgMult: 0.75 },
-            { delay: 70, offset: -0.35, arc: Math.PI * 0.22, kind: 'zig', dmgMult: 0.70 },
-            { delay: 0, offset: 0.0, arc: Math.PI * 0.42, kind: 'spin', dmgMult: 0.55 },
-            { delay: 90, offset: 2.10, arc: Math.PI * 0.42, kind: 'spin', dmgMult: 0.55 },
-            { delay: 180, offset: 4.20, arc: Math.PI * 0.42, kind: 'spin', dmgMult: 0.55 }
+            { delay: 0, offset: 0.0, arc: Math.PI * 0.44, kind: 'crescent', dmgMult: 1.0 },
+            { delay: 150, offset: Math.PI, arc: Math.PI * 0.38, kind: 'crescent', dmgMult: 0.95 },
+            { delay: 320, offset: 0.0, arc: Math.PI * 2.0, kind: 'spin', dmgMult: 0.55 }
           ]
         }
       },
       {
         title: 'Katana IV',
-        description: 'Bigger cuts + faster rhythm.',
+        description: 'Faster combo + double spin (crowd erase).',
         stats: {
           cooldown: 760,
           damage: 23,
-          range: 200,
+          range: 205,
           slashPattern: [
-            { delay: 0, offset: 0.0, arc: Math.PI * 0.38, kind: 'crescent', dmgMult: 1.0 },
-            { delay: 0, offset: +0.60, arc: Math.PI * 0.26, kind: 'zig', dmgMult: 0.75 },
-            { delay: 60, offset: -0.40, arc: Math.PI * 0.24, kind: 'zig', dmgMult: 0.70 },
-            { delay: 0, offset: 0.0, arc: Math.PI * 0.46, kind: 'spin', dmgMult: 0.58 },
-            { delay: 80, offset: 2.10, arc: Math.PI * 0.46, kind: 'spin', dmgMult: 0.58 },
-            { delay: 160, offset: 4.20, arc: Math.PI * 0.46, kind: 'spin', dmgMult: 0.58 }
+            { delay: 0, offset: 0.0, arc: Math.PI * 0.46, kind: 'crescent', dmgMult: 1.0 },
+            { delay: 140, offset: Math.PI, arc: Math.PI * 0.40, kind: 'crescent', dmgMult: 0.98 },
+            { delay: 300, offset: 0.0, arc: Math.PI * 2.0, kind: 'spin', dmgMult: 0.60 },
+            { delay: 420, offset: 0.0, arc: Math.PI * 2.0, kind: 'spin', dmgMult: 0.60 }
           ]
         }
       },
       {
         title: 'Katana V',
-        description: 'Carnage: extra crescents + wider spin.',
+        description: 'Carnage combo (huge sweep + cross follow + triple spin).',
         stats: {
           cooldown: 700,
           damage: 26,
-          range: 220,
+          range: 225,
           slashPattern: [
-            { delay: 0, offset: 0.0, arc: Math.PI * 0.40, kind: 'crescent', dmgMult: 1.0 },
-            { delay: 0, offset: +0.62, arc: Math.PI * 0.28, kind: 'zig', dmgMult: 0.78 },
-            { delay: 55, offset: -0.42, arc: Math.PI * 0.26, kind: 'zig', dmgMult: 0.72 },
-            { delay: 0, offset: 0.0, arc: Math.PI * 0.50, kind: 'spin', dmgMult: 0.62 },
-            { delay: 75, offset: 2.10, arc: Math.PI * 0.50, kind: 'spin', dmgMult: 0.62 },
-            { delay: 150, offset: 4.20, arc: Math.PI * 0.50, kind: 'spin', dmgMult: 0.62 },
-            { delay: 120, offset: +0.25, arc: Math.PI * 0.34, kind: 'crescent', dmgMult: 0.55 },
-            { delay: 180, offset: -0.25, arc: Math.PI * 0.34, kind: 'crescent', dmgMult: 0.55 }
+            { delay: 0, offset: 0.0, arc: Math.PI * 0.50, kind: 'crescent', dmgMult: 1.0 },
+            { delay: 130, offset: Math.PI, arc: Math.PI * 0.44, kind: 'crescent', dmgMult: 1.0 },
+            { delay: 260, offset: Math.PI * 0.5, arc: Math.PI * 0.34, kind: 'crescent', dmgMult: 0.60 },
+            { delay: 320, offset: 0.0, arc: Math.PI * 2.0, kind: 'spin', dmgMult: 0.70 },
+            { delay: 450, offset: 0.0, arc: Math.PI * 2.0, kind: 'spin', dmgMult: 0.70 },
+            { delay: 580, offset: 0.0, arc: Math.PI * 2.0, kind: 'spin', dmgMult: 0.70 }
           ]
         }
       }
@@ -201,8 +193,8 @@ const WEAPONS = [
     targeting: 'closest',
     color: '#a6b7ff',
     levels: [
-      { title: 'Tesla I', description: 'Chain lightning (reliable kill power).', stats: { cooldown: 650, damage: 18, chain: 3, arcRange: 260, stun: 90, chainFalloff: 0.90 } },
-      { title: 'Tesla II', description: 'Bigger arcs + stronger stun.', stats: { damage: 20, chain: 4, arcRange: 290, stun: 130 } },
+      { title: 'Tesla I', description: 'Chain lightning (closer, snappier zap).', stats: { cooldown: 650, damage: 18, chain: 3, arcRange: 200, stun: 170, chainFalloff: 0.90, zapSlow: 0.18, zapSlowDuration: 820 } },
+      { title: 'Tesla II', description: 'Bigger arcs + stronger stun.', stats: { damage: 20, chain: 4, arcRange: 250, stun: 220, zapSlow: 0.20, zapSlowDuration: 900 } },
       { title: 'Tesla III', description: 'More jumps.', stats: { chain: 6, damage: 21 } },
       { title: 'Tesla IV', description: 'Forked discharge.', stats: { chain: 7, damage: 22, fork: 2 } },
       { title: 'Tesla V', description: 'Overload storm.', stats: { cooldown: 560, damage: 24, chain: 8, fork: 3, storm: true } }
@@ -231,11 +223,11 @@ const WEAPONS = [
     targeting: 'closest',
     color: '#c08bff',
     levels: [
-      { title: 'Void I', description: 'Gravity orb (real pull).', stats: { cooldown: 780, bulletSpeed: 6.0, damage: 16, pellets: 1, spread: 0.06, width: 22, height: 22, pierce: 10, pull: 1.4, lifeMs: 1350, singularity: false } },
-      { title: 'Void II', description: 'Stronger pull + bigger orb.', stats: { pull: 1.7, width: 28, height: 28, damage: 17 } },
-      { title: 'Void III', description: 'Orb splits near end.', stats: { split: 2, damage: 16 } },
-      { title: 'Void IV', description: 'More pierce + slow field.', stats: { pierce: 16, slow: 0.20, pull: 2.0 } },
-      { title: 'Void V', description: 'Singularity (implosion + pop).', stats: { singularity: true, explodeRadius: 120, explodeMult: 0.95, pull: 2.4, lifeMs: 1650 } }
+      { title: 'Void I', description: 'Gravity shot that anchors and becomes a vortex.', stats: { cooldown: 820, bulletSpeed: 5.6, damage: 14, pellets: 1, spread: 0.04, width: 24, height: 24, pierce: 8, pull: 1.35, pullRadius: 190, vortexDps: 12, maxRange: 440, anchorOnMaxRange: true, lifeMs: 1900, singularity: false } },
+      { title: 'Void II', description: 'Bigger vortex + stronger pull.', stats: { pull: 1.65, pullRadius: 215, width: 30, height: 30, damage: 15, vortexDps: 14, maxRange: 470 } },
+      { title: 'Void III', description: 'Anchored vortex lasts longer (crowd vacuum).', stats: { lifeMs: 2300, pull: 1.95, pullRadius: 240, vortexDps: 16, damage: 15 } },
+      { title: 'Void IV', description: 'Vortex slows + secondary orb (late upgrade).', stats: { pierce: 14, slow: 0.22, pull: 2.15, split: 2 } },
+      { title: 'Void V', description: 'Singularity (anchored implosion + pop).', stats: { singularity: true, explodeRadius: 140, explodeMult: 0.95, pull: 2.55, pullRadius: 260, vortexDps: 20, maxRange: 500, lifeMs: 2400 } }
     ]
   },
 
@@ -267,7 +259,7 @@ const UPGRADES = [
 // -------------------- EVENTS / PICKUPS --------------------
 const EVENT_DEFS = {
   SWARM: { id: 'SWARM', duration: 10000 },
-  WALL: { id: 'WALL', duration: 12000 },
+  WALL: { id: 'WALL', duration: 9000 },
   RELIEF: { id: 'RELIEF', duration: 3000 }
 };
 
@@ -314,14 +306,14 @@ const spawnEnemy = (difficulty, forcedType = null) => {
     return { ...base, type: 'swarm', hp: Math.round(8 + difficulty * 1.6), maxHp: Math.round(8 + difficulty * 1.6), speed: 2.15 + difficulty * 0.05, size: 17, xp: 3, contactDamage: 5, color: '#ff4aa8' };
   }
   if (forcedType === 'wall') {
-    const hp = 135 + difficulty * 14;
-    return { ...base, type: 'wall', hp, maxHp: hp, speed: 0.95 + difficulty * 0.02, size: 44, xp: 22, contactDamage: 14, color: '#ff2a4b' };
+    const hp = 125 + difficulty * 12;
+    return { ...base, type: 'wall', hp, maxHp: hp, speed: 0.85 + difficulty * 0.02, size: 42, xp: 22, contactDamage: 12, color: '#ff2a4b' };
   }
   return base;
 };
 
 const spawnMiniBoss = (player, difficulty, kind = 'charger') => {
-  const hp = 520 + difficulty * 55;
+  const hp = (kind === 'charger' ? 980 : 760) + difficulty * (kind === 'charger' ? 95 : 75);
   const base = {
     id: `mini_${kind}_${Math.random()}`,
     type: `mini_${kind}`,
@@ -330,17 +322,19 @@ const spawnMiniBoss = (player, difficulty, kind = 'charger') => {
     hp,
     maxHp: hp,
     speed: kind === 'assassin' ? 2.6 : 2.1,
-    size: 86,
+    size: kind === 'charger' ? 104 : 92,
     xp: 140,
-    contactDamage: 22,
+    contactDamage: kind === 'charger' ? 28 : 22,
     color: kind === 'assassin' ? '#c9ff6b' : '#ffda6b'
   };
 
   if (kind === 'charger') {
-    return { ...base, dashCd: 1400, dashWindup: 420, dashMs: 320, dashSpd: 10.5, dashUntil: 0, windupUntil: 0, dashDir: 0 };
+    return { ...base, dashCd: 1600, dashWindup: 650, dashMs: 360, dashSpd: 11.2, dashUntil: 0, windupUntil: 0, dashDir: 0,
+      damageReductionUntil: Date.now() + 900, damageReductionMult: 0.55
+    };
   }
   // assassin: short teleports if you stand still
-  return { ...base, blinkCd: 1600, blinkUntil: 0 };
+  return { ...base, blinkCd: 1600, blinkUntil: 0, damageReductionUntil: Date.now() + 650, damageReductionMult: 0.70 };
 };
 
 const spawnBoss = (player, difficulty) => {
@@ -543,9 +537,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
   const [victory, setVictory] = useState(false);
   const [defeat, setDefeat] = useState(false);
   const [progress, setProgress] = useState(0);
-
-  const [hitFx, setHitFx] = useState({});
-  const [deathFx, setDeathFx] = useState([]);
+  const hitFxRef = useRef({});
   const deathFxRef = useRef([]);
   const keys = useRef({});
   const lastFire = useRef({});
@@ -573,6 +565,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
   const flagsRef = useRef({ swarm1: false, wall1: false, mini25: false, mini50: false, mini75: false, reliefLock: false });
   const activeEventRef = useRef(null); // {id, endsAt}
   const reliefUntilRef = useRef(0);
+  const reliefStartedAtRef = useRef(0);
   const eventCooldownUntilRef = useRef(0);
 
   // power pickups
@@ -602,13 +595,33 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
   const weaponLevelsRef = useRef(weaponLevels);
   const bossSpawnedRef = useRef(bossSpawned);
 
+  // Perf: keep simulation values in refs; sync React UI at low Hz
+  const levelRef = useRef(level);
+  const uiLastSyncRef = useRef(0);
+
   useEffect(() => { pausedRef.current = paused; }, [paused]);
-  useEffect(() => { playerRef.current = player; }, [player]);  useEffect(() => { statsRef.current = stats; }, [stats]);  useEffect(() => { pickupsRef.current = pickups; }, [pickups]);
+  useEffect(() => { playerRef.current = player; }, [player]);
+  useEffect(() => { statsRef.current = stats; }, [stats]);
   useEffect(() => { xpRef.current = xp; }, [xp]);
   useEffect(() => { xpTargetRef.current = xpTarget; }, [xpTarget]);
   useEffect(() => { selectedWeaponsRef.current = selectedWeapons; }, [selectedWeapons]);
   useEffect(() => { weaponLevelsRef.current = weaponLevels; }, [weaponLevels]);
   useEffect(() => { bossSpawnedRef.current = bossSpawned; }, [bossSpawned]);
+  useEffect(() => { levelRef.current = level; }, [level]);
+
+  const syncUI = (force = false) => {
+    const now = Date.now();
+    if (!force && now - uiLastSyncRef.current < 120) return; // ~8Hz
+    uiLastSyncRef.current = now;
+
+    // UI mirrors (small state); simulation stays in refs.
+    setStats({ ...statsRef.current });
+    setXp(xpRef.current);
+    setXpTarget(xpTargetRef.current);
+    setLevel(levelRef.current);
+    setPickups([...(pickupsRef.current || [])]);
+  };
+
 
   const weaponChoices = useMemo(() => WEAPONS, []);
   const crewDamageMult = useMemo(() => crew.reduce((acc, c) => acc * c.trait.dmg, 1), [crew]);
@@ -679,7 +692,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
 
     activeEventRef.current = { id, endsAt: now + EVENT_DEFS[id].duration, meta };
     // Small cooldown after the event ends (plus relief handles the real break).
-    eventCooldownUntilRef.current = Math.max(eventCooldownUntilRef.current, activeEventRef.current.endsAt + 6000);
+    eventCooldownUntilRef.current = Math.max(eventCooldownUntilRef.current, activeEventRef.current.endsAt + 3500);
     return true;
   };
 
@@ -699,8 +712,10 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
     return [...specials, ...kept];
   };
 
-  const triggerRelief = (ms = 14000) => {
+  const triggerRelief = (ms = 6500) => {
     const now = Date.now();
+    const wasActive = now < reliefUntilRef.current;
+    if (!wasActive) reliefStartedAtRef.current = now;
     reliefUntilRef.current = Math.max(reliefUntilRef.current, now + ms);
 
     // hard prune immediately so the player gets breathing room (keep 5–10 max)
@@ -733,7 +748,10 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
       const variant = r < 0.55 ? 'encircle' : r < 0.80 ? 'left_wave' : 'left_diagonal';
 
       // Only commit the schedule if the event actually starts.
-      if (startEvent('SWARM', { variant })) {
+      const safeAngle = Math.random() * Math.PI * 2;
+      const safeArc = Math.PI * 0.55; // ~20% of the circle stays "open"
+
+      if (startEvent('SWARM', { variant, safeAngle, safeArc })) {
         swarmPlanRef.current.variant = variant;
         swarmPlanRef.current.done += 1;
         swarmPlanRef.current.nextAt = e + (25000 + Math.floor(Math.random() * 30000)); // +25–55s
@@ -754,7 +772,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
       holes.add(Math.floor(Math.random() * ringN));
       holes.add(Math.floor(Math.random() * ringN));
 
-      if (startEvent('WALL', { ringN, holes: [...holes] })) {
+      if (startEvent('WALL', { ringN, holes: [...holes], spawned: false })) {
         flagsRef.current.wall1 = true;
         juicePunch(0.85, 0.8);
       }
@@ -770,25 +788,25 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
       flagsRef.current.mini25 = true;
       enemiesRef.current = [...(enemiesRef.current || []), spawnMiniBoss(pp, difficulty, 'charger')];
       juicePunch(1.0, 0.9);
-      triggerRelief(12000 + Math.floor(Math.random() * 8000));
+      triggerRelief(6500 + Math.floor(Math.random() * 2500));
     }
     if (p > 0.50 && !flagsRef.current.mini50) {
       flagsRef.current.mini50 = true;
       enemiesRef.current = [...(enemiesRef.current || []), spawnMiniBoss(pp, difficulty, 'assassin')];
       juicePunch(1.0, 0.9);
-      triggerRelief(12000 + Math.floor(Math.random() * 8000));
+      triggerRelief(6500 + Math.floor(Math.random() * 2500));
     }
     if (p > 0.75 && !flagsRef.current.mini75) {
       flagsRef.current.mini75 = true;
       enemiesRef.current = [...(enemiesRef.current || []), spawnMiniBoss(pp, difficulty, Math.random() < 0.5 ? 'charger' : 'assassin')];
       juicePunch(1.0, 0.9);
-      triggerRelief(12000 + Math.floor(Math.random() * 8000));
+      triggerRelief(6500 + Math.floor(Math.random() * 2500));
     }
 
     // end-of-event relief beat (silence & relief)
     if (activeEventRef.current && now >= activeEventRef.current.endsAt) {
       activeEventRef.current = null;
-      triggerRelief(10000 + Math.floor(Math.random() * 10000)); // 10–20s
+      triggerRelief(5500 + Math.floor(Math.random() * 3500)); // 5.5–9.0s
     }
   };
 
@@ -799,10 +817,8 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
 
     const r = Math.random();
     const type = r < 0.32 ? 'MAGNET' : r < 0.56 ? 'OVERDRIVE' : r < 0.78 ? 'SHIELD' : 'FREEZE';
-    setPickups((prev) => [
-      ...prev,
-      { id: Math.random(), type, x, y, t: Date.now(), life: 16000 }
-    ]);
+    pickupsRef.current = [...(pickupsRef.current || []), { id: Math.random(), type, x, y, t: Date.now(), life: 16000 }];
+    // show within next UI sync
   };
 
   const activatePickup = (type) => {
@@ -929,7 +945,7 @@ useEffect(() => {
         // charger telegraph lane (windup)
         if (e.type === 'mini_charger' && e.windupUntil && now < e.windupUntil) {
           const dir = Number.isFinite(e.dashDir) ? e.dashDir : 0;
-          const len = 620;
+          const len = 760;
           ctx.save();
           ctx.globalAlpha = 0.25;
           ctx.fillStyle = '#ffffff';
@@ -937,7 +953,7 @@ useEffect(() => {
           // draw a wide lane rectangle along dashDir
           ctx.translate(sx, sy);
           ctx.rotate(dir);
-          ctx.fillRect(0, -28, len, 56);
+          ctx.fillRect(0, -36, len, 72);
           ctx.restore();
 
           // line
@@ -1087,15 +1103,15 @@ useEffect(() => {
         railLinesRef.current = (railLinesRef.current || []).filter((l) => nowV - l.t < (l.life || 120));
         beamsRef.current = (beamsRef.current || []).filter((b) => nowV - b.t < (b.life || 120));
         slashesRef.current = (slashesRef.current || []).filter((s) => nowV - (s.t || (nowV - (s.age || 0))) < (s.life || 260));
-        setPickups((prev) => prev.filter((p) => nowV - p.t < p.life));
+        pickupsRef.current = (pickupsRef.current || []).filter((p) => nowV - p.t < p.life);
       }
 
-      // regen
+      // regen (mutate ref; UI sync runs at low Hz)
       if (statsRef.current.regen > 0) {
-        setStats((prev) => ({ ...prev, hp: Math.min(prev.maxHp, prev.hp + prev.regen * 0.016) }));
+        const s = statsRef.current;
+        s.hp = Math.min(s.maxHp, s.hp + s.regen * 0.016);
       }
 
-      
       // move player + camera (no React state updates; update DOM refs directly for smoothness)
       {
         const prev = playerRef.current;
@@ -1172,10 +1188,11 @@ useEffect(() => {
       let nextEnemies = [...enemiesRef.current];
 
       // During freeze pickup: no new spawns (but player can still act).
-      // During relief: no spawning at all; we already pruned the pack to give breathing room.
-      const inReliefHard = Date.now() < reliefUntilRef.current;
+      // During relief: short "silence" then trickle spawns (so it doesn't feel dead).
+      const nowSpawn = Date.now();
+      const reliefHard = (nowSpawn < reliefUntilRef.current) && (nowSpawn - (reliefStartedAtRef.current || 0) < 1800);
 
-      if (!freezeWorld && !inReliefHard) {
+      if (!freezeWorld && !reliefHard) {
         if (elapsed.current - lastSpawn.current > spawnInterval) {
           lastSpawn.current = elapsed.current;
 
@@ -1201,24 +1218,48 @@ useEffect(() => {
                 const y = clamp(yBase + (Math.random() - 0.5) * 260, 40, ARENA_SIZE - 40);
                 nextEnemies.push({ ...en, x, y });
               } else {
-                nextEnemies.push(en); // default encircle-ish (edge spawns)
+                // Encircle-ish, but keep an escape wedge open (retreat direction).
+                const meta = activeEventRef.current?.meta || {};
+                const safeAngle = meta.safeAngle ?? 0;
+                const safeArc = meta.safeArc ?? (Math.PI * 0.55);
+
+                let placed = null;
+                for (let tries = 0; tries < 6; tries++) {
+                  const cand = spawnEnemy(difficulty, 'swarm');
+                  const ang = Math.atan2(cand.y - p.y, cand.x - p.x);
+                  // if it's inside the safe wedge, reroll
+                  const dA = (() => {
+                    let v = ang - safeAngle;
+                    while (v > Math.PI) v -= Math.PI * 2;
+                    while (v < -Math.PI) v += Math.PI * 2;
+                    return Math.abs(v);
+                  })();
+                  if (dA > safeArc * 0.5) { placed = cand; break; }
+                }
+                nextEnemies.push(placed || en);
               }
             }
           } else if (isEventActive('WALL')) {
             // ring with holes (so it's dodgeable, not a trap)
             const meta = activeEventRef.current?.meta || {};
-            const ringN = meta.ringN || 16;
-            const holes = new Set(meta.holes || []);
-            const radius = 520;
+            // Spawn the ring ONCE (no continuous walls).
+            if (!meta.spawned) {
+              meta.spawned = true;
 
-            for (let i = 0; i < ringN; i++) {
-              if (holes.has(i)) continue;
-              const a = (i / ringN) * Math.PI * 2;
-              const x = clamp(p.x + Math.cos(a) * radius, 40, ARENA_SIZE - 40);
-              const y = clamp(p.y + Math.sin(a) * radius, 40, ARENA_SIZE - 40);
-              const en = spawnEnemy(difficulty, 'wall');
-              nextEnemies.push({ ...en, x, y });
+              const ringN = meta.ringN || 16;
+              const holes = new Set(meta.holes || []);
+              const radius = 520;
+
+              for (let i = 0; i < ringN; i++) {
+                if (holes.has(i)) continue;
+                const a = (i / ringN) * Math.PI * 2;
+                const x = clamp(p.x + Math.cos(a) * radius, 40, ARENA_SIZE - 40);
+                const y = clamp(p.y + Math.sin(a) * radius, 40, ARENA_SIZE - 40);
+                const en = spawnEnemy(difficulty, 'wall');
+                nextEnemies.push({ ...en, x, y });
+              }
             }
+
           } else {
             for (let i = 0; i < count; i += 1) nextEnemies.push(spawnEnemy(difficulty));
           }
@@ -1371,7 +1412,28 @@ useEffect(() => {
             }
           }
 
-          return { ...b, x: x + vx, y: y + vy, vx, vy, life: b.life - 16 };
+          let nx = x + vx;
+          let ny = y + vy;
+
+          // VOID anchor: once it reaches max range, stop and become a vortex.
+          if (b.anchorOnMaxRange && b.maxRange > 0 && !b.anchored) {
+            const dd = Math.hypot(nx - b.originX, ny - b.originY);
+            if (dd >= b.maxRange) {
+              nx = b.originX + Math.cos(b.dirAngle || 0) * b.maxRange;
+              ny = b.originY + Math.sin(b.dirAngle || 0) * b.maxRange;
+              vx = 0;
+              vy = 0;
+              return { ...b, x: nx, y: ny, vx, vy, anchored: true, life: b.life - 16 };
+            }
+          }
+
+          // anchored voids just stay put
+          if (b.anchored) {
+            vx = 0;
+            vy = 0;
+          }
+
+          return { ...b, x: nx, y: ny, vx, vy, life: b.life - 16 };
         })
         .filter((b) => b.x > -140 && b.x < ARENA_SIZE + 140 && b.y > -140 && b.y < ARENA_SIZE + 140 && b.life > 0);
 
@@ -1628,8 +1690,10 @@ useEffect(() => {
 
             const st = statusHits.get(cur.id) || {};
             st.stun = Math.max(st.stun || 0, stunMs + i * 15);
-            st.slow = Math.max(st.slow || 0, 0.14);
-            st.slowDuration = Math.max(st.slowDuration || 0, 720);
+            const zapSlow = (wStats.zapSlow ?? 0.14);
+            const zapSlowDur = (wStats.zapSlowDuration ?? 720);
+            st.slow = Math.max(st.slow || 0, zapSlow);
+            st.slowDuration = Math.max(st.slowDuration || 0, zapSlowDur);
             statusHits.set(cur.id, st);
 
             arcsToAdd.push({ id: Math.random(), x1: origin.x, y1: origin.y, x2: cur.x, y2: cur.y, t: Date.now(), life: 180, color: weapon.color });
@@ -1648,8 +1712,10 @@ useEffect(() => {
               bulletHits.set(ft.id, (bulletHits.get(ft.id) || 0) + baseDamage * 0.65);
               const st = statusHits.get(ft.id) || {};
               st.stun = Math.max(st.stun || 0, Math.floor(stunMs * 0.7));
-              st.slow = Math.max(st.slow || 0, 0.12);
-              st.slowDuration = Math.max(st.slowDuration || 0, 650);
+              const zapSlow = (wStats.zapSlow ?? 0.12);
+              const zapSlowDur = (wStats.zapSlowDuration ?? 650);
+              st.slow = Math.max(st.slow || 0, zapSlow);
+              st.slowDuration = Math.max(st.slowDuration || 0, zapSlowDur);
               statusHits.set(ft.id, st);
 
               arcsToAdd.push({ id: Math.random(), x1: target.x, y1: target.y, x2: ft.x, y2: ft.y, t: Date.now(), life: 170, color: weapon.color });
@@ -1812,6 +1878,12 @@ useEffect(() => {
 
             // void behaviors
             pull: wStats.pull || 0,
+            pullRadius: wStats.pullRadius || 0,
+            vortexDps: wStats.vortexDps || 0,
+            maxRange: wStats.maxRange || 0,
+            anchorOnMaxRange: !!wStats.anchorOnMaxRange,
+            anchored: false,
+            dirAngle: a,
             split: wStats.split || 0,
             singularity: !!wStats.singularity,
 
@@ -1831,6 +1903,10 @@ useEffect(() => {
       const withDamage = movedEnemies.map((en0) => {
         let en = en0;
         let totalDamage = bulletHits.get(en.id) || 0;
+        // spawn protection / armor window (prevents insta-gib on spawn)
+        if (en.damageReductionUntil && Date.now() < en.damageReductionUntil) {
+          totalDamage *= (en.damageReductionMult ?? 0.7);
+        }
 
         allSlashes.forEach((sl) => {
           const activeStart = sl.delay || 0;
@@ -1849,7 +1925,7 @@ useEffect(() => {
         // VOID pull influence (stronger, bigger radius)
         const pulls = movedBullets.filter((b) => {
           if (!b.pull) return false;
-          if (Math.hypot(b.x - en.x, b.y - en.y) >= 170) return false;
+          if (Math.hypot(b.x - en.x, b.y - en.y) >= (b.pullRadius || 190)) return false;
           // safety: don't pull enemies into the player if the orb is danger-close
           const dToPlayer = Math.hypot(b.x - p.x, b.y - p.y);
           return dToPlayer > 140;
@@ -1864,9 +1940,14 @@ useEffect(() => {
           en = { ...en, x: en.x + (dx / d) * strongest * 2.2, y: en.y + (dy / d) * strongest * 2.2 };
         }
 
-        if (totalDamage > 0) {
-          setHitFx((prev) => ({ ...prev, [en.id]: Date.now() }));
-          juicePunch(Math.min(0.34, totalDamage / 90), 0.28);
+        // Void vortex damage-over-time (feels like a real field, not just a bullet)
+        const voidFields = movedBullets.filter((b) => b.vortexDps && b.pull && Math.hypot(b.x - en.x, b.y - en.y) < (b.pullRadius || 200));
+        if (voidFields.length) {
+          const dps = voidFields.reduce((acc, b) => acc + (b.vortexDps || 0), 0);
+          totalDamage += dps * 0.016;
+        }
+
+        if (totalDamage > 0) {          juicePunch(Math.min(0.34, totalDamage / 90), 0.28);
           return { ...en, hp: en.hp - totalDamage };
         }
         return en;
@@ -2045,29 +2126,33 @@ useEffect(() => {
           else kept.push(o);
         });
 
-        if (gained > 0) setXp((x) => x + gained);
+        if (gained > 0) xpRef.current += gained;
         return kept;
       })();
-
       // -------------------- PICKUPS: vacuum / freeze / overdrive / shield --------------------
-      setPickups((prev) => {
+      {
         const pp = playerRef.current;
+        const prev = pickupsRef.current || [];
         const kept = [];
-        prev.forEach((pk) => {
+        for (const pk of prev) {
           const d = Math.hypot(pk.x - pp.x, pk.y - pp.y);
-          if (d < 44) {
-            activatePickup(pk.type);
-          } else kept.push(pk);
-        });
-        return kept;
-      });
+          if (d < 44) activatePickup(pk.type);
+          else kept.push(pk);
+        }
+        pickupsRef.current = kept;
+      }
+
+      // Keep UI updated without re-rendering every frame
+      syncUI();
 
       // -------------------- LEVEL UP --------------------
       if (xpRef.current >= xpTargetRef.current) {
-        setXp((x) => x - xpTargetRef.current);
-        setLevel((l) => l + 1);
-        setXpTarget((t) => Math.floor(t * 1.30));
+        xpRef.current = xpRef.current - xpTargetRef.current;
+        levelRef.current = (levelRef.current || 1) + 1;
+        xpTargetRef.current = Math.floor(xpTargetRef.current * 1.30);
         setUpgradeOptions(rollUpgradeOptions(selectedWeaponsRef.current, weaponLevelsRef.current, statsRef.current));
+        // force fast UI refresh since menu/pause depends on state
+        syncUI(true);
         juicePunch(0.55, 0.55);
       }
 
@@ -2086,7 +2171,8 @@ useEffect(() => {
 
         if (!shielded && hazardDamage > 0 && now2 - lastDamage.current > 240) {
           lastDamage.current = now2;
-          setStats((prev) => ({ ...prev, hp: Math.max(0, prev.hp - hazardDamage) }));
+          statsRef.current.hp = Math.max(0, statsRef.current.hp - hazardDamage);
+          syncUI();
           juicePunch(0.6, 0.7);
         }
 
@@ -2100,7 +2186,8 @@ useEffect(() => {
           if (totalDamage > 0) {
             lastDamage.current = now2;
             if (!shielded) {
-              setStats((prev) => ({ ...prev, hp: Math.max(0, prev.hp - totalDamage) }));
+              statsRef.current.hp = Math.max(0, statsRef.current.hp - totalDamage);
+              syncUI();
               juicePunch(0.55, 0.65);
             } else {
               juicePunch(0.35, 0.55);
@@ -2115,7 +2202,9 @@ useEffect(() => {
   }, [selectedWeapons.length, tileDifficulty, crewDamageMult, crewSpeedMult]);
 
   const chooseUpgrade = (option) => {
-    setStats((s) => option.apply(s));
+    const next = option.apply(statsRef.current);
+    statsRef.current = next;
+    setStats(next);
     if (option.weaponId) {
       if (option.upgradeLevel) {
         setWeaponLevels((levels) => ({ ...levels, [option.weaponId]: option.upgradeLevel }));
