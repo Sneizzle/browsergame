@@ -201,8 +201,8 @@ const WEAPONS = [
     targeting: 'closest',
     color: '#a6b7ff',
     levels: [
-      { title: 'Tesla I', description: 'Chain lightning (reliable kill power).', stats: { cooldown: 650, damage: 18, chain: 3, arcRange: 300, stun: 90, chainFalloff: 0.90 } },
-      { title: 'Tesla II', description: 'Bigger arcs + stronger stun.', stats: { damage: 20, chain: 4, arcRange: 330, stun: 130 } },
+      { title: 'Tesla I', description: 'Chain lightning (reliable kill power).', stats: { cooldown: 650, damage: 18, chain: 3, arcRange: 260, stun: 90, chainFalloff: 0.90 } },
+      { title: 'Tesla II', description: 'Bigger arcs + stronger stun.', stats: { damage: 20, chain: 4, arcRange: 290, stun: 130 } },
       { title: 'Tesla III', description: 'More jumps.', stats: { chain: 6, damage: 21 } },
       { title: 'Tesla IV', description: 'Forked discharge.', stats: { chain: 7, damage: 22, fork: 2 } },
       { title: 'Tesla V', description: 'Overload storm.', stats: { cooldown: 560, damage: 24, chain: 8, fork: 3, storm: true } }
@@ -231,11 +231,11 @@ const WEAPONS = [
     targeting: 'closest',
     color: '#c08bff',
     levels: [
-      { title: 'Void I', description: 'Gravity orb (real pull).', stats: { cooldown: 780, bulletSpeed: 6.0, damage: 16, pellets: 1, spread: 0.06, width: 22, height: 22, pierce: 10, pull: 1.4, lifeMs: 1600, singularity: false } },
+      { title: 'Void I', description: 'Gravity orb (real pull).', stats: { cooldown: 780, bulletSpeed: 6.0, damage: 16, pellets: 1, spread: 0.06, width: 22, height: 22, pierce: 10, pull: 1.4, lifeMs: 1350, singularity: false } },
       { title: 'Void II', description: 'Stronger pull + bigger orb.', stats: { pull: 1.7, width: 28, height: 28, damage: 17 } },
       { title: 'Void III', description: 'Orb splits near end.', stats: { split: 2, damage: 16 } },
       { title: 'Void IV', description: 'More pierce + slow field.', stats: { pierce: 16, slow: 0.20, pull: 2.0 } },
-      { title: 'Void V', description: 'Singularity (implosion + pop).', stats: { singularity: true, explodeRadius: 120, explodeMult: 0.95, pull: 2.4, lifeMs: 1900 } }
+      { title: 'Void V', description: 'Singularity (implosion + pop).', stats: { singularity: true, explodeRadius: 120, explodeMult: 0.95, pull: 2.4, lifeMs: 1650 } }
     ]
   },
 
@@ -246,11 +246,11 @@ const WEAPONS = [
     targeting: 'closest',
     color: '#7ff2d7',
     levels: [
-      { title: 'Time I', description: 'Stutter-freeze + heavy slow.', stats: { cooldown: 560, bulletSpeed: 12, damage: 16, pellets: 1, spread: 0.05, width: 16, height: 7, pierce: 1, slow: 0.40, microFreeze: 120 } },
+      { title: 'Time I', description: 'Stutter-freeze + heavy slow.', stats: { cooldown: 560, bulletSpeed: 12, damage: 16, pellets: 1, spread: 0.05, width: 16, height: 7, pierce: 1, slow: 0.40, microFreeze: 200 } },
       { title: 'Time II', description: 'More slow + pierce.', stats: { slow: 0.46, pierce: 2, damage: 17 } },
       { title: 'Time III', description: 'Temporal split.', stats: { split: 2, damage: 16 } },
-      { title: 'Time IV', description: 'Stasis (stun on hit).', stats: { stun: 160, damage: 18, explodeRadius: 36, explodeMult: 0.25 } },
-      { title: 'Time V', description: 'Chrono fracture (freeze wave).', stats: { stun: 240, explodeRadius: 76, explodeMult: 0.55 } }
+      { title: 'Time IV', description: 'Stasis (stun on hit).', stats: { stun: 380, damage: 18, explodeRadius: 36, explodeMult: 0.25 } },
+      { title: 'Time V', description: 'Chrono fracture (freeze wave).', stats: { stun: 520, explodeRadius: 76, explodeMult: 0.55 } }
     ]
   }
 ];
@@ -272,7 +272,7 @@ const EVENT_DEFS = {
 };
 
 const PICKUP_DEFS = {
-  MAGNET: { id: 'MAGNET', title: 'XP Magnet', life: 5200 },
+  MAGNET: { id: 'MAGNET', title: 'XP Magnet', life: 9200 },
   FREEZE: { id: 'FREEZE', title: 'Time Freeze', life: 3200 },
   OVERDRIVE: { id: 'OVERDRIVE', title: 'Overdrive', life: 5200 },
   SHIELD: { id: 'SHIELD', title: 'Emergency Shield', life: 5200 }
@@ -311,10 +311,10 @@ const spawnEnemy = (difficulty, forcedType = null) => {
   // scripted variants
   const base = spawnEnemyBase(difficulty);
   if (forcedType === 'swarm') {
-    return { ...base, type: 'swarm', hp: 10 + difficulty * 2, maxHp: 10 + difficulty * 2, speed: 2.6 + difficulty * 0.06, size: 18, xp: 3, contactDamage: 6, color: '#ff4aa8' };
+    return { ...base, type: 'swarm', hp: Math.round(8 + difficulty * 1.6), maxHp: Math.round(8 + difficulty * 1.6), speed: 2.15 + difficulty * 0.05, size: 17, xp: 3, contactDamage: 5, color: '#ff4aa8' };
   }
   if (forcedType === 'wall') {
-    const hp = 170 + difficulty * 18;
+    const hp = 135 + difficulty * 14;
     return { ...base, type: 'wall', hp, maxHp: hp, speed: 0.95 + difficulty * 0.02, size: 44, xp: 22, contactDamage: 14, color: '#ff2a4b' };
   }
   return base;
@@ -399,68 +399,130 @@ const orbStyle = (rank) => {
   return { bg: 'rgba(0, 255, 160, 0.90)', shadow: '0 0 12px rgba(0,255,160,0.9), 0 0 28px rgba(0,255,160,0.7)' };
 };
 
-// ---------- upgrades: bias to max 1–3 guns, hard cap 4 ----------
+// ---------- upgrades: guarantee 3 distinct guns early, then bias toward upgrading (cap 4) ----------
 const rollUpgradeOptions = (ownedWeapons, weaponLevels, stats) => {
-  const upgrades = [...UPGRADES].map((u) => ({ ...u }));
-
   const MAX_GUNS = 4;
   const canAddWeapon = ownedWeapons.length < MAX_GUNS;
 
-  // Add weapon option LESS often; only strongly when you have <= 2
   const unowned = WEAPONS.filter((w) => !ownedWeapons.includes(w.id));
-  const wantNewWeaponChance = ownedWeapons.length <= 1 ? 0.85 : ownedWeapons.length === 2 ? 0.30 : 0.12;
+  const want3GunsFast = ownedWeapons.length < 3;
 
-  if (canAddWeapon && unowned.length && Math.random() < wantNewWeaponChance) {
-    const weaponPick = unowned[Math.floor(Math.random() * unowned.length)];
-    upgrades.push({
-      id: `WEAPON_${weaponPick.id}`,
-      title: `New Weapon: ${weaponPick.name}`,
-      description: ownedWeapons.length >= 3 ? 'Adds final weapon slot (cap 4)' : 'Adds another weapon to your loadout',
-      weaponId: weaponPick.id,
-      apply: (s) => ({ ...s })
-    });
+  // Build UNIQUE candidate options with weights (no duplicates in the final 3).
+  const candidates = [];
+
+  const push = (opt, weight = 1) => {
+    const key = opt.key || opt.id;
+    candidates.push({ ...opt, key, weight });
+  };
+
+  // 1) New weapons: guarantee at least one option until you have 3 weapons (if available).
+  if (canAddWeapon && unowned.length) {
+    const weaponChance = want3GunsFast ? 1.0 : ownedWeapons.length === 3 ? 0.12 : 0.18;
+    if (Math.random() < weaponChance) {
+      // We'll add ALL unowned as candidates, but weighted low once you already have 3.
+      unowned.forEach((w) => {
+        push(
+          {
+            id: `WEAPON_${w.id}`,
+            key: `WEAPON_${w.id}`,
+            title: `New Weapon: ${w.name}`,
+            description: ownedWeapons.length >= 3 ? 'Adds final weapon slot (cap 4)' : 'Adds another weapon to your loadout',
+            weaponId: w.id,
+            apply: (s) => ({ ...s })
+          },
+          want3GunsFast ? 6 : 2
+        );
+      });
+    }
   }
 
-  // weight existing weapon level-ups HEAVIER
+  // 2) Existing weapon upgrades (unique per weapon/next-level)
   ownedWeapons.forEach((id) => {
     const level = weaponLevels[id] || 1;
     if (level < 5) {
       const weapon = WEAPONS.find((w) => w.id === id);
       const nextLevel = level + 1;
+      const weight = want3GunsFast ? 2 : level === 1 ? 4 : level === 2 ? 5 : 6;
 
-      // add duplicates for weighting
-      const weight = level === 1 ? 3 : level === 2 ? 4 : 5; // encourages pushing 1–3 guns to max
-      for (let k = 0; k < weight; k++) {
-        upgrades.push({
-          id: `UP_${id}_${nextLevel}_${k}`,
+      push(
+        {
+          id: `UP_${id}_${nextLevel}`,
+          key: `UP_${id}_${nextLevel}`,
           title: `${weapon.name} Level ${nextLevel}`,
           description: weapon.levels[nextLevel - 1].description,
           weaponId: id,
           upgradeLevel: nextLevel,
           apply: (s) => ({ ...s })
-        });
-      }
+        },
+        weight
+      );
     }
   });
 
-  const picks = [];
-  while (picks.length < 3 && upgrades.length) {
-    const idx = Math.floor(Math.random() * upgrades.length);
-    picks.push(upgrades.splice(idx, 1)[0]);
+  // 3) Stat upgrades
+  UPGRADES.forEach((u) => {
+    push(
+      { ...u, key: u.id },
+      want3GunsFast ? 1 : 2
+    );
+  });
+
+  // Helper: weighted sample without replacement by key
+  const picked = [];
+  const used = new Set();
+
+  const takeWeighted = () => {
+    const pool = candidates.filter((c) => !used.has(c.key));
+    if (!pool.length) return null;
+    const total = pool.reduce((acc, c) => acc + (c.weight || 1), 0);
+    let r = Math.random() * total;
+    for (const c of pool) {
+      r -= (c.weight || 1);
+      if (r <= 0) return c;
+    }
+    return pool[pool.length - 1];
+  };
+
+  // Guarantee: until you have 3 weapons, force at least 1 new-weapon option if possible.
+  if (want3GunsFast && canAddWeapon && unowned.length) {
+    const w = unowned[Math.floor(Math.random() * unowned.length)];
+    picked.push({
+      id: `WEAPON_${w.id}`,
+      title: `New Weapon: ${w.name}`,
+      description: ownedWeapons.length >= 3 ? 'Adds final weapon slot (cap 4)' : 'Adds another weapon to your loadout',
+      weaponId: w.id,
+      apply: (s) => ({ ...s })
+    });
+    used.add(`WEAPON_${w.id}`);
   }
-  if (picks.length < 3) {
-    picks.push({ id: 'HEAL', title: 'Repair Kit', description: 'Restore 40 HP', apply: (s) => ({ ...s, hp: Math.min(s.maxHp, s.hp + 40) }) });
+
+  while (picked.length < 3) {
+    const c = takeWeighted();
+    if (!c) break;
+    used.add(c.key);
+    picked.push(c);
   }
-  return picks.map((option) => ({ ...option, statsSnapshot: stats }));
+
+  while (picked.length < 3) {
+    picked.push({ id: 'HEAL', title: 'Repair Kit', description: 'Restore 40 HP', apply: (s) => ({ ...s, hp: Math.min(s.maxHp, s.hp + 40) }) });
+  }
+
+  // Strip internal fields + attach snapshot
+  return picked.map((o) => {
+    const { weight, key, ...rest } = o;
+    return { ...rest, statsSnapshot: stats };
+  });
 };
+
 
 export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) {
   const [player, setPlayer] = useState({ x: 1400, y: 1400 });
-  const [stats, setStats] = useState({ hp: 120, maxHp: 120, regen: 0, damageMult: 1, attackSpeed: 1, moveSpeed: 1 });
-  const [camera, setCamera] = useState({ x: 0, y: 0 });
-  const cameraRef = useRef({ x: 0, y: 0 });
-const canvasRef = useRef(null);
-const ctxRef = useRef(null);
+  const [stats, setStats] = useState({ hp: 120, maxHp: 120, regen: 0, damageMult: 1, attackSpeed: 1, moveSpeed: 1 });  const cameraRef = useRef({ x: 0, y: 0 });
+  const worldRef = useRef(null);
+  const playerSpriteRef = useRef(null);
+  const playerTracerRef = useRef(null);
+  const canvasRef = useRef(null);
+  const ctxRef = useRef(null);
   const [enemies, setEnemies] = useState([]);
   const [bullets, setBullets] = useState([]);
   const [beams, setBeams] = useState([]); // LASER beams
@@ -484,13 +546,21 @@ const ctxRef = useRef(null);
 
   const [hitFx, setHitFx] = useState({});
   const [deathFx, setDeathFx] = useState([]);
-  const [screenFx, setScreenFx] = useState({ chroma: 0, punch: 0 });
-
+  const deathFxRef = useRef([]);
   const keys = useRef({});
   const lastFire = useRef({});
   const lastSpawn = useRef(0);
   const elapsed = useRef(0);
   const lastDamage = useRef(0);
+
+  // per-run duration (random 25–100% longer)
+  const runTimeRef = useRef(BOSS_TIME * (1.25 + Math.random() * 0.75));
+
+  // swarm scheduling: 1–4 random swarms, later in the run
+  const swarmPlanRef = useRef({ total: 0, done: 0, nextAt: 0, variant: 'encircle' });
+
+  // relief bookkeeping (to prune enemies once per relief start)
+  const reliefWasActiveRef = useRef(false);
 
   // SMG: every 5th bullet pierces 1
   const smgCounter = useRef(0);
@@ -503,6 +573,7 @@ const ctxRef = useRef(null);
   const flagsRef = useRef({ swarm1: false, wall1: false, mini25: false, mini50: false, mini75: false, reliefLock: false });
   const activeEventRef = useRef(null); // {id, endsAt}
   const reliefUntilRef = useRef(0);
+  const eventCooldownUntilRef = useRef(0);
 
   // power pickups
   const magnetUntil = useRef(0);
@@ -532,18 +603,7 @@ const ctxRef = useRef(null);
   const bossSpawnedRef = useRef(bossSpawned);
 
   useEffect(() => { pausedRef.current = paused; }, [paused]);
-  useEffect(() => { playerRef.current = player; }, [player]);
-  useEffect(() => { cameraRef.current = camera; }, [camera]);
-  useEffect(() => { statsRef.current = stats; }, [stats]);
-  useEffect(() => { enemiesRef.current = enemies; }, [enemies]);
-  useEffect(() => { bulletsRef.current = bullets; }, [bullets]);
-  useEffect(() => { beamsRef.current = beams; }, [beams]);
-  useEffect(() => { railLinesRef.current = railLines; }, [railLines]);
-  useEffect(() => { slashesRef.current = slashes; }, [slashes]);
-  useEffect(() => { arcsRef.current = arcs; }, [arcs]);
-  useEffect(() => { explosionsRef.current = explosions; }, [explosions]);
-  useEffect(() => { orbsRef.current = orbs; }, [orbs]);
-  useEffect(() => { pickupsRef.current = pickups; }, [pickups]);
+  useEffect(() => { playerRef.current = player; }, [player]);  useEffect(() => { statsRef.current = stats; }, [stats]);  useEffect(() => { pickupsRef.current = pickups; }, [pickups]);
   useEffect(() => { xpRef.current = xp; }, [xp]);
   useEffect(() => { xpTargetRef.current = xpTarget; }, [xpTarget]);
   useEffect(() => { selectedWeaponsRef.current = selectedWeapons; }, [selectedWeapons]);
@@ -554,12 +614,18 @@ const ctxRef = useRef(null);
   const crewDamageMult = useMemo(() => crew.reduce((acc, c) => acc * c.trait.dmg, 1), [crew]);
   const crewSpeedMult = useMemo(() => crew.reduce((acc, c) => acc * c.trait.spd, 1), [crew]);
 
+  // Punch FX is applied directly to the world transform/filter (no React state → no hitching on impacts).
   const juicePunch = (mag = 1, chroma = 1) => {
     const now = Date.now();
-    hitstopUntil.current = Math.max(hitstopUntil.current, now + Math.floor(18 * mag));
-    juice.current.chroma = Math.max(juice.current.chroma, 0.22 * chroma);
-    juice.current.punch = Math.max(juice.current.punch, 0.9 * mag);
+    const maxC = Math.max(juice.current.maxChroma || 0, 0.20 * chroma);
+    const maxP = Math.max(juice.current.maxPunch || 0, 0.90 * mag);
+
+    juice.current.maxChroma = maxC;
+    juice.current.maxPunch = maxP;
+    juice.current.until = Math.max(juice.current.until || 0, now + 140);
+    juice.current.dur = 140;
   };
+
 
   useEffect(() => {
     if (victory) {
@@ -603,57 +669,126 @@ const ctxRef = useRef(null);
     };
   }, []);
 
-  const startEvent = (id) => {
-    activeEventRef.current = { id, endsAt: Date.now() + EVENT_DEFS[id].duration };
+  const startEvent = (id, meta = {}) => {
+    const now = Date.now();
+    // Prevent event overlap (SWARM + WALL etc). Also don't start events during relief.
+    if (activeEventRef.current && now < activeEventRef.current.endsAt) return false;
+    if (now < reliefUntilRef.current) return false;
+    // Global cooldown so events don't chain immediately (feels like overlap because enemies persist).
+    if (now < eventCooldownUntilRef.current) return false;
+
+    activeEventRef.current = { id, endsAt: now + EVENT_DEFS[id].duration, meta };
+    // Small cooldown after the event ends (plus relief handles the real break).
+    eventCooldownUntilRef.current = Math.max(eventCooldownUntilRef.current, activeEventRef.current.endsAt + 6000);
+    return true;
   };
 
   const isEventActive = (id) => activeEventRef.current && activeEventRef.current.id === id && Date.now() < activeEventRef.current.endsAt;
 
-  const scheduleBeats = () => {
+
+  const pruneEnemiesForRelief = (list, pp, keepMax = 8) => {
+    if (!Array.isArray(list) || !list.length) return list;
+    const specials = [];
+    const normals = [];
+    for (const e of list) {
+      if (e.type === 'boss' || String(e.type).startsWith('mini_')) specials.push(e);
+      else normals.push(e);
+    }
+    normals.sort((a, b) => Math.hypot(a.x - pp.x, a.y - pp.y) - Math.hypot(b.x - pp.x, b.y - pp.y));
+    const kept = normals.slice(0, Math.max(0, keepMax - specials.length));
+    return [...specials, ...kept];
+  };
+
+  const triggerRelief = (ms = 14000) => {
+    const now = Date.now();
+    reliefUntilRef.current = Math.max(reliefUntilRef.current, now + ms);
+
+    // hard prune immediately so the player gets breathing room (keep 5–10 max)
+    const pp = playerRef.current;
+    enemiesRef.current = pruneEnemiesForRelief(enemiesRef.current || [], pp, 9);
+  };
+
+    const scheduleBeats = () => {
     const e = elapsed.current;
+    const now = Date.now();
 
-    // ACT1 -> SWARM (power fantasy + recovery)
-    if (e > 45000 && !flagsRef.current.swarm1) {
-      flagsRef.current.swarm1 = true;
-      startEvent('SWARM');
-      juicePunch(0.65, 0.65);
+    // initialize swarm plan once per run
+    if (swarmPlanRef.current.total === 0) {
+      swarmPlanRef.current.total = 1 + Math.floor(Math.random() * 4); // 1–4 swarms
+      swarmPlanRef.current.done = 0;
+      swarmPlanRef.current.nextAt = 60000 + Math.floor(Math.random() * 20000); // 60–80s (later)
+      swarmPlanRef.current.variant = 'encircle';
     }
 
-    // positional twist: wall / encroaching ring
-    if (e > 72000 && !flagsRef.current.wall1) {
-      flagsRef.current.wall1 = true;
-      startEvent('WALL');
-      juicePunch(0.85, 0.8);
+    // random swarms (1–4)
+    if (
+      swarmPlanRef.current.done < swarmPlanRef.current.total &&
+      e > swarmPlanRef.current.nextAt &&
+      !isEventActive('SWARM') &&
+      !isEventActive('WALL') &&
+      (!activeEventRef.current || now >= activeEventRef.current.endsAt) &&
+      now >= reliefUntilRef.current && now >= eventCooldownUntilRef.current
+    ) {
+      const r = Math.random();
+      const variant = r < 0.55 ? 'encircle' : r < 0.80 ? 'left_wave' : 'left_diagonal';
+
+      // Only commit the schedule if the event actually starts.
+      if (startEvent('SWARM', { variant })) {
+        swarmPlanRef.current.variant = variant;
+        swarmPlanRef.current.done += 1;
+        swarmPlanRef.current.nextAt = e + (25000 + Math.floor(Math.random() * 30000)); // +25–55s
+        juicePunch(0.65, 0.65);
+      }
     }
 
-    // mini bosses at 25/50/75% of boss time
-    const p = e / BOSS_TIME;
+    // positional twist: wall / encroaching ring (with holes)
+    // Don't allow it to overlap with other events; if the time has passed, it will trigger once there's a gap.
+    if (
+      e > 72000 &&
+      !flagsRef.current.wall1 &&
+      (!activeEventRef.current || now >= activeEventRef.current.endsAt) &&
+      now >= reliefUntilRef.current && now >= eventCooldownUntilRef.current
+    ) {
+      const ringN = 16;
+      const holes = new Set();
+      holes.add(Math.floor(Math.random() * ringN));
+      holes.add(Math.floor(Math.random() * ringN));
+
+      if (startEvent('WALL', { ringN, holes: [...holes] })) {
+        flagsRef.current.wall1 = true;
+        juicePunch(0.85, 0.8);
+      }
+    }
+
+    // mini bosses at 25/50/75% of run time
+    const runT = runTimeRef.current || BOSS_TIME;
+    const p = e / runT;
     const pp = playerRef.current;
     const difficulty = tileDifficulty + Math.floor(e / 22000);
 
     if (p > 0.25 && !flagsRef.current.mini25) {
       flagsRef.current.mini25 = true;
-      setEnemies((prev) => [...prev, spawnMiniBoss(pp, difficulty, 'charger')]);
+      enemiesRef.current = [...(enemiesRef.current || []), spawnMiniBoss(pp, difficulty, 'charger')];
       juicePunch(1.0, 0.9);
-      startEvent('RELIEF');
+      triggerRelief(12000 + Math.floor(Math.random() * 8000));
     }
     if (p > 0.50 && !flagsRef.current.mini50) {
       flagsRef.current.mini50 = true;
-      setEnemies((prev) => [...prev, spawnMiniBoss(pp, difficulty, 'assassin')]);
+      enemiesRef.current = [...(enemiesRef.current || []), spawnMiniBoss(pp, difficulty, 'assassin')];
       juicePunch(1.0, 0.9);
-      startEvent('RELIEF');
+      triggerRelief(12000 + Math.floor(Math.random() * 8000));
     }
     if (p > 0.75 && !flagsRef.current.mini75) {
       flagsRef.current.mini75 = true;
-      setEnemies((prev) => [...prev, spawnMiniBoss(pp, difficulty, Math.random() < 0.5 ? 'charger' : 'assassin')]);
+      enemiesRef.current = [...(enemiesRef.current || []), spawnMiniBoss(pp, difficulty, Math.random() < 0.5 ? 'charger' : 'assassin')];
       juicePunch(1.0, 0.9);
-      startEvent('RELIEF');
+      triggerRelief(12000 + Math.floor(Math.random() * 8000));
     }
 
     // end-of-event relief beat (silence & relief)
-    if (activeEventRef.current && Date.now() >= activeEventRef.current.endsAt) {
+    if (activeEventRef.current && now >= activeEventRef.current.endsAt) {
       activeEventRef.current = null;
-      reliefUntilRef.current = Date.now() + 2600;
+      triggerRelief(10000 + Math.floor(Math.random() * 10000)); // 10–20s
     }
   };
 
@@ -711,18 +846,8 @@ useEffect(() => {
     if (pausedRef.current) return;
 
       const now = Date.now();
-      const inHitstop = now < hitstopUntil.current;
-
-
-
-
-
-      // minimal juice decay
-      juice.current.chroma *= 0.88;
-      juice.current.punch *= 0.84;
-      if (juice.current.chroma < 0.01) juice.current.chroma = 0;
-      if (juice.current.punch < 0.01) juice.current.punch = 0;
-      setScreenFx({ chroma: juice.current.chroma, punch: juice.current.punch });
+      const inHitstop = false; // hitstop is visual-only
+      // screen FX (chroma/punch) is now kicked by juicePunch() and auto-resets; no per-tick React state.
 // --- CANVAS DRAWING START ---
     const ctx = ctxRef.current;
     const cam = cameraRef.current;
@@ -746,7 +871,7 @@ useEffect(() => {
         const colors = ['#00ff88', '#00f2ff', '#bf00ff', '#ff007a', '#ffae00'];
         ctx.fillStyle = colors[orb.rank] || '#fff';
         ctx.beginPath();
-        ctx.arc(orb.x - cam.x, orb.y - cam.y, 4 + (orb.rank * 2), 0, Math.PI * 2);
+        ctx.arc(orb.x - cam.x, orb.y - cam.y, 5 + (orb.rank * 2.2), 0, Math.PI * 2);
         ctx.fill();
       });
 
@@ -769,64 +894,259 @@ useEffect(() => {
       enemiesRef.current.forEach(e => {
         if (e.x < viewL || e.x > viewR || e.y < viewT || e.y > viewB) return;
 
+        const sx = e.x - cam.x;
+        const sy = e.y - cam.y;
+
+        // body
         ctx.fillStyle = e.color || '#ff007a';
-        ctx.fillRect(e.x - cam.x - e.size/2, e.y - cam.y - e.size/2, e.size, e.size);
-        
+        ctx.fillRect(sx - e.size / 2, sy - e.size / 2, e.size, e.size);
+
+        const isMini = String(e.type || '').startsWith('mini_');
+
+        // miniboss readability
+        if (isMini) {
+          ctx.save();
+          ctx.lineWidth = 4;
+          ctx.strokeStyle = '#ffffff';
+          ctx.strokeRect(sx - e.size / 2 - 2, sy - e.size / 2 - 2, e.size + 4, e.size + 4);
+
+          // marker
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.moveTo(sx, sy - e.size / 2 - 18);
+          ctx.lineTo(sx - 10, sy - e.size / 2 - 2);
+          ctx.lineTo(sx + 10, sy - e.size / 2 - 2);
+          ctx.closePath();
+          ctx.fill();
+
+          // label
+          ctx.font = '12px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(e.type === 'mini_charger' ? 'RAM' : 'MINI', sx, sy - e.size / 2 - 26);
+          ctx.restore();
+        }
+
+        // charger telegraph lane (windup)
+        if (e.type === 'mini_charger' && e.windupUntil && now < e.windupUntil) {
+          const dir = Number.isFinite(e.dashDir) ? e.dashDir : 0;
+          const len = 620;
+          ctx.save();
+          ctx.globalAlpha = 0.25;
+          ctx.fillStyle = '#ffffff';
+
+          // draw a wide lane rectangle along dashDir
+          ctx.translate(sx, sy);
+          ctx.rotate(dir);
+          ctx.fillRect(0, -28, len, 56);
+          ctx.restore();
+
+          // line
+          ctx.save();
+          ctx.globalAlpha = 0.65;
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(sx, sy);
+          ctx.lineTo(sx + Math.cos(dir) * len, sy + Math.sin(dir) * len);
+          ctx.stroke();
+          ctx.restore();
+        }
+
         // Health Bar
         if (e.hp < e.maxHp) {
+          const barW = isMini ? Math.max(90, e.size) : e.size;
+          const barX = sx - barW / 2;
+          const barY = sy - e.size / 2 - (isMini ? 14 : 8);
           ctx.fillStyle = '#222';
-          ctx.fillRect(e.x - cam.x - e.size/2, e.y - cam.y - e.size/2 - 8, e.size, 4);
-          ctx.fillStyle = '#ff007a';
-          ctx.fillRect(e.x - cam.x - e.size/2, e.y - cam.y - e.size/2 - 8, e.size * (e.hp / e.maxHp), 4);
+          ctx.fillRect(barX, barY, barW, 5);
+          ctx.fillStyle = isMini ? '#ffe16b' : '#ff007a';
+          ctx.fillRect(barX, barY, barW * (e.hp / e.maxHp), 5);
         }
       });
-    }
+      }
+
+      // 5. Draw VFX (explosions / beams / rails / arcs / slashes / death pops)
+      const nowV = now;
+
+      // death pops
+      (deathFxRef.current || []).forEach((f) => {
+        const a = clamp(1 - (nowV - f.t) / 280, 0, 1);
+        if (a <= 0) return;
+        const r = (f.size || 40) * (0.9 + (1 - a) * 0.8);
+        ctx.save();
+        ctx.globalAlpha = a * 0.55;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(f.x - cam.x, f.y - cam.y, r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      });
+
+      // explosions (rings)
+      (explosionsRef.current || []).forEach((e) => {
+        const a = clamp(1 - (nowV - e.t) / (e.life || 300), 0, 1);
+        if (a <= 0) return;
+        const p = 1 + (nowV - e.t) / (e.life || 300);
+        const rr = (e.r || 80) * p;
+
+        ctx.save();
+        ctx.globalAlpha = a * (e.hazard ? 0.35 : 0.45);
+        ctx.strokeStyle = e.hazard ? 'rgba(255,120,120,1)' : 'rgba(255,255,255,1)';
+        ctx.lineWidth = e.hazard ? 3 : 2;
+        ctx.beginPath();
+        ctx.arc(e.x - cam.x, e.y - cam.y, rr, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      });
+
+      // tesla / chain arcs
+      (arcsRef.current || []).forEach((aObj) => {
+        const a = clamp(1 - (nowV - aObj.t) / (aObj.life || 150), 0, 1);
+        if (a <= 0) return;
+        ctx.save();
+        ctx.globalAlpha = a * 0.9;
+        ctx.strokeStyle = aObj.color || 'rgba(170,220,255,1)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(aObj.x1 - cam.x, aObj.y1 - cam.y);
+        ctx.lineTo(aObj.x2 - cam.x, aObj.y2 - cam.y);
+        ctx.stroke();
+        ctx.restore();
+      });
+
+      // sniper rails
+      (railLinesRef.current || []).forEach((l) => {
+        const a = clamp(1 - (nowV - l.t) / (l.life || 120), 0, 1);
+        if (a <= 0) return;
+        ctx.save();
+        ctx.globalAlpha = a * 0.75;
+        ctx.strokeStyle = l.color || 'rgba(180,255,245,1)';
+        ctx.lineWidth = Math.max(2, (l.width || 10) * 0.45);
+        ctx.beginPath();
+        ctx.moveTo(l.x1 - cam.x, l.y1 - cam.y);
+        ctx.lineTo(l.x2 - cam.x, l.y2 - cam.y);
+        ctx.stroke();
+        ctx.restore();
+      });
+
+      // laser beams
+      (beamsRef.current || []).forEach((b) => {
+        const a = clamp(1 - (nowV - b.t) / (b.life || 120), 0, 1);
+        if (a <= 0) return;
+        ctx.save();
+        ctx.globalAlpha = a * 0.55;
+        ctx.strokeStyle = 'rgba(255,160,245,1)';
+        ctx.lineWidth = Math.max(4, b.width || 18);
+        ctx.beginPath();
+        ctx.moveTo(b.x1 - cam.x, b.y1 - cam.y);
+        ctx.lineTo(b.x2 - cam.x, b.y2 - cam.y);
+        ctx.stroke();
+        ctx.restore();
+      });
+
+      // katana slashes (arcs)
+      (slashesRef.current || []).forEach((s) => {
+        const age = s.age || 0;
+        if (age < (s.delay || 0)) return;
+        const activeMs = s.activeMs || 120;
+        if (age > (s.delay || 0) + activeMs) return;
+
+        const a = 1 - (age - (s.delay || 0)) / activeMs;
+        ctx.save();
+        ctx.globalAlpha = clamp(a, 0, 1) * 0.85;
+        ctx.strokeStyle = 'rgba(255,255,255,1)';
+        ctx.lineWidth = 10;
+        const r = s.range || 160;
+        const start = (s.angle || 0) - (s.arc || 0) / 2;
+        const end = (s.angle || 0) + (s.arc || 0) / 2;
+        ctx.beginPath();
+        ctx.arc(s.x - cam.x, s.y - cam.y, r, start, end);
+        ctx.stroke();
+        ctx.restore();
+      });
+
     // --- CANVAS DRAWING END ---
       // advance progress timer (even during hitstop)
       elapsed.current += 16;
 
-      setProgress(Math.min(1, elapsed.current / BOSS_TIME));
+      // Update UI progress at ~10fps (avoids per-tick React rerenders).
+      if (elapsed.current % 160 === 0) {
+        setProgress(Math.min(1, elapsed.current / (runTimeRef.current || BOSS_TIME)));
+      }
 
       // scripted beats
       scheduleBeats();
 
-      // decay VFX
-      setDeathFx((fx) => fx.filter((f) => Date.now() - f.t < 280));
-      setArcs((prev) => prev.filter((a) => Date.now() - a.t < a.life));
-      setExplosions((prev) => prev.filter((e) => Date.now() - e.t < e.life));
-      setRailLines((prev) => prev.filter((l) => Date.now() - l.t < l.life));
-      setBeams((prev) => prev.filter((b) => Date.now() - b.t < b.life));
-      setPickups((prev) => prev.filter((p) => Date.now() - p.t < p.life));
+      // decay VFX (throttled to avoid hitching)
+      if (elapsed.current % 160 === 0) {
+        const nowV = Date.now();
+        deathFxRef.current = (deathFxRef.current || []).filter((f) => nowV - f.t < 280);
+        arcsRef.current = (arcsRef.current || []).filter((a) => nowV - a.t < (a.life || 150));
+        explosionsRef.current = (explosionsRef.current || []).filter((e) => nowV - e.t < (e.life || 280));
+        railLinesRef.current = (railLinesRef.current || []).filter((l) => nowV - l.t < (l.life || 120));
+        beamsRef.current = (beamsRef.current || []).filter((b) => nowV - b.t < (b.life || 120));
+        slashesRef.current = (slashesRef.current || []).filter((s) => nowV - (s.t || (nowV - (s.age || 0))) < (s.life || 260));
+        setPickups((prev) => prev.filter((p) => nowV - p.t < p.life));
+      }
 
       // regen
-      if (!inHitstop && statsRef.current.regen > 0) {
+      if (statsRef.current.regen > 0) {
         setStats((prev) => ({ ...prev, hp: Math.min(prev.maxHp, prev.hp + prev.regen * 0.016) }));
       }
 
-      // move player + camera
-      if (!inHitstop) {
-        setPlayer((prev) => {
-          let nx = prev.x;
-          let ny = prev.y;
+      
+      // move player + camera (no React state updates; update DOM refs directly for smoothness)
+      {
+        const prev = playerRef.current;
+        let nx = prev.x;
+        let ny = prev.y;
 
-          const baseSpeed = 5.8;
-          const speedMult = Math.min(crewSpeedMult, 1.45);
-          const finalSpeed = baseSpeed * speedMult * (statsRef.current.moveSpeed || 1);
+        const baseSpeed = 5.8;
+        const speedMult = Math.min(crewSpeedMult, 1.45);
+        const finalSpeed = baseSpeed * speedMult * (statsRef.current.moveSpeed || 1);
 
-          if (keys.current.w) ny -= finalSpeed;
-          if (keys.current.s) ny += finalSpeed;
-          if (keys.current.a) nx -= finalSpeed;
-          if (keys.current.d) nx += finalSpeed;
+        if (keys.current.w) ny -= finalSpeed;
+        if (keys.current.s) ny += finalSpeed;
+        if (keys.current.a) nx -= finalSpeed;
+        if (keys.current.d) nx += finalSpeed;
 
-          nx = clamp(nx, 0, ARENA_SIZE);
-          ny = clamp(ny, 0, ARENA_SIZE);
+        nx = clamp(nx, 0, ARENA_SIZE);
+        ny = clamp(ny, 0, ARENA_SIZE);
 
-          setCamera({ x: nx - window.innerWidth / 2, y: ny - window.innerHeight / 2 });
-          return { x: nx, y: ny };
-        });
-      } else {
-        const p = playerRef.current;
-        setCamera({ x: p.x - window.innerWidth / 2, y: p.y - window.innerHeight / 2 });
+        const nc = { x: nx - window.innerWidth / 2, y: ny - window.innerHeight / 2 };
+        cameraRef.current = nc;
+
+        const np = { x: nx, y: ny };
+        playerRef.current = np;
+
+        // update player DOM elements
+        if (playerSpriteRef.current) {
+          playerSpriteRef.current.style.left = `${nx}px`;
+          playerSpriteRef.current.style.top = `${ny}px`;
+        }
+        if (playerTracerRef.current) {
+          playerTracerRef.current.style.left = `${nx - 60}px`;
+          playerTracerRef.current.style.top = `${ny - 60}px`;
+        }
+
+        // apply world transform + lightweight filter (avoid expensive drop-shadow)
+        const worldEl = worldRef.current;
+        if (worldEl) {
+          const nowFx = Date.now();
+          const until = juice.current.until || 0;
+          const dur = juice.current.dur || 140;
+          const t = until > nowFx ? (until - nowFx) / dur : 0;
+          const punch = (juice.current.maxPunch || 0) * t;
+          const chroma = (juice.current.maxChroma || 0) * t;
+
+          worldEl.style.transform = `translate(${-nc.x}px,${-nc.y}px) scale(${1 + punch * 0.010})`;
+          worldEl.style.filter = chroma > 0.02 ? `saturate(${1 + chroma * 0.10}) brightness(${1 + chroma * 0.05})` : '';
+          if (t <= 0) {
+            juice.current.maxPunch = 0;
+            juice.current.maxChroma = 0;
+          }
+        }
       }
 
       const p = playerRef.current;
@@ -841,17 +1161,21 @@ useEffect(() => {
       const spawnIntervalBase = Math.max(140, 1250 - difficulty * 80 - lateRamp * 260);
 
       // relief window after chaos
-      const inRelief = Date.now() < reliefUntilRef.current || isEventActive('RELIEF');
+      const inRelief = Date.now() < reliefUntilRef.current;
 
       let spawnInterval = spawnIntervalBase * (inRelief ? 2.2 : 1.0);
 
       // scripted event modifiers
-      if (isEventActive('SWARM')) spawnInterval *= 0.35;
+      if (isEventActive('SWARM')) spawnInterval *= 0.60;
       if (isEventActive('WALL')) spawnInterval *= 0.95;
 
       let nextEnemies = [...enemiesRef.current];
 
-      if (!inHitstop && !freezeWorld) {
+      // During freeze pickup: no new spawns (but player can still act).
+      // During relief: no spawning at all; we already pruned the pack to give breathing room.
+      const inReliefHard = Date.now() < reliefUntilRef.current;
+
+      if (!freezeWorld && !inReliefHard) {
         if (elapsed.current - lastSpawn.current > spawnInterval) {
           lastSpawn.current = elapsed.current;
 
@@ -859,13 +1183,36 @@ useEffect(() => {
           const count = Math.round(countBase + lateRamp * 4);
 
           if (isEventActive('SWARM')) {
-            const swarmCount = 22 + Math.floor(difficulty * 0.6);
-            for (let i = 0; i < swarmCount; i += 1) nextEnemies.push(spawnEnemy(difficulty, 'swarm'));
+            const swarmCount = 14 + Math.floor(difficulty * 0.45);
+            const variant = (activeEventRef.current && activeEventRef.current.meta && activeEventRef.current.meta.variant) || swarmPlanRef.current.variant || 'encircle';
+
+            for (let i = 0; i < swarmCount; i += 1) {
+              const en = spawnEnemy(difficulty, 'swarm');
+
+              // Mix swarm shapes: sometimes a wall of enemies from the left / diagonals.
+              if (variant === 'left_wave') {
+                const x = clamp(p.x - 720 + Math.random() * 120, 40, ARENA_SIZE - 40);
+                const y = clamp(p.y + (Math.random() - 0.5) * 820, 40, ARENA_SIZE - 40);
+                nextEnemies.push({ ...en, x, y });
+              } else if (variant === 'left_diagonal') {
+                const lane = Math.random();
+                const x = clamp(p.x - 760 + Math.random() * 140, 40, ARENA_SIZE - 40);
+                const yBase = lane < 0.5 ? p.y - 520 : p.y + 520;
+                const y = clamp(yBase + (Math.random() - 0.5) * 260, 40, ARENA_SIZE - 40);
+                nextEnemies.push({ ...en, x, y });
+              } else {
+                nextEnemies.push(en); // default encircle-ish (edge spawns)
+              }
+            }
           } else if (isEventActive('WALL')) {
-            // predictable ring: spawn in a circle around player
-            const ringN = 18;
+            // ring with holes (so it's dodgeable, not a trap)
+            const meta = activeEventRef.current?.meta || {};
+            const ringN = meta.ringN || 16;
+            const holes = new Set(meta.holes || []);
             const radius = 520;
+
             for (let i = 0; i < ringN; i++) {
+              if (holes.has(i)) continue;
               const a = (i / ringN) * Math.PI * 2;
               const x = clamp(p.x + Math.cos(a) * radius, 40, ARENA_SIZE - 40);
               const y = clamp(p.y + Math.sin(a) * radius, 40, ARENA_SIZE - 40);
@@ -877,7 +1224,7 @@ useEffect(() => {
           }
         }
 
-        if (!bossSpawnedRef.current && elapsed.current > BOSS_TIME) {
+        if (!bossSpawnedRef.current && elapsed.current > (runTimeRef.current || BOSS_TIME)) {
           bossSpawnedRef.current = true;
           setBossSpawned(true);
           nextEnemies.push(spawnBoss(p, difficulty));
@@ -902,9 +1249,8 @@ useEffect(() => {
             return { ...en, windupUntil: now2 + en.dashWindup, dashDir: angToPlayer, nextDashAt: now2 + en.dashCd };
           }
           if (en.windupUntil && now2 < en.windupUntil) {
-            // tiny drift during windup
-            const d = Math.hypot(dx, dy) || 1;
-            return { ...en, x: en.x + (dx / d) * 0.65, y: en.y + (dy / d) * 0.65 };
+            // hard commit: hold still while telegraphing the ram
+            return en;
           }
           if (en.windupUntil && now2 >= en.windupUntil && !en.dashUntil) {
             return { ...en, dashUntil: now2 + en.dashMs, windupUntil: 0 };
@@ -962,7 +1308,7 @@ useEffect(() => {
           // area denial rings (phase 2/3)
           if (phase >= 2 && now2 > (out.nextAoEAt || 0)) {
             out.nextAoEAt = now2 + (phase === 2 ? 2400 : 1700);
-            setExplosions((prev) => [...prev, { id: Math.random(), x: out.x, y: out.y, r: phase === 2 ? 120 : 160, t: Date.now(), life: 520, hazard: true }]);
+            explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: out.x, y: out.y, r: phase === 2 ? 120 : 160, t: Date.now(), life: 520, hazard: true }];
           }
 
           return out;
@@ -975,16 +1321,12 @@ useEffect(() => {
 
         const slowMult = en.slowUntil && Date.now() < en.slowUntil ? (en.slowFactor ?? 0.75) : 1;
         const spd = en.speed * slowMult;
-
-        if (inHitstop) return en;
         return { ...en, x: en.x + (dx / d) * spd, y: en.y + (dy / d) * spd };
       });
 
       // -------------------- BULLETS UPDATE (homing/accel) --------------------
       const movedBullets = bulletsRef.current
         .map((b) => {
-          if (inHitstop || freezeWorld) return { ...b, life: b.life - 16 };
-
           let vx = b.vx;
           let vy = b.vy;
           let x = b.x;
@@ -1035,14 +1377,13 @@ useEffect(() => {
 
       // slashes update
       const movedSlashes = slashesRef.current
-        .map((sl) => ({ ...sl, age: (sl.age || 0) + (inHitstop || freezeWorld ? 0 : 16) }))
+        .map((sl) => ({ ...sl, age: (sl.age || 0) + 16 }))
         .filter((sl) => (sl.age || 0) <= sl.life);
 
       // beams tick damage (LASER)
       const beamHits = new Map();
       const statusHits = new Map();
-
-      if (!inHitstop) {
+      {
         const now2 = Date.now();
         for (const bm of beamsRef.current) {
           const lifeP = 1 - (now2 - bm.t) / bm.life;
@@ -1068,6 +1409,8 @@ useEffect(() => {
       const bulletHits = new Map(); // en.id -> dmg
       const explosionBursts = [];
       const nextBullets = movedBullets.map((b) => ({ ...b }));
+
+      const spawnedBullets = [];
 
       const pickRicochetTarget = (fromEnemy, allEnemies) => {
         const maxRange2 = 360 * 360;
@@ -1098,7 +1441,10 @@ useEffect(() => {
             bulletHits.set(en.id, (bulletHits.get(en.id) || 0) + b.damage);
 
             const st = statusHits.get(en.id) || {};
-            if (b.slow) st.slow = Math.max(st.slow || 0, b.slow);
+            if (b.slow) {
+              st.slow = Math.max(st.slow || 0, b.slow);
+              if (b.slowDuration) st.slowDuration = Math.max(st.slowDuration || 0, b.slowDuration);
+            }
             if (b.stun) st.stun = Math.max(st.stun || 0, b.stun);
             if (b.burn) st.burn = Math.max(st.burn || 0, b.burn);
             if (b.knockback) st.knockback = Math.max(st.knockback || 0, b.knockback);
@@ -1117,9 +1463,7 @@ useEffect(() => {
 
             // SNIPER tear-through: draw rail line (visual) from player to hit point
             if (b.rail) {
-              setRailLines((prev) => [
-                ...prev,
-                {
+              railLinesRef.current = [...(railLinesRef.current || []), {
                   id: Math.random(),
                   x1: b.originX,
                   y1: b.originY,
@@ -1129,8 +1473,7 @@ useEffect(() => {
                   t: Date.now(),
                   life: b.railMs || 90,
                   color: b.color
-                }
-              ]);
+                }];
 
               // extra line shock damage along the rail (tears crowds)
               for (const e2 of movedEnemies) {
@@ -1174,10 +1517,7 @@ useEffect(() => {
                 if (dd < bestD && dd <= maxRange2) { bestD = dd; best = e2; }
               }
               if (best) {
-                setArcs((prev) => [
-                  ...prev,
-                  { id: Math.random(), x1: en.x, y1: en.y, x2: best.x, y2: best.y, t: Date.now(), life: 150, color: b.color }
-                ]);
+                arcsRef.current = [...(arcsRef.current || []), { id: Math.random(), x1: en.x, y1: en.y, x2: best.x, y2: best.y, t: Date.now(), life: 150, color: b.color }];
                 bulletHits.set(best.id, (bulletHits.get(best.id) || 0) + b.damage * 0.60);
                 const st2 = statusHits.get(best.id) || {};
                 if (b.stun) st2.stun = Math.max(st2.stun || 0, Math.floor(b.stun * 0.7));
@@ -1193,10 +1533,7 @@ useEffect(() => {
       // explosion damage
       if (explosionBursts.length) {
         for (const burst of explosionBursts) {
-          setExplosions((prev) => [
-            ...prev,
-            { id: Math.random(), x: burst.x, y: burst.y, r: burst.radius, t: Date.now(), life: 260 }
-          ]);
+          explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: burst.x, y: burst.y, r: burst.radius, t: Date.now(), life: 260 }];
           for (const en of movedEnemies) {
             const d = Math.hypot(en.x - burst.x, en.y - burst.y);
             if (d <= burst.radius) {
@@ -1213,288 +1550,16 @@ useEffect(() => {
         bulletHits.set(id, (bulletHits.get(id) || 0) + dmg);
       }
 
-      // -------------------- APPLY DAMAGE (bullets + sword arcs) --------------------
-      const withDamage = movedEnemies.map((en0) => {
-        let en = en0;
-        let totalDamage = bulletHits.get(en.id) || 0;
-
-        movedSlashes.forEach((sl) => {
-          const activeStart = sl.delay || 0;
-          const activeEnd = activeStart + (sl.activeMs || 120);
-          if ((sl.age || 0) < activeStart || (sl.age || 0) > activeEnd) return;
-
-          const d = Math.hypot(en.x - sl.x, en.y - sl.y);
-          if (d > sl.range) return;
-
-          const enemyAngle = Math.atan2(en.y - sl.y, en.x - sl.x);
-          if (!withinArc(sl.angle, sl.arc, enemyAngle)) return;
-
-          totalDamage += sl.damage;
-        });
-
-        // VOID pull influence (stronger, bigger radius)
-        const pulls = movedBullets.filter((b) => b.pull && Math.hypot(b.x - en.x, b.y - en.y) < 170);
-        if (pulls.length && !inHitstop && !freezeWorld && !(en.stunnedUntil && Date.now() < en.stunnedUntil)) {
-          const strongest = pulls.reduce((acc, b) => Math.max(acc, b.pull || 0), 0);
-          const cx = pulls.reduce((acc, b) => acc + b.x, 0) / pulls.length;
-          const cy = pulls.reduce((acc, b) => acc + b.y, 0) / pulls.length;
-          const dx = cx - en.x;
-          const dy = cy - en.y;
-          const d = Math.hypot(dx, dy) || 1;
-          en = { ...en, x: en.x + (dx / d) * strongest * 2.2, y: en.y + (dy / d) * strongest * 2.2 };
-        }
-
-        if (totalDamage > 0) {
-          setHitFx((prev) => ({ ...prev, [en.id]: Date.now() }));
-          juicePunch(Math.min(0.34, totalDamage / 90), 0.28);
-          return { ...en, hp: en.hp - totalDamage };
-        }
-        return en;
-      });
-
-      // -------------------- APPLY STATUS + KNOCKBACK --------------------
-      const withStatus = withDamage.map((en) => {
-        const st = statusHits.get(en.id);
-        if (!st) return en;
-
-        let out = { ...en };
-
-        if (st.slow) {
-          out.slowUntil = Date.now() + 520;
-          out.slowFactor = clamp(1 - st.slow, 0.45, 0.95);
-        }
-        if (st.stun) {
-          out.stunnedUntil = Math.max(out.stunnedUntil || 0, Date.now() + st.stun);
-        }
-
-        if (st.knockback && !inHitstop && !freezeWorld) {
-          const ang = Math.atan2(out.y - p.y, out.x - p.x);
-          const push = 5.0 * st.knockback;
-          out.x += Math.cos(ang) * push;
-          out.y += Math.sin(ang) * push;
-        }
-
-        if (st.burn) {
-          out.burnUntil = Math.max(out.burnUntil || 0, Date.now() + st.burn);
-          out.burnDps = Math.max(out.burnDps || 0, 4.2);
-        }
-
-        return out;
-      });
-
-      // burn tick
-      const burned = withStatus.map((en) => {
-        if (en.burnUntil && Date.now() < en.burnUntil && !inHitstop) {
-          return { ...en, hp: en.hp - (en.burnDps || 3.2) * 0.016 };
-        }
-        return en;
-      });
-
-      // VOID singularity pop on expire
-      const expiredVoids = bulletsRef.current.filter((b) => b.singularity && b.life <= 16);
-      if (expiredVoids.length) {
-        expiredVoids.forEach((v) => {
-          setExplosions((prev) => [...prev, { id: Math.random(), x: v.x, y: v.y, r: v.explodeRadius || 120, t: Date.now(), life: 320 }]);
-          movedEnemies.forEach((en) => {
-            const d = Math.hypot(en.x - v.x, en.y - v.y);
-            if (d <= (v.explodeRadius || 120)) {
-              const fall = 1 - d / (v.explodeRadius || 120);
-              bulletHits.set(en.id, (bulletHits.get(en.id) || 0) + (v.damage || 14) * (v.explodeMult || 0.95) * Math.max(0.35, fall));
-              const st = statusHits.get(en.id) || {};
-              st.stun = Math.max(st.stun || 0, 120);
-              statusHits.set(en.id, st);
-            }
-          });
-          juicePunch(0.9, 0.95);
-        });
-      }
-
-      // -------------------- DEATHS -> ORBS + PICKUPS --------------------
-      const alive = [];
-      const newOrbs = [];
-
-      burned.forEach((en) => {
-        if (en.hp > 0) {
-          alive.push(en);
-          return;
-        }
-
-        setDeathFx((fx) => [...fx, { id: Math.random(), x: en.x, y: en.y, t: Date.now(), size: en.size }]);
-
-        // FEWER PICKUPS: drop fewer orbs, more merged, with occasional red/purple/gold
-        const total = Math.max(2, Math.floor(en.xp * 0.70)); // reduce raw count a bit
-        const pack = Math.max(1, Math.round(total / 14)); // 1–3 orbs usually
-
-        for (let i = 0; i < pack; i += 1) {
-          // more red from groups: skew pack values upward sometimes
-          const skew = pack >= 2 && Math.random() < 0.35 ? 1.25 : 1.0;
-          const v = Math.round((total / pack) * (0.85 + Math.random() * 0.35) * skew);
-          const rank = orbRankFromValue(v);
-          newOrbs.push({
-            id: Math.random(),
-            x: en.x + (Math.random() - 0.5) * 22,
-            y: en.y + (Math.random() - 0.5) * 22,
-            value: v,
-            rank
-          });
-        }
-
-        // rare high tier bonus
-        if (elapsed.current > 45000 && Math.random() < 0.06) {
-          const v = en.xp * 3;
-          newOrbs.push({
-            id: Math.random(),
-            x: en.x + (Math.random() - 0.5) * 10,
-            y: en.y + (Math.random() - 0.5) * 10,
-            value: v,
-            rank: orbRankFromValue(v)
-          });
-        }
-
-        // pickups: momentary rule-breakers
-        if (en.type === 'boss') {
-          maybeDropPickup(en.x, en.y, 'boss');
-          setVictory(true);
-        } else if (String(en.type).startsWith('mini_')) {
-          maybeDropPickup(en.x, en.y, 'mini');
-        } else if (Math.random() < 0.06) {
-          maybeDropPickup(en.x, en.y, 'elite');
-        }
-
-        juicePunch(en.type === 'boss' ? 1.2 : 0.44, en.type === 'boss' ? 0.9 : 0.5);
-      });
-
-      setEnemies(alive);
-      setBullets(nextBullets.filter((b) => !b.hit));
-      setSlashes(movedSlashes);
-      if (newOrbs.length) setOrbs((prev) => [...prev, ...newOrbs]);
-
-      // -------------------- ORBS: attract + cluster + merge + pickup --------------------
-      setOrbs((prev) => {
-        const pp = playerRef.current;
-        const magnet = Date.now() < magnetUntil.current;
-
-        // mutual clustering (group together more)
-        const clustered = prev.map((o) => {
-          let ax = 0;
-          let ay = 0;
-          let n = 0;
-          for (const o2 of prev) {
-            if (o2.id === o.id) continue;
-            const d = Math.hypot(o2.x - o.x, o2.y - o.y);
-            if (d > 0 && d < 110) {
-              ax += (o2.x - o.x) / d;
-              ay += (o2.y - o.y) / d;
-              n++;
-            }
-          }
-          if (n > 0) {
-            const pull = 0.38; // cohesion
-            return { ...o, x: o.x + (ax / n) * pull, y: o.y + (ay / n) * pull };
-          }
-          return o;
-        });
-
-        // player attraction
-        const drifted = clustered.map((o) => {
-          const dx = pp.x - o.x;
-          const dy = pp.y - o.y;
-          const d = Math.hypot(dx, dy);
-          const range = magnet ? 1100 : 160;
-          if (d > 0 && d < range) {
-            const basePull = magnet ? 9.5 : 3.2;
-            const rankPull = 1 + (o.rank || 0) * 0.15;
-            return { ...o, x: o.x + (dx / d) * basePull * rankPull, y: o.y + (dy / d) * basePull * rankPull };
-          }
-          return o;
-        });
-
-        const merged = mergeOrbs(
-          drifted.map((o) => {
-            const r = orbRankFromValue(o.value);
-            return { ...o, rank: Math.max(o.rank || 0, r) };
-          })
-        );
-
-        const kept = [];
-        let gained = 0;
-        merged.forEach((o) => {
-          const d = Math.hypot(o.x - pp.x, o.y - pp.y);
-          if (d < 36) gained += o.value;
-          else kept.push(o);
-        });
-
-        if (gained > 0) setXp((x) => x + gained);
-        return kept;
-      });
-
-      // -------------------- PICKUPS: vacuum / freeze / overdrive / shield --------------------
-      setPickups((prev) => {
-        const pp = playerRef.current;
-        const kept = [];
-        prev.forEach((pk) => {
-          const d = Math.hypot(pk.x - pp.x, pk.y - pp.y);
-          if (d < 44) {
-            activatePickup(pk.type);
-          } else kept.push(pk);
-        });
-        return kept;
-      });
-
-      // -------------------- LEVEL UP --------------------
-      if (xpRef.current >= xpTargetRef.current) {
-        setXp((x) => x - xpTargetRef.current);
-        setLevel((l) => l + 1);
-        setXpTarget((t) => Math.floor(t * 1.30));
-        setUpgradeOptions(rollUpgradeOptions(selectedWeaponsRef.current, weaponLevelsRef.current, statsRef.current));
-        juicePunch(0.55, 0.55);
-      }
-
-      // -------------------- CONTACT DAMAGE + HAZARDS --------------------
-      if (!inHitstop && !freezeWorld) {
-        const now2 = Date.now();
-        const shielded = now2 < shieldUntil.current;
-
-        // hazard rings from boss
-        let hazardDamage = 0;
-        explosionsRef.current.forEach((e) => {
-          if (!e.hazard) return;
-          const d = Math.hypot(p.x - e.x, p.y - e.y);
-          if (d <= e.r) hazardDamage += 7;
-        });
-
-        if (!shielded && hazardDamage > 0 && now2 - lastDamage.current > 240) {
-          lastDamage.current = now2;
-          setStats((prev) => ({ ...prev, hp: Math.max(0, prev.hp - hazardDamage) }));
-          juicePunch(0.6, 0.7);
-        }
-
-        if (now2 - lastDamage.current > 260) {
-          let totalDamage = 0;
-          const pp = playerRef.current;
-          alive.forEach((en) => {
-            const d = Math.hypot(en.x - pp.x, en.y - pp.y);
-            if (d < en.size * 0.55 + 16) totalDamage += en.contactDamage || 8;
-          });
-          if (totalDamage > 0) {
-            lastDamage.current = now2;
-            if (!shielded) {
-              setStats((prev) => ({ ...prev, hp: Math.max(0, prev.hp - totalDamage) }));
-              juicePunch(0.55, 0.65);
-            } else {
-              juicePunch(0.35, 0.55);
-            }
-          }
-        }
-      }
-
-      // -------------------- FIRING (skip during hitstop) --------------------
-      if (inHitstop) return;
-
+      
+      // -------------------- FIRING --------------------
       const now3 = Date.now();
       const pp = playerRef.current;
-      const currentEnemies = alive;
-      if (!currentEnemies.length) return;
+      const currentEnemies = movedEnemies;
+
+      if (!currentEnemies.length) {
+        // nothing to shoot
+      } else {
+
 
       const overdrive = now3 < overdriveUntil.current;
       const overdriveMult = overdrive ? 1.5 : 1.0;
@@ -1563,6 +1628,7 @@ useEffect(() => {
             const st = statusHits.get(cur.id) || {};
             st.stun = Math.max(st.stun || 0, stunMs + i * 15);
             st.slow = Math.max(st.slow || 0, 0.14);
+            st.slowDuration = Math.max(st.slowDuration || 0, 720);
             statusHits.set(cur.id, st);
 
             arcsToAdd.push({ id: Math.random(), x1: origin.x, y1: origin.y, x2: cur.x, y2: cur.y, t: Date.now(), life: 180, color: weapon.color });
@@ -1582,6 +1648,7 @@ useEffect(() => {
               const st = statusHits.get(ft.id) || {};
               st.stun = Math.max(st.stun || 0, Math.floor(stunMs * 0.7));
               st.slow = Math.max(st.slow || 0, 0.12);
+              st.slowDuration = Math.max(st.slowDuration || 0, 650);
               statusHits.set(ft.id, st);
 
               arcsToAdd.push({ id: Math.random(), x1: target.x, y1: target.y, x2: ft.x, y2: ft.y, t: Date.now(), life: 170, color: weapon.color });
@@ -1589,19 +1656,20 @@ useEffect(() => {
           }
 
           if (wStats.storm) {
-            setExplosions((prev) => [...prev, { id: Math.random(), x: target.x, y: target.y, r: 110, t: Date.now(), life: 320 }]);
+            explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: target.x, y: target.y, r: 110, t: Date.now(), life: 320 }];
             currentEnemies.forEach((e) => {
               const d = Math.hypot(e.x - target.x, e.y - target.y);
               if (d <= 110) {
                 bulletHits.set(e.id, (bulletHits.get(e.id) || 0) + baseDamage * 0.42);
                 const st = statusHits.get(e.id) || {};
                 st.slow = Math.max(st.slow || 0, 0.22);
+                st.slowDuration = Math.max(st.slowDuration || 0, 900);
                 statusHits.set(e.id, st);
               }
             });
           }
 
-          setArcs((prev) => [...prev, ...arcsToAdd]);
+          arcsRef.current = [...(arcsRef.current || []), ...arcsToAdd];
           juicePunch(0.7, 0.8);
           return;
         }
@@ -1638,7 +1706,7 @@ useEffect(() => {
             };
           });
 
-          setSlashes((prev) => [...prev, ...toAdd]);
+          slashesRef.current = [...(slashesRef.current || []), ...toAdd];
           juicePunch(0.30, 0.35);
           return;
         }
@@ -1656,9 +1724,7 @@ useEffect(() => {
           for (let i = 0; i < beamsN; i++) {
             const off = beamsN === 1 ? 0 : (i - (beamsN - 1) / 2) * fan;
             const ang = baseAngle + off;
-            setBeams((prev) => [
-              ...prev,
-              {
+            beamsRef.current = [...(beamsRef.current || []), {
                 id: Math.random(),
                 x1: pp.x,
                 y1: pp.y,
@@ -1670,8 +1736,7 @@ useEffect(() => {
                 burn,
                 t: Date.now(),
                 life: beamMs
-              }
-            ]);
+              }];
           }
 
           juicePunch(0.65, 0.8);
@@ -1730,6 +1795,7 @@ useEffect(() => {
             ricochets: wStats.ricochets || 0,
             chain: wStats.chain || 0,
             slow: wStats.slow || 0,
+            slowDuration: wStats.slow ? (wStats.slowDuration || (weapon.id === 'TIME' ? 1100 : 520)) : 0,
             stun: wStats.stun || 0,
             knockback: wStats.knockback || 0,
             explodeRadius: wStats.explodeRadius || 0,
@@ -1755,8 +1821,292 @@ useEffect(() => {
           });
         }
 
-        setBullets((prev) => [...prev, ...next]);
+        spawnedBullets.push(...next);
       });
+      }
+
+      // -------------------- APPLY DAMAGE (bullets + sword arcs) --------------------
+      const withDamage = movedEnemies.map((en0) => {
+        let en = en0;
+        let totalDamage = bulletHits.get(en.id) || 0;
+
+        movedSlashes.forEach((sl) => {
+          const activeStart = sl.delay || 0;
+          const activeEnd = activeStart + (sl.activeMs || 120);
+          if ((sl.age || 0) < activeStart || (sl.age || 0) > activeEnd) return;
+
+          const d = Math.hypot(en.x - sl.x, en.y - sl.y);
+          if (d > sl.range) return;
+
+          const enemyAngle = Math.atan2(en.y - sl.y, en.x - sl.x);
+          if (!withinArc(sl.angle, sl.arc, enemyAngle)) return;
+
+          totalDamage += sl.damage;
+        });
+
+        // VOID pull influence (stronger, bigger radius)
+        const pulls = movedBullets.filter((b) => {
+          if (!b.pull) return false;
+          if (Math.hypot(b.x - en.x, b.y - en.y) >= 170) return false;
+          // safety: don't pull enemies into the player if the orb is danger-close
+          const dToPlayer = Math.hypot(b.x - p.x, b.y - p.y);
+          return dToPlayer > 140;
+        });
+        if (pulls.length && !freezeWorld && !(en.stunnedUntil && Date.now() < en.stunnedUntil)) {
+          const strongest = pulls.reduce((acc, b) => Math.max(acc, b.pull || 0), 0);
+          const cx = pulls.reduce((acc, b) => acc + b.x, 0) / pulls.length;
+          const cy = pulls.reduce((acc, b) => acc + b.y, 0) / pulls.length;
+          const dx = cx - en.x;
+          const dy = cy - en.y;
+          const d = Math.hypot(dx, dy) || 1;
+          en = { ...en, x: en.x + (dx / d) * strongest * 2.2, y: en.y + (dy / d) * strongest * 2.2 };
+        }
+
+        if (totalDamage > 0) {
+          setHitFx((prev) => ({ ...prev, [en.id]: Date.now() }));
+          juicePunch(Math.min(0.34, totalDamage / 90), 0.28);
+          return { ...en, hp: en.hp - totalDamage };
+        }
+        return en;
+      });
+
+      // -------------------- APPLY STATUS + KNOCKBACK --------------------
+      const withStatus = withDamage.map((en) => {
+        const st = statusHits.get(en.id);
+        if (!st) return en;
+
+        let out = { ...en };
+
+        if (st.slow) {
+          out.slowUntil = Date.now() + (st.slowDuration || 520);
+          out.slowFactor = clamp(1 - st.slow, 0.45, 0.95);
+        }
+        if (st.stun) {
+          out.stunnedUntil = Math.max(out.stunnedUntil || 0, Date.now() + st.stun);
+        }
+
+        if (st.knockback && !freezeWorld) {
+          const ang = Math.atan2(out.y - p.y, out.x - p.x);
+          const push = 5.0 * st.knockback;
+          out.x += Math.cos(ang) * push;
+          out.y += Math.sin(ang) * push;
+        }
+
+        if (st.burn) {
+          out.burnUntil = Math.max(out.burnUntil || 0, Date.now() + st.burn);
+          out.burnDps = Math.max(out.burnDps || 0, 4.2);
+        }
+
+        return out;
+      });
+
+      // burn tick
+      const burned = withStatus.map((en) => {
+        if (en.burnUntil && Date.now() < en.burnUntil) {
+          return { ...en, hp: en.hp - (en.burnDps || 3.2) * 0.016 };
+        }
+        return en;
+      });
+
+      // VOID singularity pop on expire
+      const expiredVoids = bulletsRef.current.filter((b) => b.singularity && b.life <= 16);
+      if (expiredVoids.length) {
+        expiredVoids.forEach((v) => {
+          explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: v.x, y: v.y, r: v.explodeRadius || 120, t: Date.now(), life: 320 }];
+          movedEnemies.forEach((en) => {
+            const d = Math.hypot(en.x - v.x, en.y - v.y);
+            if (d <= (v.explodeRadius || 120)) {
+              const fall = 1 - d / (v.explodeRadius || 120);
+              bulletHits.set(en.id, (bulletHits.get(en.id) || 0) + (v.damage || 14) * (v.explodeMult || 0.95) * Math.max(0.35, fall));
+              const st = statusHits.get(en.id) || {};
+              st.stun = Math.max(st.stun || 0, 120);
+              statusHits.set(en.id, st);
+            }
+          });
+          juicePunch(0.9, 0.95);
+        });
+      }
+
+      // -------------------- DEATHS -> ORBS + PICKUPS --------------------
+      const alive = [];
+      const newOrbs = [];
+
+      burned.forEach((en) => {
+        if (en.hp > 0) {
+          alive.push(en);
+          return;
+        }
+
+        deathFxRef.current = [...(deathFxRef.current || []), { id: Math.random(), x: en.x, y: en.y, t: Date.now(), size: en.size }];
+
+        // FEWER PICKUPS: drop fewer orbs, more merged, with occasional red/purple/gold
+        const total = Math.max(2, Math.floor(en.xp * 0.70)); // reduce raw count a bit
+        const pack = Math.max(1, Math.round(total / 14)); // 1–3 orbs usually
+
+        for (let i = 0; i < pack; i += 1) {
+          // more red from groups: skew pack values upward sometimes
+          const skew = pack >= 2 && Math.random() < 0.35 ? 1.25 : 1.0;
+          const v = Math.round((total / pack) * (0.85 + Math.random() * 0.35) * skew);
+          const rank = orbRankFromValue(v);
+          newOrbs.push({
+            id: Math.random(),
+            x: en.x + (Math.random() - 0.5) * 22,
+            y: en.y + (Math.random() - 0.5) * 22,
+            value: v,
+            rank
+          });
+        }
+
+        // rare high tier bonus
+        if (elapsed.current > 45000 && Math.random() < 0.06) {
+          const v = en.xp * 3;
+          newOrbs.push({
+            id: Math.random(),
+            x: en.x + (Math.random() - 0.5) * 10,
+            y: en.y + (Math.random() - 0.5) * 10,
+            value: v,
+            rank: orbRankFromValue(v)
+          });
+        }
+
+        // pickups: momentary rule-breakers
+        if (en.type === 'boss') {
+          maybeDropPickup(en.x, en.y, 'boss');
+          setVictory(true);
+        } else if (String(en.type).startsWith('mini_')) {
+          maybeDropPickup(en.x, en.y, 'mini');
+        } else if (Math.random() < 0.06) {
+          maybeDropPickup(en.x, en.y, 'elite');
+        }
+
+        juicePunch(en.type === 'boss' ? 1.2 : 0.44, en.type === 'boss' ? 0.9 : 0.5);
+      });
+
+      enemiesRef.current = alive;
+      bulletsRef.current = [...nextBullets.filter((b) => !b.hit), ...spawnedBullets];
+      slashesRef.current = movedSlashes;
+      if (newOrbs.length) orbsRef.current = [...(orbsRef.current || []), ...newOrbs];
+
+      // -------------------- ORBS: attract + cluster + merge + pickup --------------------
+      orbsRef.current = (() => {
+        const prev = orbsRef.current || [];
+        const pp = playerRef.current;
+        const magnet = Date.now() < magnetUntil.current;
+
+        // mutual clustering (group together more)
+        const clustered = prev.map((o) => {
+          let ax = 0;
+          let ay = 0;
+          let n = 0;
+          for (const o2 of prev) {
+            if (o2.id === o.id) continue;
+            const d = Math.hypot(o2.x - o.x, o2.y - o.y);
+            if (d > 0 && d < 110) {
+              ax += (o2.x - o.x) / d;
+              ay += (o2.y - o.y) / d;
+              n++;
+            }
+          }
+          if (n > 0) {
+            const pull = 0.38; // cohesion
+            return { ...o, x: o.x + (ax / n) * pull, y: o.y + (ay / n) * pull };
+          }
+          return o;
+        });
+
+        // player attraction
+        const drifted = clustered.map((o) => {
+          const dx = pp.x - o.x;
+          const dy = pp.y - o.y;
+          const d = Math.hypot(dx, dy);
+          const range = magnet ? 1250 : 170;
+          if (d > 0 && d < range) {
+            const basePull = magnet ? 12.0 : 3.6;
+            const rankPull = 1 + (o.rank || 0) * 0.15;
+            return { ...o, x: o.x + (dx / d) * basePull * rankPull, y: o.y + (dy / d) * basePull * rankPull };
+          }
+          return o;
+        });
+
+        const merged = mergeOrbs(
+          drifted.map((o) => {
+            const r = orbRankFromValue(o.value);
+            return { ...o, rank: Math.max(o.rank || 0, r) };
+          })
+        );
+
+        const kept = [];
+        let gained = 0;
+        merged.forEach((o) => {
+          const d = Math.hypot(o.x - pp.x, o.y - pp.y);
+          if (d < 36) gained += o.value;
+          else kept.push(o);
+        });
+
+        if (gained > 0) setXp((x) => x + gained);
+        return kept;
+      })();
+
+      // -------------------- PICKUPS: vacuum / freeze / overdrive / shield --------------------
+      setPickups((prev) => {
+        const pp = playerRef.current;
+        const kept = [];
+        prev.forEach((pk) => {
+          const d = Math.hypot(pk.x - pp.x, pk.y - pp.y);
+          if (d < 44) {
+            activatePickup(pk.type);
+          } else kept.push(pk);
+        });
+        return kept;
+      });
+
+      // -------------------- LEVEL UP --------------------
+      if (xpRef.current >= xpTargetRef.current) {
+        setXp((x) => x - xpTargetRef.current);
+        setLevel((l) => l + 1);
+        setXpTarget((t) => Math.floor(t * 1.30));
+        setUpgradeOptions(rollUpgradeOptions(selectedWeaponsRef.current, weaponLevelsRef.current, statsRef.current));
+        juicePunch(0.55, 0.55);
+      }
+
+      // -------------------- CONTACT DAMAGE + HAZARDS --------------------
+      if (!freezeWorld) {
+        const now2 = Date.now();
+        const shielded = now2 < shieldUntil.current;
+
+        // hazard rings from boss
+        let hazardDamage = 0;
+        explosionsRef.current.forEach((e) => {
+          if (!e.hazard) return;
+          const d = Math.hypot(p.x - e.x, p.y - e.y);
+          if (d <= e.r) hazardDamage += 7;
+        });
+
+        if (!shielded && hazardDamage > 0 && now2 - lastDamage.current > 240) {
+          lastDamage.current = now2;
+          setStats((prev) => ({ ...prev, hp: Math.max(0, prev.hp - hazardDamage) }));
+          juicePunch(0.6, 0.7);
+        }
+
+        if (now2 - lastDamage.current > 260) {
+          let totalDamage = 0;
+          const pp = playerRef.current;
+          alive.forEach((en) => {
+            const d = Math.hypot(en.x - pp.x, en.y - pp.y);
+            if (d < en.size * 0.55 + 16) totalDamage += en.contactDamage || 8;
+          });
+          if (totalDamage > 0) {
+            lastDamage.current = now2;
+            if (!shielded) {
+              setStats((prev) => ({ ...prev, hp: Math.max(0, prev.hp - totalDamage) }));
+              juicePunch(0.55, 0.65);
+            } else {
+              juicePunch(0.35, 0.55);
+            }
+          }
+        }
+      }
+
     }, 16);
 
     return () => clearInterval(loop);
@@ -1782,13 +2132,6 @@ useEffect(() => {
     setWeaponLevels({ [weaponId]: 1 });
     juicePunch(0.40, 0.55);
   };
-
-  const worldTransform = `translate(${-camera.x}px,${-camera.y}px) scale(${1 + (screenFx.punch || 0) * 0.012})`;
-  const chroma = clamp(screenFx.chroma || 0, 0, 0.6);
-  const worldFilter =
-    chroma > 0.02
-      ? `drop-shadow(${Math.round(2 * chroma)}px 0 0 rgba(255,0,100,0.35)) drop-shadow(${Math.round(-2 * chroma)}px 0 0 rgba(0,220,255,0.25)) saturate(${1 + chroma * 0.15}) contrast(${1 + chroma * 0.10})`
-      : '';
 
   const showShield = Date.now() < shieldUntil.current;
   const showOverdrive = Date.now() < overdriveUntil.current;
@@ -1846,151 +2189,18 @@ useEffect(() => {
         </div>
       </div>
 
-      <div className="world-container" style={{ transform: worldTransform, filter: worldFilter }}>
+      <div className="world-container" ref={worldRef} style={{ willChange: 'transform' }}>
         <div className="world-border" />
-        <div className="player-tracer" style={{ left: player.x - 60, top: player.y - 60 }} />
+        <div className="player-tracer" ref={playerTracerRef} />
         <div
           className="player-sprite"
+          ref={playerSpriteRef}
           style={{
-            left: player.x,
-            top: player.y,
             boxShadow: showShield ? '0 0 16px rgba(120,220,255,0.75), 0 0 36px rgba(120,220,255,0.55)' : undefined,
             filter: showOverdrive ? 'brightness(1.15) saturate(1.2)' : undefined
           }}
         />
 
-        {/* explosions (rings) */}
-        {explosions.map((e) => (
-          <div
-            key={e.id}
-            style={{
-              position: 'absolute',
-              left: e.x,
-              top: e.y,
-              width: e.r * 2,
-              height: e.r * 2,
-              marginLeft: -e.r,
-              marginTop: -e.r,
-              borderRadius: '50%',
-              border: e.hazard ? '2px solid rgba(255,120,120,0.35)' : '2px solid rgba(255,255,255,0.35)',
-              boxShadow: e.hazard ? '0 0 18px rgba(255,120,120,0.22)' : '0 0 18px rgba(255,255,255,0.25)',
-              opacity: Math.max(0, 1 - (Date.now() - e.t) / e.life),
-              transform: `scale(${1 + (Date.now() - e.t) / e.life})`
-            }}
-          />
-        ))}
-
-        {/* death pop */}
-        {deathFx.map((f) => (
-          <div key={f.id} className="death-pop" style={{ left: f.x, top: f.y, width: f.size * 1.7, height: f.size * 1.7 }} />
-        ))}
-
-        {/* tesla / chain arcs */}
-        {arcs.map((a) => {
-          const dx = a.x2 - a.x1;
-          const dy = a.y2 - a.y1;
-          const len = Math.hypot(dx, dy);
-          const ang = Math.atan2(dy, dx);
-          const lifeP = Math.max(0, 1 - (Date.now() - a.t) / a.life);
-          return (
-            <div
-              key={a.id}
-              style={{
-                position: 'absolute',
-                left: a.x1,
-                top: a.y1,
-                width: len,
-                height: 4,
-                transformOrigin: '0 50%',
-                transform: `rotate(${ang}rad)`,
-                background: `linear-gradient(90deg, rgba(255,255,255,0), ${a.color || 'rgba(170,220,255,0.9)'}, rgba(255,255,255,0))`,
-                boxShadow: `0 0 12px ${a.color || 'rgba(170,220,255,0.9)'}, 0 0 28px rgba(255,255,255,0.35)`,
-                opacity: lifeP
-              }}
-            />
-          );
-        })}
-
-        {/* sniper rail lines */}
-        {railLines.map((l) => {
-          const dx = l.x2 - l.x1;
-          const dy = l.y2 - l.y1;
-          const len = Math.hypot(dx, dy);
-          const ang = Math.atan2(dy, dx);
-          const lifeP = Math.max(0, 1 - (Date.now() - l.t) / l.life);
-          return (
-            <div
-              key={l.id}
-              style={{
-                position: 'absolute',
-                left: l.x1,
-                top: l.y1,
-                width: len,
-                height: l.width || 18,
-                transformOrigin: '0 50%',
-                transform: `rotate(${ang}rad)`,
-                background: `linear-gradient(90deg, rgba(255,255,255,0), ${l.color || 'rgba(180,255,245,0.95)'}, rgba(255,255,255,0))`,
-                boxShadow: `0 0 14px ${l.color || 'rgba(180,255,245,0.95)'}, 0 0 40px rgba(255,255,255,0.25)`,
-                opacity: lifeP,
-                borderRadius: 999
-              }}
-            />
-          );
-        })}
-
-        {/* LASER beams (persistent, fat) */}
-        {beams.map((b) => {
-          const dx = b.x2 - b.x1;
-          const dy = b.y2 - b.y1;
-          const len = Math.hypot(dx, dy);
-          const ang = Math.atan2(dy, dx);
-          const lifeP = Math.max(0, 1 - (Date.now() - b.t) / b.life);
-          return (
-            <div
-              key={b.id}
-              style={{
-                position: 'absolute',
-                left: b.x1,
-                top: b.y1,
-                width: len,
-                height: b.width,
-                transformOrigin: '0 50%',
-                transform: `rotate(${ang}rad)`,
-                background: `linear-gradient(90deg, rgba(255,255,255,0), rgba(255,160,245,0.95), rgba(255,255,255,0))`,
-                boxShadow: `0 0 18px rgba(255,160,245,0.65), 0 0 40px rgba(255,160,245,0.25)`,
-                opacity: lifeP,
-                borderRadius: 999
-              }}
-            />
-          );
-        })}
-
-        {/* katana arcs */}
-        {slashes.map((s) => {
-          const size = Math.max(200, s.range * 2);
-          const visible = (s.age || 0) >= (s.delay || 0);
-          const arcSize = s.arc || Math.PI * 0.34;
-          const arcStart = -arcSize / 2;
-
-          return (
-            <div
-              key={s.id}
-              className={`katana-arc ${s.kind || 'crescent'}`}
-              style={{
-                left: s.x,
-                top: s.y,
-                opacity: visible ? 1 : 0,
-                '--rot': `${s.angle}rad`,
-                '--size': `${size}px`,
-                '--arcStart': `${arcStart}rad`,
-                '--arcSize': `${arcSize}rad`
-              }}
-            />
-          );
-        })}
-
-        {/* bullets */}
-       
         {/* power pickups */}
         {pickups.map((pk) => (
           <div
