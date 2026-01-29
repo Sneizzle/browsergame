@@ -6,6 +6,7 @@ import Combat from "./Combat.jsx";
 import droppod from "./assets/droppod.mp4";
 import missionsuccess from "./assets/missionsucess.mp4";
 
+
 const API_URL = "https://69787eb6cd4fe130e3d91a96.mockapi.io/sessions";
 
 const PLANETS = [
