@@ -48,7 +48,6 @@ const WEAPONS = [
       { title: 'Rifle V', description: 'Triple fan burst + violent bounce.', stats: { pellets: 3, spread: 0.18, damage: 13, pierce: 4, ricochets: 2 } }
     ]
   },
-
   {
     id: 'KATANA',
     name: 'Katana',
@@ -62,7 +61,9 @@ const WEAPONS = [
           cooldown: 900,
           damage: 18,
           range: 165,
-          slashPattern: [{ delay: 0, offset: 0.0, arc: Math.PI * 0.34, kind: 'crescent', dmgMult: 1.0 }]
+          slashPattern: [
+            { delay: 0, offset: 0.0, arc: Math.PI * 0.34, kind: 'crescent', dmgMult: 1.0, color: 'rgba(255,255,255,1)', lineWidth: 10 }
+          ]
         }
       },
       {
@@ -73,54 +74,55 @@ const WEAPONS = [
           damage: 19,
           range: 178,
           slashPattern: [
-            { delay: 0, offset: 0.0, arc: Math.PI * 0.42, kind: 'crescent', dmgMult: 1.0 },
-            { delay: 160, offset: Math.PI, arc: Math.PI * 0.36, kind: 'crescent', dmgMult: 0.95 }
+            { delay: 0, offset: 0.0, arc: Math.PI * 0.42, kind: 'crescent', dmgMult: 1.0, color: 'rgba(255,255,255,1)', lineWidth: 10 },
+            { delay: 160, offset: Math.PI, arc: Math.PI * 0.36, kind: 'crescent', dmgMult: 0.95, color: 'rgba(255,255,255,1)', lineWidth: 10 }
           ]
         }
       },
       {
         title: 'Katana III',
-        description: 'Combo becomes a blender (sweep → follow → spin).',
+        description: 'Crimson combo (afterglow).',
         stats: {
           cooldown: 820,
           damage: 21,
           range: 190,
           slashPattern: [
-            { delay: 0, offset: 0.0, arc: Math.PI * 0.44, kind: 'crescent', dmgMult: 1.0 },
-            { delay: 150, offset: Math.PI, arc: Math.PI * 0.38, kind: 'crescent', dmgMult: 0.95 },
-            { delay: 320, offset: 0.0, arc: Math.PI * 2.0, kind: 'spin', dmgMult: 0.55 }
+            { delay: 0, offset: 0.0, arc: Math.PI * 0.44, kind: 'crescent', dmgMult: 1.0, color: 'rgba(255, 40, 70, 1)', glowColor: 'rgba(255, 40, 70, 0.75)', glowBlur: 18, lineWidth: 12, rangeMult: 1.00, activeMs: 140 },
+            { delay: 150, offset: Math.PI, arc: Math.PI * 0.38, kind: 'crescent', dmgMult: 0.95, color: 'rgba(255, 40, 70, 1)', glowColor: 'rgba(255, 40, 70, 0.70)', glowBlur: 18, lineWidth: 12, rangeMult: 1.03, activeMs: 130 },
+            { delay: 320, offset: 0.0, arc: Math.PI * 2.0, kind: 'spin', dmgMult: 0.55, color: 'rgba(255, 40, 70, 1)', glowColor: 'rgba(255, 40, 70, 0.60)', glowBlur: 14, lineWidth: 10, rangeMult: 0.92, activeMs: 120 }
           ]
         }
       },
       {
         title: 'Katana IV',
-        description: 'Faster combo + double spin (crowd erase).',
+        description: 'Crimson cross-laceration.',
         stats: {
           cooldown: 760,
           damage: 23,
           range: 205,
           slashPattern: [
-            { delay: 0, offset: 0.0, arc: Math.PI * 0.46, kind: 'crescent', dmgMult: 1.0 },
-            { delay: 140, offset: Math.PI, arc: Math.PI * 0.40, kind: 'crescent', dmgMult: 0.98 },
-            { delay: 300, offset: 0.0, arc: Math.PI * 2.0, kind: 'spin', dmgMult: 0.60 },
-            { delay: 420, offset: 0.0, arc: Math.PI * 2.0, kind: 'spin', dmgMult: 0.60 }
+            // Cross: two diagonals, then a tight finishing sweep
+            { delay: 0, offset: Math.PI * 0.25, arc: Math.PI * 0.34, kind: 'crescent', dmgMult: 1.00, color: 'rgba(255, 40, 70, 1)', glowColor: 'rgba(255, 40, 70, 0.78)', glowBlur: 20, lineWidth: 13, rangeMult: 1.08, activeMs: 135 },
+            { delay: 110, offset: -Math.PI * 0.25, arc: Math.PI * 0.34, kind: 'crescent', dmgMult: 1.00, color: 'rgba(255, 40, 70, 1)', glowColor: 'rgba(255, 40, 70, 0.78)', glowBlur: 20, lineWidth: 13, rangeMult: 1.08, activeMs: 135 },
+            { delay: 240, offset: Math.PI, arc: Math.PI * 0.44, kind: 'crescent', dmgMult: 0.95, color: 'rgba(255, 55, 85, 1)', glowColor: 'rgba(255, 55, 85, 0.68)', glowBlur: 18, lineWidth: 12, rangeMult: 1.02, activeMs: 150 }
           ]
         }
       },
       {
         title: 'Katana V',
-        description: 'Carnage combo (huge sweep + cross follow + triple spin).',
+        description: 'Crimson starburst.',
         stats: {
           cooldown: 700,
           damage: 26,
           range: 225,
           slashPattern: [
-            { delay: 0, offset: 0.0, arc: Math.PI * 0.50, kind: 'crescent', dmgMult: 1.0 },
-            { delay: 130, offset: Math.PI, arc: Math.PI * 0.44, kind: 'crescent', dmgMult: 1.0 },
-            { delay: 260, offset: Math.PI * 0.5, arc: Math.PI * 0.34, kind: 'crescent', dmgMult: 0.60 },
-            { delay: 320, offset: 0.0, arc: Math.PI * 2.0, kind: 'spin', dmgMult: 0.70 },
-            { delay: 450, offset: 0.0, arc: Math.PI * 2.0, kind: 'spin', dmgMult: 0.70 },
-            { delay: 580, offset: 0.0, arc: Math.PI * 2.0, kind: 'spin', dmgMult: 0.70 }
+            // Starburst: rapid spokes with varied arcs/range/timing
+            { delay: 0, offset: 0.0, arc: Math.PI * 0.28, kind: 'crescent', dmgMult: 0.78, color: 'rgba(255, 35, 65, 1)', glowColor: 'rgba(255, 35, 65, 0.72)', glowBlur: 18, lineWidth: 12, rangeMult: 1.15, activeMs: 110 },
+            { delay: 70, offset: Math.PI * 0.40, arc: Math.PI * 0.28, kind: 'crescent', dmgMult: 0.78, color: 'rgba(255, 35, 65, 1)', glowColor: 'rgba(255, 35, 65, 0.72)', glowBlur: 18, lineWidth: 12, rangeMult: 1.08, activeMs: 110 },
+            { delay: 140, offset: -Math.PI * 0.40, arc: Math.PI * 0.28, kind: 'crescent', dmgMult: 0.78, color: 'rgba(255, 35, 65, 1)', glowColor: 'rgba(255, 35, 65, 0.72)', glowBlur: 18, lineWidth: 12, rangeMult: 1.08, activeMs: 110 },
+            { delay: 210, offset: Math.PI * 0.80, arc: Math.PI * 0.30, kind: 'crescent', dmgMult: 0.78, color: 'rgba(255, 55, 85, 1)', glowColor: 'rgba(255, 55, 85, 0.68)', glowBlur: 18, lineWidth: 12, rangeMult: 1.00, activeMs: 120 },
+            { delay: 280, offset: -Math.PI * 0.80, arc: Math.PI * 0.30, kind: 'crescent', dmgMult: 0.78, color: 'rgba(255, 55, 85, 1)', glowColor: 'rgba(255, 55, 85, 0.68)', glowBlur: 18, lineWidth: 12, rangeMult: 1.00, activeMs: 120 },
+            { delay: 360, offset: Math.PI, arc: Math.PI * 0.52, kind: 'crescent', dmgMult: 0.95, color: 'rgba(255, 80, 110, 1)', glowColor: 'rgba(255, 80, 110, 0.62)', glowBlur: 20, lineWidth: 13, rangeMult: 0.95, activeMs: 160 }
           ]
         }
       }
@@ -193,26 +195,27 @@ const WEAPONS = [
     targeting: 'closest',
     color: '#a6b7ff',
     levels: [
-      { title: 'Tesla I', description: 'Chain lightning (closer, snappier zap).', stats: { cooldown: 650, damage: 18, chain: 3, arcRange: 200, stun: 170, chainFalloff: 0.90, zapSlow: 0.18, zapSlowDuration: 820 } },
-      { title: 'Tesla II', description: 'Bigger arcs + stronger stun.', stats: { damage: 20, chain: 4, arcRange: 250, stun: 220, zapSlow: 0.20, zapSlowDuration: 900 } },
+      { title: 'Tesla I', description: 'Chain lightning (closer, snappier zap).', stats: { cooldown: 650, damage: 18, chain: 3, arcRange: 175, stun: 170, chainFalloff: 0.90, zapSlow: 0.18, zapSlowDuration: 820 } },
+      { title: 'Tesla II', description: 'Bigger arcs + stronger stun.', stats: { damage: 20, chain: 4, arcRange: 220, stun: 220, zapSlow: 0.20, zapSlowDuration: 900 } },
       { title: 'Tesla III', description: 'More jumps.', stats: { chain: 6, damage: 21 } },
       { title: 'Tesla IV', description: 'Forked discharge.', stats: { chain: 7, damage: 22, fork: 2 } },
       { title: 'Tesla V', description: 'Overload storm.', stats: { cooldown: 560, damage: 24, chain: 8, fork: 3, storm: true } }
     ]
   },
-
-  // ROCKET: more missiles at max + bigger early explosions
+  // ROCKET: slower overall, huge late-game blast payoff, capped rockets for FPS stability
   {
     id: 'ROCKET',
     name: 'Rocket Launcher',
     targeting: 'closest',
     color: '#ff9a8a',
     levels: [
-      { title: 'Rocket I', description: 'Missile with big early boom.', stats: { cooldown: 980, bulletSpeed: 5.0, accel: 0.26, damage: 26, pellets: 1, spread: 0.05, width: 18, height: 8, pierce: 0, explodeRadius: 120, explodeMult: 0.85, homing: false } },
-      { title: 'Rocket II', description: 'Bigger blast.', stats: { damage: 30, explodeRadius: 140, explodeMult: 0.88 } },
-      { title: 'Rocket III', description: 'Triple salvo (spreads targets).', stats: { pellets: 3, spread: 0.26, damage: 25, explodeRadius: 130, explodeMult: 0.84 } },
-      { title: 'Rocket IV', description: 'Heat-seeking guidance.', stats: { homing: true, damage: 28, explodeRadius: 140, explodeMult: 0.88 } },
-      { title: 'Rocket V', description: 'Swarm barrage (15 seekers).', stats: { pellets: 15, spread: 0.95, bulletSpeed: 4.6, accel: 0.30, homing: true, damage: 18, explodeRadius: 132, explodeMult: 0.84 } }
+      { title: 'Rocket I', description: 'Missile with big early boom.', stats: { cooldown: 1080, bulletSpeed: 4.6, accel: 0.22, damage: 26, pellets: 1, spread: 0.05, width: 18, height: 8, pierce: 0, explodeRadius: 120, explodeMult: 0.85, homing: false } },
+      { title: 'Rocket II', description: 'Bigger blast.', stats: { cooldown: 1120, damage: 30, explodeRadius: 140, explodeMult: 0.88 } },
+
+      // Ranks 3–5: much longer cooldown, massively larger blast radius late game
+      { title: 'Rocket III', description: 'Triple salvo (spreads targets).', stats: { cooldown: 1450, pellets: 3, spread: 0.26, damage: 25, explodeRadius: 240, explodeMult: 0.84 } },
+      { title: 'Rocket IV', description: 'Heat-seeking guidance.', stats: { cooldown: 1650, homing: true, damage: 28, explodeRadius: 280, explodeMult: 0.88 } },
+      { title: 'Rocket V', description: 'Swarm barrage (12 seekers).', stats: { cooldown: 1950, pellets: 12, spread: 0.95, bulletSpeed: 4.2, accel: 0.26, homing: true, damage: 18, explodeRadius: 340, explodeMult: 0.84 } }
     ]
   },
 
@@ -282,6 +285,13 @@ const spawnEnemyBase = (difficulty) => {
   const hpMult = 1 + difficulty * 0.08;
 
   const roll = Math.random();
+
+  // Rare juggernaut (~1.5%): immune to slow/stun/knockback/pull
+  if (roll > 0.985) {
+    const base = 420;
+    const hp = Math.round(base * hpMult * (1 + difficulty * 0.10));
+    return { id: Math.random(), type: 'juggernaut', x, y, hp, maxHp: hp, speed: 0.95 + difficulty * 0.02, size: 74, xp: 42, contactDamage: 22, color: '#ff3b3b' };
+  }
   if (roll > 0.92) {
     const base = 120;
     const hp = Math.round(base * hpMult);
@@ -306,14 +316,14 @@ const spawnEnemy = (difficulty, forcedType = null) => {
     return { ...base, type: 'swarm', hp: Math.round(8 + difficulty * 1.6), maxHp: Math.round(8 + difficulty * 1.6), speed: 2.15 + difficulty * 0.05, size: 17, xp: 3, contactDamage: 5, color: '#ff4aa8' };
   }
   if (forcedType === 'wall') {
-    const hp = 125 + difficulty * 12;
-    return { ...base, type: 'wall', hp, maxHp: hp, speed: 0.85 + difficulty * 0.02, size: 42, xp: 22, contactDamage: 12, color: '#ff2a4b' };
+    const hp = Math.round((320 + difficulty * 26) * (1 + difficulty * 0.06));
+    return { ...base, type: 'wall', hp, maxHp: hp, speed: 0.70 + difficulty * 0.01, size: 46, xp: 26, contactDamage: 13, color: '#ff2a4b' };
   }
   return base;
 };
 
 const spawnMiniBoss = (player, difficulty, kind = 'charger') => {
-  const hp = (kind === 'charger' ? 980 : 760) + difficulty * (kind === 'charger' ? 95 : 75);
+  const hp = (kind === 'charger' ? 1750 : 760) + difficulty * (kind === 'charger' ? 180 : 75);
   const base = {
     id: `mini_${kind}_${Math.random()}`,
     type: `mini_${kind}`,
@@ -329,12 +339,26 @@ const spawnMiniBoss = (player, difficulty, kind = 'charger') => {
   };
 
   if (kind === 'charger') {
-    return { ...base, dashCd: 1600, dashWindup: 650, dashMs: 360, dashSpd: 11.2, dashUntil: 0, windupUntil: 0, dashDir: 0,
-      damageReductionUntil: Date.now() + 900, damageReductionMult: 0.55
+    return { ...base, dashCd: 1600, dashWindup: 950, dashMs: 420, dashSpd: 10.6, dashUntil: 0, windupUntil: 0, dashDir: 0,
+      damageReductionUntil: Date.now() + 1700, damageReductionMult: 0.40
     };
   }
   // assassin: short teleports if you stand still
   return { ...base, blinkCd: 1600, blinkUntil: 0, damageReductionUntil: Date.now() + 650, damageReductionMult: 0.70 };
+};
+
+const spawnRamsRing = (player, difficulty, count) => {
+  const out = [];
+  const radius = 520;
+  const base = Math.random() * Math.PI * 2;
+
+  for (let i = 0; i < count; i += 1) {
+    const a = base + (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.18;
+    const x = clamp(player.x + Math.cos(a) * radius, 140, ARENA_SIZE - 140);
+    const y = clamp(player.y + Math.sin(a) * radius, 140, ARENA_SIZE - 140);
+    out.push(spawnMiniBoss({ ...player, x, y }, difficulty, 'charger'));
+  }
+  return out;
 };
 
 const spawnBoss = (player, difficulty) => {
@@ -361,37 +385,63 @@ const buildWeaponStats = (weapon, level) =>
   weapon.levels.slice(0, level).reduce((acc, entry) => ({ ...acc, ...entry.stats }), {});
 
 // ---------- orb merge + clustering ----------
+const ORB_TIERS = [
+  { min: 0, color: '#00ff88', r: 6.0, ring: false },
+  { min: 20, color: '#00f2ff', r: 7.2, ring: false },
+  { min: 55, color: '#bf00ff', r: 8.6, ring: false },
+  { min: 120, color: '#ff007a', r: 10.2, ring: true },
+  { min: 220, color: '#ffae00', r: 12.0, ring: true },
+  { min: 360, color: '#ffe16b', r: 13.8, ring: true },
+  { min: 560, color: '#ffffff', r: 15.8, ring: true },
+  { min: 820, color: '#7cffd9', r: 18.2, ring: true },
+  { min: 1200, color: '#ff6bff', r: 21.0, ring: true }
+];
+
+const orbRankFromValue = (v) => {
+  for (let i = ORB_TIERS.length - 1; i >= 0; i -= 1) {
+    if (v >= ORB_TIERS[i].min) return i;
+  }
+  return 0;
+};
+
+const orbVisualFromValue = (v) => {
+  const rank = orbRankFromValue(v);
+  const t = ORB_TIERS[rank] || ORB_TIERS[0];
+  return { rank, color: t.color, r: t.r, ring: !!t.ring };
+};
+
 const mergeOrbs = (orbs) => {
   const merged = [];
   const mergeDist = 36; // more merging = fewer pickups
+
   orbs.forEach((o) => {
     const target = merged.find((m) => Math.hypot(m.x - o.x, m.y - o.y) < mergeDist);
     if (target) {
       target.value += o.value;
       target.x = (target.x + o.x) / 2;
       target.y = (target.y + o.y) / 2;
-      target.rank = Math.max(target.rank || 0, o.rank || 0);
     } else {
       merged.push({ ...o });
     }
   });
-  return merged;
-};
 
-const orbRankFromValue = (v) => {
-  // 0 green, 1 red, 2 purple, 3 gold (new higher rank)
-  if (v >= 120) return 3;
-  if (v >= 55) return 2;
-  if (v >= 20) return 1;
-  return 0;
+  // FPS-safe: compute tier/radius/color only on spawn/merge
+  return merged.map((o) => {
+    const vis = orbVisualFromValue(o.value);
+    return { ...o, ...vis };
+  });
 };
 
 const orbStyle = (rank) => {
-  if (rank === 3) return { bg: 'rgba(255, 220, 120, 0.96)', shadow: '0 0 14px rgba(255,220,120,0.9), 0 0 34px rgba(255,220,120,0.75)' };
-  if (rank === 2) return { bg: 'rgba(160, 110, 255, 0.95)', shadow: '0 0 12px rgba(160,110,255,0.9), 0 0 28px rgba(160,110,255,0.7)' };
-  if (rank === 1) return { bg: 'rgba(255, 80, 80, 0.95)', shadow: '0 0 12px rgba(255,80,80,0.9), 0 0 28px rgba(255,80,80,0.7)' };
+  // DOM fallback (not currently used for canvas orbs)
+  if (rank >= 8) return { bg: 'rgba(255, 107, 255, 0.96)', shadow: '0 0 16px rgba(255,107,255,0.95), 0 0 40px rgba(255,107,255,0.75)' };
+  if (rank >= 6) return { bg: 'rgba(255, 255, 255, 0.96)', shadow: '0 0 16px rgba(255,255,255,0.9), 0 0 40px rgba(255,255,255,0.7)' };
+  if (rank >= 4) return { bg: 'rgba(255, 220, 120, 0.96)', shadow: '0 0 14px rgba(255,220,120,0.9), 0 0 34px rgba(255,220,120,0.75)' };
+  if (rank >= 2) return { bg: 'rgba(160, 110, 255, 0.95)', shadow: '0 0 12px rgba(160,110,255,0.9), 0 0 28px rgba(160,110,255,0.7)' };
+  if (rank >= 1) return { bg: 'rgba(0, 242, 255, 0.92)', shadow: '0 0 12px rgba(0,242,255,0.9), 0 0 28px rgba(0,242,255,0.7)' };
   return { bg: 'rgba(0, 255, 160, 0.90)', shadow: '0 0 12px rgba(0,255,160,0.9), 0 0 28px rgba(0,255,160,0.7)' };
 };
+
 
 // ---------- upgrades: guarantee 3 distinct guns early, then bias toward upgrading (cap 4) ----------
 const rollUpgradeOptions = (ownedWeapons, weaponLevels, stats) => {
@@ -540,8 +590,6 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
   const hitFxRef = useRef({});
   const deathFxRef = useRef([]);
   const keys = useRef({});
-  const pointerMove = useRef({ active: false, x: 0, y: 0, id: null });
-
   const lastFire = useRef({});
   const lastSpawn = useRef(0);
   const elapsed = useRef(0);
@@ -596,33 +644,6 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
   const selectedWeaponsRef = useRef(selectedWeapons);
   const weaponLevelsRef = useRef(weaponLevels);
   const bossSpawnedRef = useRef(bossSpawned);
-
-const startPointerMove = (e) => {
-  // left click only for mouse; allow touch/pen
-  if (e.pointerType === 'mouse' && e.button !== 0) return;
-
-  e.preventDefault();
-  pointerMove.current.active = true;
-  pointerMove.current.x = e.clientX;
-  pointerMove.current.y = e.clientY;
-  pointerMove.current.id = e.pointerId;
-
-  // keep receiving moves even if finger drifts
-  e.currentTarget.setPointerCapture?.(e.pointerId);
-};
-
-const updatePointerMove = (e) => {
-  if (!pointerMove.current.active) return;
-  pointerMove.current.x = e.clientX;
-  pointerMove.current.y = e.clientY;
-};
-
-const endPointerMove = (e) => {
-  if (pointerMove.current.id !== null && e.pointerId !== pointerMove.current.id) return;
-  pointerMove.current.active = false;
-  pointerMove.current.id = null;
-};
-
 
   // Perf: keep simulation values in refs; sync React UI at low Hz
   const levelRef = useRef(level);
@@ -774,7 +795,7 @@ const endPointerMove = (e) => {
       now >= reliefUntilRef.current && now >= eventCooldownUntilRef.current
     ) {
       const r = Math.random();
-      const variant = r < 0.55 ? 'encircle' : r < 0.80 ? 'left_wave' : 'left_diagonal';
+      const variant = r < 0.55 ? 'encircle' : 'three_sides';
 
       // Only commit the schedule if the event actually starts.
       const safeAngle = Math.random() * Math.PI * 2;
@@ -807,7 +828,7 @@ const endPointerMove = (e) => {
       }
     }
 
-    // mini bosses at 25/50/75% of run time
+    // rams at 25/50/75% of run time (1 → 2 → 5), spawned in a ring to prevent overlap
     const runT = runTimeRef.current || BOSS_TIME;
     const p = e / runT;
     const pp = playerRef.current;
@@ -815,20 +836,20 @@ const endPointerMove = (e) => {
 
     if (p > 0.25 && !flagsRef.current.mini25) {
       flagsRef.current.mini25 = true;
-      enemiesRef.current = [...(enemiesRef.current || []), spawnMiniBoss(pp, difficulty, 'charger')];
+      enemiesRef.current = [...(enemiesRef.current || []), ...spawnRamsRing(pp, difficulty, 1)];
       juicePunch(1.0, 0.9);
       triggerRelief(6500 + Math.floor(Math.random() * 2500));
     }
     if (p > 0.50 && !flagsRef.current.mini50) {
       flagsRef.current.mini50 = true;
-      enemiesRef.current = [...(enemiesRef.current || []), spawnMiniBoss(pp, difficulty, 'assassin')];
+      enemiesRef.current = [...(enemiesRef.current || []), ...spawnRamsRing(pp, difficulty, 2)];
       juicePunch(1.0, 0.9);
       triggerRelief(6500 + Math.floor(Math.random() * 2500));
     }
     if (p > 0.75 && !flagsRef.current.mini75) {
       flagsRef.current.mini75 = true;
-      enemiesRef.current = [...(enemiesRef.current || []), spawnMiniBoss(pp, difficulty, Math.random() < 0.5 ? 'charger' : 'assassin')];
-      juicePunch(1.0, 0.9);
+      enemiesRef.current = [...(enemiesRef.current || []), ...spawnRamsRing(pp, difficulty, 5)];
+      juicePunch(1.0, 0.95);
       triggerRelief(6500 + Math.floor(Math.random() * 2500));
     }
 
@@ -846,7 +867,7 @@ const endPointerMove = (e) => {
 
     const r = Math.random();
     const type = r < 0.32 ? 'MAGNET' : r < 0.56 ? 'OVERDRIVE' : r < 0.78 ? 'SHIELD' : 'FREEZE';
-    pickupsRef.current = [...(pickupsRef.current || []), { id: Math.random(), type, x, y, t: Date.now(), life: 16000 }];
+    pickupsRef.current = [...(pickupsRef.current || []), { id: Math.random(), type, x, y, t: Date.now(), life: 24000 }];
     // show within next UI sync
   };
 
@@ -909,15 +930,30 @@ useEffect(() => {
       const viewB = cam.y + h + pad;
 
 
-      // 2. Draw Orbs (500+ orbs now render instantly)
+            // 2. Draw Orbs (500+ orbs now render instantly)
       orbsRef.current.forEach(orb => {
         if (orb.x < viewL || orb.x > viewR || orb.y < viewT || orb.y > viewB) return;
 
-        const colors = ['#00ff88', '#00f2ff', '#bf00ff', '#ff007a', '#ffae00'];
-        ctx.fillStyle = colors[orb.rank] || '#fff';
+        const r = orb.r ?? (6 + (orb.rank || 0) * 2.0);
+        const col = orb.color || '#ffffff';
+
+        // core
+        ctx.fillStyle = col;
         ctx.beginPath();
-        ctx.arc(orb.x - cam.x, orb.y - cam.y, 5 + (orb.rank * 2.2), 0, Math.PI * 2);
+        ctx.arc(orb.x - cam.x, orb.y - cam.y, r, 0, Math.PI * 2);
         ctx.fill();
+
+        // glow ring for higher tiers
+        if (orb.ring) {
+          ctx.save();
+          ctx.globalAlpha = 0.55;
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(orb.x - cam.x, orb.y - cam.y, r + 4, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
       });
 
       // 3. Draw Bullets
@@ -974,7 +1010,10 @@ useEffect(() => {
         // charger telegraph lane (windup)
         if (e.type === 'mini_charger' && e.windupUntil && now < e.windupUntil) {
           const dir = Number.isFinite(e.dashDir) ? e.dashDir : 0;
-          const len = 760;
+          const dashMs = e.dashMs || 360;
+          const dashSpd = e.dashSpd || 11.2;
+          const ticks = Math.max(1, Math.round(dashMs / 16));
+          const len = dashSpd * ticks;
           ctx.save();
           ctx.globalAlpha = 0.25;
           ctx.fillStyle = '#ffffff';
@@ -1100,8 +1139,17 @@ useEffect(() => {
         const a = 1 - (age - (s.delay || 0)) / activeMs;
         ctx.save();
         ctx.globalAlpha = clamp(a, 0, 1) * 0.85;
-        ctx.strokeStyle = 'rgba(255,255,255,1)';
-        ctx.lineWidth = 10;
+        const col = s.color || 'rgba(255,255,255,1)';
+        const lw = s.lineWidth || 10;
+        ctx.strokeStyle = col;
+        ctx.lineWidth = lw;
+
+        // afterglow (optional)
+        if (s.glowColor) {
+          ctx.shadowColor = s.glowColor;
+          ctx.shadowBlur = s.glowBlur || 14;
+        }
+
         const r = s.range || 160;
         const start = (s.angle || 0) - (s.arc || 0) / 2;
         const end = (s.angle || 0) + (s.arc || 0) / 2;
@@ -1155,21 +1203,6 @@ useEffect(() => {
         if (keys.current.s) ny += finalSpeed;
         if (keys.current.a) nx -= finalSpeed;
         if (keys.current.d) nx += finalSpeed;
-        // Hold-click / touch-hold movement: move toward pointer direction.
-// Player is camera-centered here (camera uses window.innerWidth/2, innerHeight/2). :contentReference[oaicite:3]{index=3}
-if (pointerMove.current.active) {
-  const dx = pointerMove.current.x - window.innerWidth / 2;
-  const dy = pointerMove.current.y - window.innerHeight / 2;
-
-  const dist = Math.hypot(dx, dy);
-  const deadZone = 18; // pixels near center = no move
-
-  if (dist > deadZone) {
-    nx += (dx / dist) * finalSpeed;
-    ny += (dy / dist) * finalSpeed;
-  }
-}
-
 
         nx = clamp(nx, 0, ARENA_SIZE);
         ny = clamp(ny, 0, ARENA_SIZE);
@@ -1250,16 +1283,24 @@ if (pointerMove.current.active) {
             for (let i = 0; i < swarmCount; i += 1) {
               const en = spawnEnemy(difficulty, 'swarm');
 
-              // Mix swarm shapes: sometimes a wall of enemies from the left / diagonals.
-              if (variant === 'left_wave') {
-                const x = clamp(p.x - 720 + Math.random() * 120, 40, ARENA_SIZE - 40);
-                const y = clamp(p.y + (Math.random() - 0.5) * 820, 40, ARENA_SIZE - 40);
-                nextEnemies.push({ ...en, x, y });
-              } else if (variant === 'left_diagonal') {
-                const lane = Math.random();
-                const x = clamp(p.x - 760 + Math.random() * 140, 40, ARENA_SIZE - 40);
-                const yBase = lane < 0.5 ? p.y - 520 : p.y + 520;
-                const y = clamp(yBase + (Math.random() - 0.5) * 260, 40, ARENA_SIZE - 40);
+              // Swarm shapes: three-sided pressure, always leaving one escape wedge.
+              if (variant === 'three_sides') {
+                const meta = activeEventRef.current?.meta || {};
+                const safeAngle = meta.safeAngle ?? 0;
+                const safeArc = meta.safeArc ?? (Math.PI * 0.55);
+
+                const centers = [
+                  safeAngle + Math.PI,
+                  safeAngle + Math.PI + (Math.PI * 2 / 3),
+                  safeAngle + Math.PI - (Math.PI * 2 / 3)
+                ];
+
+                const c = centers[Math.floor(Math.random() * centers.length)];
+                const a = c + (Math.random() - 0.5) * 0.55;
+                const dist = 760 + Math.random() * 180;
+
+                const x = clamp(p.x + Math.cos(a) * dist, 40, ARENA_SIZE - 40);
+                const y = clamp(p.y + Math.sin(a) * dist, 40, ARENA_SIZE - 40);
                 nextEnemies.push({ ...en, x, y });
               } else {
                 // Encircle-ish, but keep an escape wedge open (retreat direction).
@@ -1290,9 +1331,9 @@ if (pointerMove.current.active) {
             if (!meta.spawned) {
               meta.spawned = true;
 
-              const ringN = meta.ringN || 16;
+              const ringN = meta.ringN || 20;
               const holes = new Set(meta.holes || []);
-              const radius = 520;
+              const radius = 980;
 
               for (let i = 0; i < ringN; i++) {
                 if (holes.has(i)) continue;
@@ -1799,13 +1840,14 @@ if (pointerMove.current.active) {
             const dmg = baseDamage * (pat.dmgMult || 1);
             const arc = pat.arc || Math.PI * 0.34;
             const delay = pat.delay || 0;
-            const activeMs = pat.kind === 'zig' ? 90 : pat.kind === 'spin' ? 120 : 120;
+            const activeMs = Number.isFinite(pat.activeMs) ? pat.activeMs : (pat.kind === 'zig' ? 90 : pat.kind === 'spin' ? 120 : 120);
+            const rangeMult = Number.isFinite(pat.rangeMult) ? pat.rangeMult : 1;
 
             return {
               id: Math.random(),
               x: pp.x,
               y: pp.y,
-              range: baseRange,
+              range: baseRange * rangeMult,
               damage: dmg,
               angle: baseAngle + (pat.offset || 0),
               arc,
@@ -1813,7 +1855,13 @@ if (pointerMove.current.active) {
               activeMs,
               age: 0,
               life: delay + 240,
-              kind: pat.kind || 'crescent'
+              kind: pat.kind || 'crescent',
+
+              // per-slash styling (renderer reads these)
+              color: pat.color,
+              lineWidth: pat.lineWidth,
+              glowColor: pat.glowColor,
+              glowBlur: pat.glowBlur
             };
           });
 
@@ -1974,7 +2022,7 @@ if (pointerMove.current.active) {
           const dToPlayer = Math.hypot(b.x - p.x, b.y - p.y);
           return dToPlayer > 140;
         });
-        if (pulls.length && !freezeWorld && !(en.stunnedUntil && Date.now() < en.stunnedUntil)) {
+        if (pulls.length && !freezeWorld && en.type !== 'juggernaut' && !(en.stunnedUntil && Date.now() < en.stunnedUntil)) {
           const strongest = pulls.reduce((acc, b) => Math.max(acc, b.pull || 0), 0);
           const cx = pulls.reduce((acc, b) => acc + b.x, 0) / pulls.length;
           const cy = pulls.reduce((acc, b) => acc + b.y, 0) / pulls.length;
@@ -2004,15 +2052,15 @@ if (pointerMove.current.active) {
 
         let out = { ...en };
 
-        if (st.slow) {
+        if (st.slow && out.type !== 'juggernaut') {
           out.slowUntil = Date.now() + (st.slowDuration || 520);
           out.slowFactor = clamp(1 - st.slow, 0.45, 0.95);
         }
-        if (st.stun) {
+        if (st.stun && out.type !== 'juggernaut') {
           out.stunnedUntil = Math.max(out.stunnedUntil || 0, Date.now() + st.stun);
         }
 
-        if (st.knockback && !freezeWorld) {
+        if (st.knockback && !freezeWorld && out.type !== 'juggernaut') {
           const ang = Math.atan2(out.y - p.y, out.x - p.x);
           const push = 5.0 * st.knockback;
           out.x += Math.cos(ang) * push;
@@ -2074,25 +2122,26 @@ if (pointerMove.current.active) {
           // more red from groups: skew pack values upward sometimes
           const skew = pack >= 2 && Math.random() < 0.35 ? 1.25 : 1.0;
           const v = Math.round((total / pack) * (0.85 + Math.random() * 0.35) * skew);
-          const rank = orbRankFromValue(v);
+          const vis = orbVisualFromValue(v);
           newOrbs.push({
             id: Math.random(),
             x: en.x + (Math.random() - 0.5) * 22,
             y: en.y + (Math.random() - 0.5) * 22,
             value: v,
-            rank
+            ...vis
           });
         }
 
         // rare high tier bonus
         if (elapsed.current > 45000 && Math.random() < 0.06) {
           const v = en.xp * 3;
+          const vis2 = orbVisualFromValue(v);
           newOrbs.push({
             id: Math.random(),
             x: en.x + (Math.random() - 0.5) * 10,
             y: en.y + (Math.random() - 0.5) * 10,
             value: v,
-            rank: orbRankFromValue(v)
+            ...vis2
           });
         }
 
@@ -2155,12 +2204,7 @@ if (pointerMove.current.active) {
           return o;
         });
 
-        const merged = mergeOrbs(
-          drifted.map((o) => {
-            const r = orbRankFromValue(o.value);
-            return { ...o, rank: Math.max(o.rank || 0, r) };
-          })
-        );
+        const merged = mergeOrbs(drifted);
 
         const kept = [];
         let gained = 0;
@@ -2340,14 +2384,15 @@ if (pointerMove.current.active) {
         {pickups.map((pk) => (
           <div
             key={pk.id}
+            className={`pickup pickup--${String(pk.type || '').toLowerCase()}`}
             style={{
               position: 'absolute',
               left: pk.x,
               top: pk.y,
-              width: 26,
-              height: 26,
-              marginLeft: -13,
-              marginTop: -13,
+              width: 34,
+              height: 34,
+              marginLeft: -17,
+              marginTop: -17,
               borderRadius: 999,
               background:
                 pk.type === 'MAGNET' ? 'rgba(180,255,200,0.9)' :
