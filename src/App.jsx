@@ -116,11 +116,15 @@ export default function App() {
   // XP + resources
   const [crewXp, setCrewXp] = useState(0);
   const [resources, setResources] = useState(0);
+  const [talentPills, setTalentPills] = useState(0); // 1 per mission (roguelite talent currency)
   const [combatCtx, setCombatCtx] = useState(null);
 
   // hero selection
   const [heroOptions, setHeroOptions] = useState(() => genUniqueHeroOptions(5));
   const [selectedHero, setSelectedHero] = useState(null);
+
+  // Perks/talents persist for the session (until browser restart) per character.
+  const shopStorageKey = selectedHero?.id ? `hero:${selectedHero.id}` : null;
 
   // ✅ tutorial (in-memory only; refresh wipes it)
   const [tutorialShownThisSession, setTutorialShownThisSession] = useState(false);
@@ -228,6 +232,15 @@ export default function App() {
 
   const gameOver = lives <= 0;
 
+  // Roguelite hard reset after 5 deaths (auto-refresh)
+  useEffect(() => {
+    if (!gameOver) return;
+    const t = setTimeout(() => {
+      window.location.reload();
+    }, 1400);
+    return () => clearTimeout(t);
+  }, [gameOver]);
+
   const hexGrid = focusPlanet
     ? (() => {
         const arr = [];
@@ -300,6 +313,8 @@ export default function App() {
           if (reward > 0) {
             setCrewXp((xp) => xp + reward);
             setResources((r) => r + reward);
+    // Roguelite talent point: +1 pill per cleared mission
+    setTalentPills((p) => p + 1);
           }
 
           // ✅ unlock shop after first win of run
@@ -468,6 +483,7 @@ export default function App() {
                 setLives(5);
                 setCrewXp(0);
                 setResources(0);
+    setTalentPills(0);
                 setClearedHexes({});
                 setFocusPlanet(null);
                 setSelectedHex(null);
@@ -553,8 +569,9 @@ export default function App() {
               onClick={(e) => e.stopPropagation()}
               style={{
                 position: "fixed",
-                left: 20,
-                right: 20,
+                left: "50%",
+                transform: "translateX(-50%)",
+                width: "min(1040px, calc(100vw - 40px))",
                 top: 80,
                 bottom: 20,
                 zIndex: 9050,
@@ -569,10 +586,10 @@ export default function App() {
             >
               <GalaxyShop
                 title="GALAXY SHOP"
-                credits={resources}
-                onSpend={(amount) => setResources((r) => Math.max(0, r - amount))}
+                credits={talentPills}
+                onSpend={(amount) => setTalentPills((p) => Math.max(0, p - amount))}
                 resetToken={runId}
-                storageKey={`xeno_purge_run_${runId}`}
+                storageKey={shopStorageKey}
                 onBuildChange={setRunBuild}
               />
             </div>
