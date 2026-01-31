@@ -86,9 +86,20 @@ body {
   top: 0;
 }
 
-.player-sprite { 
-  position: absolute; width: 38px; height: 38px; background: var(--neon-blue); 
-  border-radius: 4px; box-shadow: 0 0 20px var(--neon-blue); z-index: 10; 
+.player-sprite{
+  position: absolute;   /* so left/top works */
+  width: 44px;
+  height: 44px;
+
+  border-radius: 999px !important;
+  background-repeat: no-repeat;
+  background-position: center;
+  overflow: hidden;
+}
+
+/* Optional: make the visual sprite bigger without changing collision */
+.player-sprite{
+  transform: translate(-50%, -50%) scale(1.8) !important; /* ✅ looks bigger */
 }
 
 .player-sprite{

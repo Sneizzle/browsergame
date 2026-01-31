@@ -1,19 +1,48 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 const ARENA_SIZE = 2800; // +40%
-const BOSS_TIME = 160000; // longer run (was 90s)
+const BOSS_TIME = 80000; // shorter run (~80s to boss)
 
-// -------------------- DIFFICULTY TUNING (15% EASIER) --------------------
-const ENEMY_HP_MULT = 0.85;            // enemies have 15% less HP
-const SPAWN_INTERVAL_MULT = 1.15;      // ~15% fewer enemies over time (slower spawns)
+// -------------------- DIFFICULTY TUNING (BASE) --------------------
+const TRASH_HP_MULT = 0.95;           // trash HP slightly up (less one-shot mid/late)
+const ELITE_HP_MULT = 1.05;           // elites keep their identity late
+const MINI_HP_MULT = 1.15;            // mini-bosses a bit sturdier
+const BOSS_HP_MULT = 1.65;            // boss much sturdier (was dying too fast)
+const SPAWN_INTERVAL_MULT = 0.78;     // faster spawns overall (~+28% density)
+
+// -------------------- LATE GAME FIX (45% -> 100%) --------------------
+// Add HP nerf for "adds" ramps from -40% to -60% (mult 0.60 -> 0.40)
+const LATE_ADD_HP_MIN_MULT = 1.00;
+const LATE_ADD_HP_MAX_NERF_MULT = 0.85;
+
+// XP boost ramps in late game so builds come online
+const LATE_XP_MIN_MULT = 1.25;  // at 45%
+const LATE_XP_MAX_MULT = 1.85;  // at 100%
+
+// Spawns: reduce density late game, and reduce more during boss
+const LATE_SPAWN_INTERVAL_BOOST = 0.78; // late game: faster spawns (was slower)
+const LATE_SPAWN_COUNT_REDUCE = -0.35;   // late game: MORE spawns (+35% at end)
+
+const BOSS_ADD_INTERVAL_MULT = 1.6;     // fewer adds during boss, but not empty
+const BOSS_ADD_COUNT_MULT = 0.85;       // keep pressure during boss
+// -------------------- PLAYER FEEDBACK TWEAKS --------------------
+const AFTER40_ENEMY_MULT = 1.65;     // +65% enemies after 40% progress
+const WALL_HP_MULT = 0.70;           // -30% wall unit HP
+const RAM_HP_MULT = 0.60;            // ~15% faster RAM kill (was 0.70)
+const RELIEF_SPAWN_INTERVAL_MULT = 1.15; // relief slows spawns slightly
+
 
 // -------------------- helpers --------------------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * clamp(t, 0, 1);
+const norm01 = (x, a, b) => (b <= a ? 0 : clamp((x - a) / (b - a), 0, 1));
+
 const dist2 = (a, b) => {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
   return dx * dx + dy * dy;
 };
+
 const withinArc = (center, arc, angle) => {
   const norm = (x) => {
     while (x > Math.PI) x -= Math.PI * 2;
@@ -37,7 +66,18 @@ const pickDistinctTargets = (enemies, origin, count) => {
   return pool.slice(0, Math.min(count, pool.length));
 };
 
-// -------------------- WEAPONS (BUFFED / REWORKED) --------------------
+const isEliteType = (type) => {
+  const t = String(type || '');
+  return (
+    t === 'boss' ||
+    t === 'brute' ||
+    t === 'juggernaut' ||
+    t === 'wall' ||
+    t.startsWith('mini_')
+  );
+};
+
+// -------------------- WEAPONS (RANK 3-5: MORE CC + EXPLOSIVITY + EFFECTS) --------------------
 const WEAPONS = [
   {
     id: 'RIFLE',
@@ -47,9 +87,10 @@ const WEAPONS = [
     levels: [
       { title: 'Rifle I', description: 'Precision shot with guaranteed ricochet.', stats: { cooldown: 520, bulletSpeed: 15.5, damage: 11, pellets: 1, spread: 0.06, width: 12, height: 4, pierce: 2, ricochets: 1 } },
       { title: 'Rifle II', description: 'Tighter cadence.', stats: { cooldown: 475, damage: 13 } },
-      { title: 'Rifle III', description: 'Two-round burst.', stats: { pellets: 2, spread: 0.10, damage: 12, pierce: 3 } },
-      { title: 'Rifle IV', description: 'Smarter bounces.', stats: { ricochets: 2, damage: 13, pierce: 3 } },
-      { title: 'Rifle V', description: 'Triple fan burst + violent bounce.', stats: { pellets: 3, spread: 0.18, damage: 13, pierce: 4, ricochets: 2 } }
+      // Rank 3+: crowd control + mild splash to help late swarms
+      { title: 'Rifle III', description: 'Two-round burst + suppression slow.', stats: { pellets: 2, spread: 0.10, damage: 12, pierce: 3, slow: 0.14, slowDuration: 720 } },
+      { title: 'Rifle IV', description: 'Smarter bounces + micro-stun on hit.', stats: { ricochets: 2, damage: 13, pierce: 3, microFreeze: 160, chain: 1 } },
+      { title: 'Rifle V', description: 'Triple fan burst + shrapnel pop.', stats: { pellets: 3, spread: 0.18, damage: 13, pierce: 4, ricochets: 2, explodeRadius: 34, explodeMult: 0.28, slow: 0.16, slowDuration: 860 } }
     ]
   },
   {
@@ -86,6 +127,7 @@ const WEAPONS = [
           ]
         }
       },
+      // Rank 3+: apply slow + micro-stun on contact to keep mobs off you
       {
         title: 'Katana III',
         description: 'Triple combo with a wide finisher (NOT full circle).',
@@ -95,11 +137,14 @@ const WEAPONS = [
           range: 178,
           slashPattern: [
             { delay: 0,   offset: -0.26, arc: Math.PI * 0.32, kind: 'crescent', dmgMult: 0.85,
-              color: 'rgba(255,0,122,1)', glowColor: 'rgba(255,0,122,0.70)', glowBlur: 18, lineWidth: 12, activeMs: 110 },
+              color: 'rgba(255,0,122,1)', glowColor: 'rgba(255,0,122,0.70)', glowBlur: 18, lineWidth: 12, activeMs: 110,
+              slow: 0.18, slowDuration: 820, microFreeze: 90 },
             { delay: 120, offset:  0.26, arc: Math.PI * 0.32, kind: 'crescent', dmgMult: 0.85,
-              color: 'rgba(255,80,210,1)', glowColor: 'rgba(255,80,210,0.65)', glowBlur: 18, lineWidth: 12, activeMs: 110 },
+              color: 'rgba(255,80,210,1)', glowColor: 'rgba(255,80,210,0.65)', glowBlur: 18, lineWidth: 12, activeMs: 110,
+              slow: 0.18, slowDuration: 820, microFreeze: 90 },
             { delay: 260, offset:  0.0,  arc: Math.PI * 0.62, kind: 'crescent', dmgMult: 1.05,
-              color: 'rgba(255,180,80,1)', glowColor: 'rgba(255,180,80,0.60)', glowBlur: 20, lineWidth: 13, activeMs: 140 }
+              color: 'rgba(255,180,80,1)', glowColor: 'rgba(255,180,80,0.60)', glowBlur: 20, lineWidth: 13, activeMs: 140,
+              stun: 140 }
           ]
         }
       },
@@ -112,11 +157,14 @@ const WEAPONS = [
           range: 190,
           slashPattern: [
             { delay: 0,   offset:  0.35, arc: Math.PI * 0.30, kind: 'crescent', dmgMult: 0.95,
-              color: 'rgba(255,40,70,1)', glowColor: 'rgba(255,40,70,0.75)', glowBlur: 22, lineWidth: 14, activeMs: 115 },
+              color: 'rgba(255,40,70,1)', glowColor: 'rgba(255,40,70,0.75)', glowBlur: 22, lineWidth: 14, activeMs: 115,
+              slow: 0.20, slowDuration: 900, microFreeze: 110 },
             { delay: 110, offset: -0.35, arc: Math.PI * 0.30, kind: 'crescent', dmgMult: 0.95,
-              color: 'rgba(255,40,70,1)', glowColor: 'rgba(255,40,70,0.75)', glowBlur: 22, lineWidth: 14, activeMs: 115 },
+              color: 'rgba(255,40,70,1)', glowColor: 'rgba(255,40,70,0.75)', glowBlur: 22, lineWidth: 14, activeMs: 115,
+              slow: 0.20, slowDuration: 900, microFreeze: 110 },
             { delay: 250, offset:  Math.PI, arc: Math.PI * 0.55, kind: 'crescent', dmgMult: 1.0,
-              color: 'rgba(255,120,210,1)', glowColor: 'rgba(255,120,210,0.65)', glowBlur: 20, lineWidth: 13, activeMs: 145 }
+              color: 'rgba(255,120,210,1)', glowColor: 'rgba(255,120,210,0.65)', glowBlur: 20, lineWidth: 13, activeMs: 145,
+              stun: 180 }
           ]
         }
       },
@@ -129,13 +177,17 @@ const WEAPONS = [
           range: 205,
           slashPattern: [
             { delay: 0,   offset: -0.28, arc: Math.PI * 0.30, kind: 'crescent', dmgMult: 0.75,
-              color: 'rgba(0,242,255,1)', glowColor: 'rgba(0,242,255,0.65)', glowBlur: 18, lineWidth: 12, activeMs: 105 },
+              color: 'rgba(0,242,255,1)', glowColor: 'rgba(0,242,255,0.65)', glowBlur: 18, lineWidth: 12, activeMs: 105,
+              slow: 0.22, slowDuration: 980, microFreeze: 120 },
             { delay: 90,  offset:  0.28, arc: Math.PI * 0.30, kind: 'crescent', dmgMult: 0.75,
-              color: 'rgba(0,255,136,1)', glowColor: 'rgba(0,255,136,0.60)', glowBlur: 18, lineWidth: 12, activeMs: 105 },
+              color: 'rgba(0,255,136,1)', glowColor: 'rgba(0,255,136,0.60)', glowBlur: 18, lineWidth: 12, activeMs: 105,
+              slow: 0.22, slowDuration: 980, microFreeze: 120 },
             { delay: 190, offset:  0.0,  arc: Math.PI * 0.48, kind: 'crescent', dmgMult: 0.95,
-              color: 'rgba(255,0,122,1)', glowColor: 'rgba(255,0,122,0.60)', glowBlur: 20, lineWidth: 13, activeMs: 130 },
+              color: 'rgba(255,0,122,1)', glowColor: 'rgba(255,0,122,0.60)', glowBlur: 20, lineWidth: 13, activeMs: 130,
+              stun: 160 },
             { delay: 320, offset:  0.0,  arc: Math.PI * 0.72, kind: 'crescent', dmgMult: 1.15,
-              color: 'rgba(255,218,107,1)', glowColor: 'rgba(255,218,107,0.55)', glowBlur: 22, lineWidth: 14, activeMs: 155 }
+              color: 'rgba(255,218,107,1)', glowColor: 'rgba(255,218,107,0.55)', glowBlur: 22, lineWidth: 14, activeMs: 155,
+              stun: 220, knockback: 1.0 }
           ]
         }
       }
@@ -150,9 +202,10 @@ const WEAPONS = [
     levels: [
       { title: 'SMG I', description: 'Close target bursts.', stats: { cooldown: 120, bulletSpeed: 17, damage: 7, pellets: 1, spread: 0.18, width: 10, height: 4, pierce: 0, slow: 0.08 } },
       { title: 'SMG II', description: 'Improved control.', stats: { cooldown: 112, damage: 8, spread: 0.16, slow: 0.10 } },
-      { title: 'SMG III', description: 'Double burst + ricochet.', stats: { pellets: 2, spread: 0.22, damage: 7, ricochets: 1, slow: 0.10 } },
-      { title: 'SMG IV', description: 'Rattle fire + more ricochet.', stats: { cooldown: 100, damage: 7, ricochets: 2, slow: 0.12 } },
-      { title: 'SMG V', description: 'Wide triple spray + chain zap.', stats: { pellets: 3, spread: 0.34, damage: 6, ricochets: 2, chain: 1, slow: 0.12 } }
+      // Rank 3+: more control, chain and burn at higher ranks
+      { title: 'SMG III', description: 'Double burst + ricochet + stronger slow.', stats: { pellets: 2, spread: 0.22, damage: 7, ricochets: 1, slow: 0.14, slowDuration: 820 } },
+      { title: 'SMG IV', description: 'Rattle fire + electrified rounds (micro-stun).', stats: { cooldown: 100, damage: 7, ricochets: 2, slow: 0.16, slowDuration: 920, microFreeze: 90, chain: 1 } },
+      { title: 'SMG V', description: 'Wide triple spray + chain zap + ignite.', stats: { pellets: 3, spread: 0.34, damage: 6, ricochets: 2, chain: 2, slow: 0.16, slowDuration: 980, burn: 1600 } }
     ]
   },
 
@@ -164,9 +217,10 @@ const WEAPONS = [
     levels: [
       { title: 'Shotgun I', description: 'Arc blast (knockback).', stats: { cooldown: 820, bulletSpeed: 13, damage: 9, pellets: 7, spread: 0.85, width: 14, height: 5, pierce: 0, knockback: 1.35 } },
       { title: 'Shotgun II', description: 'Denser spread + harder shove.', stats: { pellets: 8, damage: 9, knockback: 1.55 } },
-      { title: 'Shotgun III', description: 'Ricochet shrapnel (chaos).', stats: { pellets: 9, damage: 9, pierce: 1, knockback: 1.65, ricochets: 1 } },
-      { title: 'Shotgun IV', description: 'Impact pops (mini-blast on hit).', stats: { pellets: 10, spread: 0.92, damage: 10, pierce: 1, knockback: 1.75, explodeRadius: 26, explodeMult: 0.18 } },
-      { title: 'Shotgun V', description: 'Meteor cluster (explosive pellets).', stats: { pellets: 12, spread: 1.02, damage: 10, pierce: 1, knockback: 1.85, explodeRadius: 42, explodeMult: 0.34 } }
+      // Rank 3+: crowd control + pops
+      { title: 'Shotgun III', description: 'Ricochet shrapnel (chaos) + micro-stun.', stats: { pellets: 9, damage: 9, pierce: 1, knockback: 1.65, ricochets: 1, microFreeze: 120 } },
+      { title: 'Shotgun IV', description: 'Impact pops (mini-blast on hit) + slow.', stats: { pellets: 10, spread: 0.92, damage: 10, pierce: 1, knockback: 1.75, explodeRadius: 30, explodeMult: 0.22, slow: 0.16, slowDuration: 820 } },
+      { title: 'Shotgun V', description: 'Meteor cluster (explosive pellets) + stun shock.', stats: { pellets: 12, spread: 1.02, damage: 10, pierce: 1, knockback: 1.85, explodeRadius: 46, explodeMult: 0.36, stun: 120 } }
     ]
   },
 
@@ -178,9 +232,10 @@ const WEAPONS = [
     levels: [
       { title: 'Laser I', description: 'Fat beam that carves crowds.', stats: { cooldown: 980, beamMs: 160, beamWidth: 34, damage: 8, tickMs: 16, pierce: 999 } },
       { title: 'Laser II', description: 'Hotter cut.', stats: { damage: 10, beamWidth: 38 } },
-      { title: 'Laser III', description: 'Twin beam fan.', stats: { beams: 2, fan: 0.12, damage: 9 } },
-      { title: 'Laser IV', description: 'Overcharged slice.', stats: { cooldown: 860, damage: 12, beamWidth: 44 } },
-      { title: 'Laser V', description: 'Tri-beam + chain burn.', stats: { beams: 3, fan: 0.18, damage: 11, beamWidth: 48, burn: 1600 } }
+      // Rank 3+: apply slow/burn to keep lanes open
+      { title: 'Laser III', description: 'Twin beam fan + scorch.', stats: { beams: 2, fan: 0.12, damage: 9, burn: 1300 } },
+      { title: 'Laser IV', description: 'Overcharged slice + drag slow.', stats: { cooldown: 860, damage: 12, beamWidth: 44, slow: 0.14, slowDuration: 620 } },
+      { title: 'Laser V', description: 'Tri-beam + chain burn + micro-stun ticks.', stats: { beams: 3, fan: 0.18, damage: 11, beamWidth: 48, burn: 1800, microFreeze: 70 } }
     ]
   },
 
@@ -192,9 +247,10 @@ const WEAPONS = [
     levels: [
       { title: 'Sniper I', description: 'Railcannon (tear-through + shockwave).', stats: { cooldown: 1450, bulletSpeed: 26, damage: 60, pellets: 1, spread: 0.01, width: 26, height: 6, pierce: 3, flashy: true, explodeRadius: 70, explodeMult: 0.65, rail: true, railWidth: 18, railMs: 90 } },
       { title: 'Sniper II', description: 'More rupture.', stats: { damage: 80, pierce: 4, explodeRadius: 78, explodeMult: 0.70, railWidth: 20 } },
-      { title: 'Sniper III', description: 'Lance density.', stats: { damage: 96, pierce: 5, explodeRadius: 84, explodeMult: 0.72, railWidth: 22 } },
-      { title: 'Sniper IV', description: 'Faster cycling.', stats: { cooldown: 1250, damage: 112, explodeRadius: 90, explodeMult: 0.76, railWidth: 24 } },
-      { title: 'Sniper V', description: 'Annihilator (stun shock).', stats: { damage: 140, pierce: 6, explodeRadius: 98, explodeMult: 0.80, stun: 140, railWidth: 26 } }
+      // Rank 3-5: stronger utility & waveclear; slightly less oppressive vs elites
+      { title: 'Sniper III', description: 'Lance density + concussive slow.', stats: { damage: 92, pierce: 5, explodeRadius: 92, explodeMult: 0.78, railWidth: 22, slow: 0.18, slowDuration: 780, eliteDmgMult: 0.82 } },
+      { title: 'Sniper IV', description: 'Faster cycling + stun shockwave.', stats: { cooldown: 1250, damage: 104, explodeRadius: 104, explodeMult: 0.82, railWidth: 24, stun: 120, eliteDmgMult: 0.78 } },
+      { title: 'Sniper V', description: 'Annihilator (stun shock) + bigger rupture (but fair vs elites).', stats: { damage: 122, pierce: 6, explodeRadius: 120, explodeMult: 0.88, stun: 160, railWidth: 26, eliteDmgMult: 0.74 } }
     ]
   },
 
@@ -206,7 +262,7 @@ const WEAPONS = [
     levels: [
       { title: 'Tesla I', description: 'Chain lightning (closer, snappier zap).', stats: { cooldown: 650, damage: 18, chain: 3, arcRange: 175, stun: 170, chainFalloff: 0.90, zapSlow: 0.18, zapSlowDuration: 820 } },
       { title: 'Tesla II', description: 'Bigger arcs + stronger stun.', stats: { damage: 20, chain: 4, arcRange: 220, stun: 220, zapSlow: 0.20, zapSlowDuration: 900 } },
-      { title: 'Tesla III', description: 'More jumps.', stats: { chain: 6, damage: 21 } },
+      { title: 'Tesla III', description: 'More jumps + fork.', stats: { chain: 6, damage: 21, fork: 1 } },
       { title: 'Tesla IV', description: 'Forked discharge.', stats: { chain: 7, damage: 22, fork: 2 } },
       { title: 'Tesla V', description: 'Overload storm.', stats: { cooldown: 560, damage: 24, chain: 8, fork: 3, storm: true } }
     ]
@@ -220,9 +276,10 @@ const WEAPONS = [
     levels: [
       { title: 'Rocket I', description: 'Missile with big early boom.', stats: { cooldown: 1080, bulletSpeed: 4.6, accel: 0.22, damage: 26, pellets: 1, spread: 0.05, width: 18, height: 8, pierce: 0, explodeRadius: 120, explodeMult: 0.85, homing: false } },
       { title: 'Rocket II', description: 'Bigger blast.', stats: { cooldown: 1120, damage: 30, explodeRadius: 140, explodeMult: 0.88 } },
-      { title: 'Rocket III', description: 'Triple salvo (spreads targets).', stats: { cooldown: 1450, pellets: 3, spread: 0.26, damage: 25, explodeRadius: 240, explodeMult: 0.84 } },
-      { title: 'Rocket IV', description: 'Heat-seeking guidance.', stats: { cooldown: 1650, homing: true, damage: 28, explodeRadius: 280, explodeMult: 0.88 } },
-      { title: 'Rocket V', description: 'Swarm barrage (12 seekers).', stats: { cooldown: 1950, pellets: 12, spread: 0.95, bulletSpeed: 4.2, accel: 0.26, homing: true, damage: 18, explodeRadius: 340, explodeMult: 0.84 } }
+      // Rank 3+: more crowd clear / control
+      { title: 'Rocket III', description: 'Triple salvo (spreads targets) + flame wash.', stats: { cooldown: 1450, pellets: 3, spread: 0.26, damage: 25, explodeRadius: 260, explodeMult: 0.90, burn: 1400, slow: 0.12, slowDuration: 780 } },
+      { title: 'Rocket IV', description: 'Heat-seeking guidance + concussive stun.', stats: { cooldown: 1650, homing: true, damage: 28, explodeRadius: 300, explodeMult: 0.92, stun: 110 } },
+      { title: 'Rocket V', description: 'Swarm barrage (12 seekers) + napalm storm.', stats: { cooldown: 1950, pellets: 12, spread: 0.95, bulletSpeed: 4.2, accel: 0.26, homing: true, damage: 18, explodeRadius: 360, explodeMult: 0.90, burn: 2000, slow: 0.14, slowDuration: 860 } }
     ]
   },
 
@@ -234,9 +291,10 @@ const WEAPONS = [
     levels: [
       { title: 'Void I', description: 'Gravity shot that anchors and becomes a vortex.', stats: { cooldown: 820, bulletSpeed: 5.6, damage: 14, pellets: 1, spread: 0.04, width: 24, height: 24, pierce: 8, pull: 1.35, pullRadius: 190, vortexDps: 12, maxRange: 440, anchorOnMaxRange: true, lifeMs: 1900, singularity: false } },
       { title: 'Void II', description: 'Bigger vortex + stronger pull.', stats: { pull: 1.65, pullRadius: 215, width: 30, height: 30, damage: 15, vortexDps: 14, maxRange: 470 } },
-      { title: 'Void III', description: 'Anchored vortex lasts longer (crowd vacuum).', stats: { lifeMs: 2300, pull: 1.95, pullRadius: 240, vortexDps: 16, damage: 15 } },
-      { title: 'Void IV', description: 'Vortex slows + secondary orb (late upgrade).', stats: { pierce: 14, slow: 0.22, pull: 2.15, split: 2 } },
-      { title: 'Void V', description: 'Singularity (anchored implosion + pop).', stats: { singularity: true, explodeRadius: 140, explodeMult: 0.95, pull: 2.55, pullRadius: 260, vortexDps: 20, maxRange: 500, lifeMs: 2400 } }
+      // Rank 3+: more vacuum + slow field
+      { title: 'Void III', description: 'Anchored vortex lasts longer (crowd vacuum) + slow field.', stats: { lifeMs: 2300, pull: 1.95, pullRadius: 240, vortexDps: 16, damage: 15, slow: 0.16, slowDuration: 650 } },
+      { title: 'Void IV', description: 'Vortex slows harder + secondary orb.', stats: { pierce: 14, slow: 0.24, slowDuration: 900, pull: 2.15, split: 2 } },
+      { title: 'Void V', description: 'Singularity (anchored implosion + pop) + stun pulse.', stats: { singularity: true, explodeRadius: 150, explodeMult: 1.0, pull: 2.55, pullRadius: 270, vortexDps: 22, maxRange: 510, lifeMs: 2450, stun: 120 } }
     ]
   },
 
@@ -248,9 +306,10 @@ const WEAPONS = [
     levels: [
       { title: 'Time I', description: 'Stutter-freeze + heavy slow.', stats: { cooldown: 560, bulletSpeed: 12, damage: 16, pellets: 1, spread: 0.05, width: 16, height: 7, pierce: 1, slow: 0.40, microFreeze: 200 } },
       { title: 'Time II', description: 'More slow + pierce.', stats: { slow: 0.46, pierce: 2, damage: 17 } },
-      { title: 'Time III', description: 'Temporal split.', stats: { split: 2, damage: 16 } },
-      { title: 'Time IV', description: 'Stasis (stun on hit).', stats: { stun: 380, damage: 18, explodeRadius: 36, explodeMult: 0.25 } },
-      { title: 'Time V', description: 'Chrono fracture (freeze wave).', stats: { stun: 520, explodeRadius: 76, explodeMult: 0.55 } }
+      // Rank 3+: more split + small pop for waveclear
+      { title: 'Time III', description: 'Temporal split + ripple pop.', stats: { split: 2, damage: 16, explodeRadius: 28, explodeMult: 0.20 } },
+      { title: 'Time IV', description: 'Stasis (stun on hit) + bigger ripple.', stats: { stun: 380, damage: 18, explodeRadius: 44, explodeMult: 0.30 } },
+      { title: 'Time V', description: 'Chrono fracture (freeze wave) + huge ripple.', stats: { stun: 520, explodeRadius: 86, explodeMult: 0.60 } }
     ]
   }
 ];
@@ -266,8 +325,8 @@ const UPGRADES = [
 
 // -------------------- EVENTS / PICKUPS --------------------
 const EVENT_DEFS = {
-  SWARM: { id: 'SWARM', duration: 25000 },
-  WALL: { id: 'WALL', duration: 20000 },
+  SWARM: { id: 'SWARM', duration: 16000 },
+  WALL: { id: 'WALL', duration: 14000 },
   RELIEF: { id: 'RELIEF', duration: 5200 }
 };
 
@@ -279,7 +338,13 @@ const PICKUP_DEFS = {
 };
 
 // ---------- spawners ----------
-const spawnEnemyBase = (difficulty) => {
+const lateAddHpMultFromT = (t) => {
+  if (t < 0.45) return 1.0;
+  const late = norm01(t, 0.45, 1.0);
+  return lerp(LATE_ADD_HP_MIN_MULT, LATE_ADD_HP_MAX_NERF_MULT, late); // 0.60 -> 0.40
+};
+
+const spawnEnemyBase = (difficulty, t = 0) => {
   const side = Math.floor(Math.random() * 4);
   const margin = 20;
   const edgeX = Math.random() * (ARENA_SIZE - margin * 2) + margin;
@@ -287,44 +352,52 @@ const spawnEnemyBase = (difficulty) => {
   const x = side === 0 ? margin : side === 1 ? ARENA_SIZE - margin : edgeX;
   const y = side === 2 ? margin : side === 3 ? ARENA_SIZE - margin : edgeY;
 
-  // 15% easier overall HP
-  const hpMult = (0.9 + difficulty * 0.004) * ENEMY_HP_MULT;
+  const baseScale = (0.9 + difficulty * 0.004);
+  const trashHpMult = baseScale * TRASH_HP_MULT * lateAddHpMultFromT(t);
+  const eliteHpMult = baseScale * ELITE_HP_MULT;
 
   const roll = Math.random();
 
+  // Late-game fairness: reduce elite frequency a bit after ~60% progress
+  const eliteT = norm01(t, 0.60, 1.0);
+  const jugThresh = 0.985 + eliteT * 0.010;   // 1.5% -> ~0.5%
+  const bruteThresh = 0.92 + eliteT * 0.040;  // 8% -> ~4%
+
   // Rare juggernaut (~1.5%): immune to slow/stun/knockback/pull
-  if (roll > 0.985) {
+  if (roll > jugThresh) {
     const base = 1100;
-    const hp = Math.round(base * hpMult * (1 + difficulty * 0.10));
+    const hp = Math.round(base * eliteHpMult * (1 + difficulty * 0.10));
     return { id: Math.random(), type: 'juggernaut', x, y, hp, maxHp: hp, speed: 0.88 + difficulty * 0.02, size: 100, xp: 42, contactDamage: 22, color: '#ff3b3b' };
   }
-  if (roll > 0.92) {
+  if (roll > bruteThresh) {
     const base = 120;
-    const hp = Math.round(base * hpMult);
+    const hp = Math.round(base * eliteHpMult);
     return { id: Math.random(), type: 'brute', x, y, hp, maxHp: hp, speed: 1.1 + difficulty * 0.04, size: 52, xp: 26, contactDamage: 16, color: '#ff6b6b' };
   }
   if (roll > 0.7) {
     const base = 30;
-    const hp = Math.round(base * hpMult);
+   const hp = Math.round(base * trashHpMult);
     return { id: Math.random(), type: 'sprinter', x, y, hp, maxHp: hp, speed: 3.1 + difficulty * 0.1, size: 22, xp: 13, contactDamage: 10, color: '#ff2fd2' };
   }
   const base = 55;
-  const hp = Math.round(base * hpMult);
+  const hp = Math.round(base * trashHpMult);
   return { id: Math.random(), type: 'grunt', x, y, hp, maxHp: hp, speed: 1.9 + difficulty * 0.06, size: 28, xp: 14, contactDamage: 12, color: '#ff007a' };
 };
 
-const spawnEnemy = (difficulty, forcedType = null) => {
-  if (!forcedType) return spawnEnemyBase(difficulty);
+const spawnEnemy = (difficulty, forcedType = null, t = 0) => {
+  if (!forcedType) return spawnEnemyBase(difficulty, t);
 
-  // scripted variants
-  const base = spawnEnemyBase(difficulty);
+  const base = spawnEnemyBase(difficulty, t);
+
   if (forcedType === 'swarm') {
-    const hp = Math.round((8 + difficulty * 1.6) * ENEMY_HP_MULT);
+    const late = norm01(t, 0.45, 1.0);
+    const hp = Math.round((12 + difficulty * 2.1) * TRASH_HP_MULT * lerp(1.0, 1.18, late));
     return { ...base, type: 'swarm', hp, maxHp: hp, speed: 2.15 + difficulty * 0.05, size: 17, xp: 3, contactDamage: 5, color: '#ff4aa8' };
   }
   if (forcedType === 'wall') {
-    // WALL units are intentionally chunky; still respect global 15% easier HP
-    const hp = Math.round(((320 + difficulty * 26) * (1 + difficulty * 0.06)) * ENEMY_HP_MULT);
+    // WALL units are intentionally chunky; still respect late adds HP nerf
+    const addHpMult = lateAddHpMultFromT(t);
+    const hp = Math.round((((320 + difficulty * 26) * (1 + difficulty * 0.06)) * TRASH_HP_MULT * addHpMult) * WALL_HP_MULT);
     return { ...base, type: 'wall', hp, maxHp: hp, speed: 0.70 + difficulty * 0.01, size: 46, xp: 26, contactDamage: 13, color: '#ff2a4b' };
   }
   return base;
@@ -336,7 +409,7 @@ const spawnMiniBoss = (player, difficulty, kind = 'charger', pos = null) => {
     (kind === 'charger' ? 4000 : 1400) +
     difficulty * (kind === 'charger' ? 360 : 160);
 
-  const hp = Math.round(baseHp * ENEMY_HP_MULT);
+  const hp = Math.round(baseHp * MINI_HP_MULT * (kind === 'charger' ? RAM_HP_MULT : 1.0));
 
   const spawnX = pos?.x ?? Math.min(Math.max(player.x + 460, 120), ARENA_SIZE - 120);
   const spawnY = pos?.y ?? Math.min(Math.max(player.y - 380, 120), ARENA_SIZE - 120);
@@ -348,7 +421,7 @@ const spawnMiniBoss = (player, difficulty, kind = 'charger', pos = null) => {
     y: spawnY,
     hp,
     maxHp: hp,
-    speed: kind === 'assassin' ? 2.6 : 2.1,
+    speed: kind === 'assassin' ? 2.75 : 2.15,
     size: kind === 'charger' ? 104 : 92,
     xp: 140,
     contactDamage: kind === 'charger' ? 28 : 22,
@@ -386,12 +459,30 @@ const spawnRamsRing = (player, difficulty, count) => {
   return out;
 };
 
-const spawnWallRing = (pp, difficulty, meta) => {
+const spawnAssassinsRing = (player, difficulty, count) => {
+  const out = [];
+  const radius = 560;
+  const margin = 180;
+
+  const cx = clamp(player.x, radius + margin, ARENA_SIZE - (radius + margin));
+  const cy = clamp(player.y, radius + margin, ARENA_SIZE - (radius + margin));
+
+  const base = Math.random() * Math.PI * 2;
+  for (let i = 0; i < count; i += 1) {
+    const a = base + (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.14;
+    const x = cx + Math.cos(a) * radius;
+    const y = cy + Math.sin(a) * radius;
+    out.push(spawnMiniBoss(player, difficulty, 'assassin', { x, y }));
+  }
+  return out;
+};
+
+const spawnWallRing = (pp, difficulty, meta, t = 0) => {
   const ringN = meta.ringN ?? 30;
   const radiusStart = meta.radiusStart ?? 2000;
   const encroachSpeed = meta.encroachSpeed ?? 1.5;
   const minRadius = meta.minRadius ?? 10;
-  const hpMult = meta.hpMult ?? 3.0;
+  const hpMult = meta.hpMult ?? 2.8;
   const size = meta.size ?? 52;
 
   const baseRot = Math.random() * Math.PI * 2;
@@ -400,8 +491,7 @@ const spawnWallRing = (pp, difficulty, meta) => {
   for (let i = 0; i < ringN; i++) {
     const a = baseRot + (i / ringN) * Math.PI * 2;
 
-    const enBase = spawnEnemy(difficulty, 'wall');
-    // meta HP multiplier still applies; ENEMY_HP_MULT already applied inside spawnEnemy('wall')
+    const enBase = spawnEnemy(difficulty, 'wall', t);
     const hp = Math.round(enBase.maxHp * hpMult);
 
     const x = clamp(pp.x + Math.cos(a) * radiusStart, 40, ARENA_SIZE - 40);
@@ -418,7 +508,6 @@ const spawnWallRing = (pp, difficulty, meta) => {
       wallR: radiusStart,
       wallEncroach: encroachSpeed,
       wallMinR: minRadius,
-      // lock ring center at spawn moment
       wallCx: pp.x,
       wallCy: pp.y
     });
@@ -428,7 +517,7 @@ const spawnWallRing = (pp, difficulty, meta) => {
 };
 
 const spawnBoss = (player, difficulty) => {
-  const hp = Math.round((5400 + difficulty * 220) * ENEMY_HP_MULT);
+  const hp = Math.round((5400 + difficulty * 220) * BOSS_HP_MULT);
   return {
     id: 'boss',
     type: 'boss',
@@ -507,7 +596,6 @@ const rollUpgradeOptions = (ownedWeapons, weaponLevels, stats) => {
   const unowned = WEAPONS.filter((w) => !ownedWeapons.includes(w.id));
   const want3GunsFast = ownedWeapons.length < 3;
 
-  // Build UNIQUE candidate options with weights (no duplicates in the final 3).
   const candidates = [];
 
   const push = (opt, weight = 1) => {
@@ -515,7 +603,6 @@ const rollUpgradeOptions = (ownedWeapons, weaponLevels, stats) => {
     candidates.push({ ...opt, key, weight });
   };
 
-  // 1) New weapons: guarantee at least one option until you have 3 weapons (if available).
   if (canAddWeapon && unowned.length) {
     const weaponChance = want3GunsFast ? 1.0 : ownedWeapons.length === 3 ? 0.12 : 0.18;
     if (Math.random() < weaponChance) {
@@ -535,7 +622,6 @@ const rollUpgradeOptions = (ownedWeapons, weaponLevels, stats) => {
     }
   }
 
-  // 2) Existing weapon upgrades (unique per weapon/next-level)
   ownedWeapons.forEach((id) => {
     const level = weaponLevels[id] || 1;
     if (level < 5) {
@@ -558,7 +644,6 @@ const rollUpgradeOptions = (ownedWeapons, weaponLevels, stats) => {
     }
   });
 
-  // 3) Stat upgrades
   UPGRADES.forEach((u) => {
     push(
       { ...u, key: u.id },
@@ -566,7 +651,6 @@ const rollUpgradeOptions = (ownedWeapons, weaponLevels, stats) => {
     );
   });
 
-  // Helper: weighted sample without replacement by key
   const picked = [];
   const used = new Set();
 
@@ -582,7 +666,6 @@ const rollUpgradeOptions = (ownedWeapons, weaponLevels, stats) => {
     return pool[pool.length - 1];
   };
 
-  // Guarantee: until you have 3 weapons, force at least 1 new-weapon option if possible.
   if (want3GunsFast && canAddWeapon && unowned.length) {
     const w = unowned[Math.floor(Math.random() * unowned.length)];
     picked.push({
@@ -606,14 +689,14 @@ const rollUpgradeOptions = (ownedWeapons, weaponLevels, stats) => {
     picked.push({ id: 'HEAL', title: 'Repair Kit', description: 'Restore 40 HP', apply: (s) => ({ ...s, hp: Math.min(s.maxHp, s.hp + 40) }) });
   }
 
-  // Strip internal fields + attach snapshot
   return picked.map((o) => {
     const { weight, key, ...rest } = o;
     return { ...rest, statsSnapshot: stats };
   });
 };
 
-export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) {
+export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, selectedHero }) {
+
 
   const progElapsedRef = useRef(0); // progression clock (pauses during events)
   const [player, setPlayer] = useState({ x: 1400, y: 1400 });
@@ -662,10 +745,11 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
   const lastDamage = useRef(0);
 
   // per-run duration (random 25–100% longer)
-  const runTimeRef = useRef(BOSS_TIME * (1.25 + Math.random() * 0.75));
+    const runTimeRef = useRef(BOSS_TIME * (1.10 + Math.random() * 0.35));
 
-  // swarm scheduling: 1–4 random swarms, later in the run
-  const swarmPlanRef = useRef({ total: 0, done: 0, nextAt: 0, variant: 'encircle' });
+  // BEAT PLAN: randomized sequence each run (matches desired arc)
+  const beatPlanRef = useRef({ ready: false, idx: 0, beats: [] });
+  const randomSwarmCooldownUntilRef = useRef(0);
 
   // relief bookkeeping
   const reliefWasActiveRef = useRef(false);
@@ -678,7 +762,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
   const juice = useRef({ chroma: 0, punch: 0 });
 
   // scripted map beats
-  const flagsRef = useRef({ swarm1: false, wall1: false, mini25: false, mini50: false, mini75: false, reliefLock: false });
+  const flagsRef = useRef({ reliefLock: false });
   const activeEventRef = useRef(null); // {id, endsAt, meta}
   const reliefUntilRef = useRef(0);
   const reliefStartedAtRef = useRef(0);
@@ -690,68 +774,9 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
   const overdriveUntil = useRef(0);
   const shieldUntil = useRef(0);
 
-  // FIX: “Weapon select” counts as paused so everything is consistent
   const selectingWeapon = selectedWeapons.length === 0;
   const paused = selectingWeapon || upgradeOptions.length > 0 || victory || defeat;
 
-  const shouldIgnorePointer = (e) => {
-    if (pausedRef.current) return true;
-    const el = e.target;
-    if (el && typeof el.closest === 'function') {
-      if (el.closest('button') || el.closest('.ui-layer') || el.closest('.combat-hud')) return true;
-    }
-    return false;
-  };
-
-  const beginDragMove = (e) => {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    if (shouldIgnorePointer(e)) return;
-
-    dragMoveRef.current.active = true;
-    dragMoveRef.current.pointerId = e.pointerId;
-    dragMoveRef.current.startX = e.clientX;
-    dragMoveRef.current.startY = e.clientY;
-    dragMoveRef.current.vecX = 0;
-    dragMoveRef.current.vecY = 0;
-
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
-  };
-
-  const updateDragMove = (e) => {
-    const d = dragMoveRef.current;
-    if (!d.active || d.pointerId !== e.pointerId) return;
-
-    const dx = e.clientX - d.startX;
-    const dy = e.clientY - d.startY;
-
-    const dead = 8;
-    const maxR = 78;
-    const dist = Math.hypot(dx, dy);
-
-    if (dist < dead) {
-      d.vecX = 0;
-      d.vecY = 0;
-      return;
-    }
-
-    const scale = Math.min(1, dist / maxR);
-    d.vecX = (dx / dist) * scale;
-    d.vecY = (dy / dist) * scale;
-  };
-
-  const endDragMove = (e) => {
-    const d = dragMoveRef.current;
-    if (d.pointerId !== e.pointerId) return;
-
-    d.active = false;
-    d.pointerId = null;
-    d.vecX = 0;
-    d.vecY = 0;
-
-    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
-  };
-
-  // refs to avoid stale inside interval
   const pausedRef = useRef(paused);
   const playerRef = useRef(player);
   const statsRef = useRef(stats);
@@ -852,12 +877,122 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
     };
   }, []);
 
+  const shouldIgnorePointer = (e) => {
+    if (pausedRef.current) return true;
+    const el = e.target;
+    if (el && typeof el.closest === 'function') {
+      if (el.closest('button') || el.closest('.ui-layer') || el.closest('.combat-hud')) return true;
+    }
+    return false;
+  };
+
+  const beginDragMove = (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (shouldIgnorePointer(e)) return;
+
+    dragMoveRef.current.active = true;
+    dragMoveRef.current.pointerId = e.pointerId;
+    dragMoveRef.current.startX = e.clientX;
+    dragMoveRef.current.startY = e.clientY;
+    dragMoveRef.current.vecX = 0;
+    dragMoveRef.current.vecY = 0;
+
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+  };
+
+  const updateDragMove = (e) => {
+    const d = dragMoveRef.current;
+    if (!d.active || d.pointerId !== e.pointerId) return;
+
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
+
+    const dead = 8;
+    const maxR = 78;
+    const dist = Math.hypot(dx, dy);
+
+    if (dist < dead) {
+      d.vecX = 0;
+      d.vecY = 0;
+      return;
+    }
+
+    const scale = Math.min(1, dist / maxR);
+    d.vecX = (dx / dist) * scale;
+    d.vecY = (dy / dist) * scale;
+  };
+
+  const endDragMove = (e) => {
+    const d = dragMoveRef.current;
+    if (d.pointerId !== e.pointerId) return;
+
+    d.active = false;
+    d.pointerId = null;
+    d.vecX = 0;
+    d.vecY = 0;
+
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+  };
+
+  const getRunT = () => (runTimeRef.current || BOSS_TIME);
+  const getProgressT = () => clamp(progElapsedRef.current / getRunT(), 0, 1);
+  const getLateT = () => norm01(getProgressT(), 0.45, 1.0);
+
+  const computeDifficulty = (eProg) => {
+    const runT = getRunT();
+    const t = clamp(eProg / runT, 0, 1);
+
+    // Before 45%: normal ramp. After 45%: slower ramp so scaling doesn't brick runs.
+    const earlyTicks = Math.floor((Math.min(eProg, runT * 0.45)) / 14000);
+    const latePart = Math.max(0, eProg - runT * 0.45);
+    const lateTicks = Math.floor(latePart / 20000); // faster late scaling (shorter run)
+    return tileDifficulty + earlyTicks + lateTicks;
+  };
+
+  const buildBeatPlanIfNeeded = () => {
+    if (beatPlanRef.current.ready) return;
+
+    const beats = [];
+    const r = (a, b) => a + Math.random() * (b - a);
+
+    // Arc: frequent action, no empty mid/late.
+    //  - events are shorter (see EVENT_DEFS) so we can schedule more of them.
+    //  - ONLY RAM (mini_charger) as miniboss.
+    const firstEventPct = r(0.10, 0.18);
+    const firstMiniPct  = r(0.24, 0.32);
+    const secondEventPct = r(0.36, 0.46);
+    const midMiniPct     = r(0.50, 0.60);
+    const thirdEventPct  = r(0.62, 0.74);
+    const lateMiniPct    = r(0.70, 0.82);
+    const fourthEventPct = r(0.80, 0.90);
+
+    // Mostly swarms; walls are rarer "shape change" beats.
+    const pickEventId = (swarmBias = 0.85) => (Math.random() < swarmBias ? 'SWARM' : 'WALL');
+
+    beats.push({ kind: 'EVENT', atPct: firstEventPct, id: pickEventId(0.92) });
+    beats.push({ kind: 'MINI', atPct: firstMiniPct, count: 2, mix: 'charger' });
+
+    beats.push({ kind: 'EVENT', atPct: secondEventPct, id: pickEventId(0.88) });
+
+    // Midgame: multiple rams WHILE trash keeps coming.
+    beats.push({ kind: 'MINI', atPct: midMiniPct, count: 2 + Math.floor(Math.random() * 2), mix: 'charger' });
+
+    beats.push({ kind: 'EVENT', atPct: thirdEventPct, id: 'SWARM' });
+
+    // Late: 3–5 RAMs at once
+    beats.push({ kind: 'MINI', atPct: lateMiniPct, count: 3 + Math.floor(Math.random() * 3), mix: 'charger' });
+
+    beats.push({ kind: 'EVENT', atPct: fourthEventPct, id: pickEventId(0.86) });
+
+    beats.sort((a, b) => a.atPct - b.atPct);
+
+    beatPlanRef.current = { ready: true, idx: 0, beats };
+  };
+
   const startEvent = (id, meta = {}) => {
     const now = Date.now();
-    // Prevent event overlap. Also don't start events during relief.
     if (activeEventRef.current && now < activeEventRef.current.endsAt) return false;
     if (now < reliefUntilRef.current) return false;
-    // Global cooldown so events don't chain immediately
     if (now < eventCooldownUntilRef.current) return false;
 
     const dur = meta?.duration ?? EVENT_DEFS[id].duration;
@@ -879,7 +1014,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
       if (
         e.type === 'boss' ||
         String(e.type).startsWith('mini_') ||
-        e.type === 'wall' // keep wall units
+        e.type === 'wall'
       ) specials.push(e);
       else normals.push(e);
     }
@@ -899,115 +1034,165 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
     enemiesRef.current = pruneEnemiesForRelief(enemiesRef.current || [], pp, 9);
   };
 
+  const triggerReliefSoft = (ms = 2600, keepMax = 22) => {
+    const now = Date.now();
+    const wasActive = now < reliefUntilRef.current;
+    if (!wasActive) reliefStartedAtRef.current = now;
+    reliefUntilRef.current = Math.max(reliefUntilRef.current, now + ms);
+
+    const pp = playerRef.current;
+    enemiesRef.current = pruneEnemiesForRelief(enemiesRef.current || [], pp, keepMax);
+  };
+
+  const triggerReliefEmpty = (ms = 8200) => {
+    const now = Date.now();
+    const wasActive = now < reliefUntilRef.current;
+    if (!wasActive) reliefStartedAtRef.current = now;
+    reliefUntilRef.current = Math.max(reliefUntilRef.current, now + ms);
+
+    // TRUE EMPTY RELIEF: delete all non-specials
+    const prev = enemiesRef.current || [];
+    enemiesRef.current = prev.filter((e) => e.type === 'boss' || String(e.type).startsWith('mini_') || e.type === 'wall');
+  };
+
+  const spawnMiniPack = (pp, difficulty, count) => {
+    // Only RAMs (mini_charger). No assassins.
+    return spawnRamsRing(pp, difficulty, count);
+  };
+
   const scheduleBeats = () => {
-    const e = progElapsedRef.current; // progression time (pauses during events)
+    buildBeatPlanIfNeeded();
+
+    const e = progElapsedRef.current;
+    const runT = getRunT();
+    const p = clamp(e / runT, 0, 1);
     const now = Date.now();
 
-    // init swarm plan once per run
-    if (swarmPlanRef.current.total === 0) {
-      swarmPlanRef.current.total = 1 + Math.floor(Math.random() * 4); // 1–4
-      swarmPlanRef.current.done = 0;
-      swarmPlanRef.current.nextAt = 60000 + Math.floor(Math.random() * 20000); // 60–80s
-      swarmPlanRef.current.variant = 'encircle';
-    }
+    // Don't schedule beats during boss fight (keeps it readable and reduces spike chaos)
+    const bossAlive = (enemiesRef.current || []).some((x) => x.type === 'boss' && x.hp > 0);
+    if (bossAlive) return;
 
-    // random swarms
-    if (
-      swarmPlanRef.current.done < swarmPlanRef.current.total &&
-      e > swarmPlanRef.current.nextAt &&
-      !isEventActive('SWARM') &&
-      !isEventActive('WALL') &&
-      (!activeEventRef.current || now >= activeEventRef.current.endsAt) &&
-      now >= reliefUntilRef.current && now >= eventCooldownUntilRef.current
-    ) {
-      const r = Math.random();
-      const variant = r < 0.55 ? 'encircle' : 'three_sides';
-
-      const safeAngle = Math.random() * Math.PI * 2;
-      const safeArc = Math.PI * 0.55;
-
-      const isFirstSwarm = swarmPlanRef.current.done === 0;
-      const dur = isFirstSwarm ? 32000 : EVENT_DEFS.SWARM.duration;
-
-      if (startEvent('SWARM', { variant, safeAngle, safeArc, duration: dur })) {
-        swarmPlanRef.current.variant = variant;
-        swarmPlanRef.current.done += 1;
-        swarmPlanRef.current.nextAt = e + (25000 + Math.floor(Math.random() * 30000)); // +25–55s
-        juicePunch(0.65, 0.65);
-      }
-    }
-
-    // -------------------- FIXED WALL EVENT --------------------
-    // Spawn ONCE: ring enemies lock to the center point and encroach until despawn.
-    // No duplicates, no extra spawns while active.
-    if (
-      e > 72000 &&
-      !flagsRef.current.wall1 &&
-      (!activeEventRef.current || now >= activeEventRef.current.endsAt) &&
-      now >= reliefUntilRef.current && now >= eventCooldownUntilRef.current
-    ) {
-      const meta = {
-        ringN: 30,
-        radiusStart: 2000,
-        encroachSpeed: 1.5,
-        minRadius: 10,
-        hpMult: 3.0,
-        size: 52,
-        spawned: true // important: mark as spawned at start
-      };
-
-      if (startEvent('WALL', meta)) {
-        flagsRef.current.wall1 = true;
-        juicePunch(0.85, 0.8);
-
-        // Spawn immediately (ONCE)
-        const pp = playerRef.current;
-        const difficulty = tileDifficulty + Math.floor(progElapsedRef.current / 20000);
-        enemiesRef.current = [
-          ...(enemiesRef.current || []),
-          ...spawnWallRing(pp, difficulty, activeEventRef.current.meta)
-        ];
-      }
-    }
-
-    // rams at 25/50/75% of run time (1 → 2 → 5)
-    const runT = runTimeRef.current || BOSS_TIME;
-    const p = e / runT;
-    const pp = playerRef.current;
-    const difficulty = tileDifficulty + Math.floor(e / 20000);
-
-    if (p > 0.25 && !flagsRef.current.mini25) {
-      flagsRef.current.mini25 = true;
-      enemiesRef.current = [...(enemiesRef.current || []), ...spawnRamsRing(pp, difficulty, 1)];
-      juicePunch(1.0, 0.9);
-      triggerRelief(6500 + Math.floor(Math.random() * 2500));
-    }
-    if (p > 0.50 && !flagsRef.current.mini50) {
-      flagsRef.current.mini50 = true;
-      enemiesRef.current = [...(enemiesRef.current || []), ...spawnRamsRing(pp, difficulty, 2)];
-      juicePunch(1.0, 0.9);
-      triggerRelief(6500 + Math.floor(Math.random() * 2500));
-    }
-    if (p > 0.75 && !flagsRef.current.mini75) {
-      flagsRef.current.mini75 = true;
-      enemiesRef.current = [...(enemiesRef.current || []), ...spawnRamsRing(pp, difficulty, 5)];
-      juicePunch(1.0, 0.95);
-      triggerRelief(6500 + Math.floor(Math.random() * 2500));
-    }
-
-    // end-of-event relief beat
+    // End-of-event: auto-relief
     if (activeEventRef.current && now >= activeEventRef.current.endsAt) {
       activeEventRef.current = null;
-      triggerRelief(5500 + Math.floor(Math.random() * 3500)); // 5.5–9.0s
+      triggerReliefSoft(2100 + Math.floor(Math.random() * 900), 40); // short soft relief (keeps arena populated)
+    }
+
+    if (activeEventRef.current && now < activeEventRef.current.endsAt) return;
+    if (now < reliefUntilRef.current) return;
+    if (now < eventCooldownUntilRef.current) return;
+
+    const plan = beatPlanRef.current;
+    if (!plan.ready) return;
+
+    // If we've exhausted the scripted beats, still sprinkle swarms late-game
+if (plan.idx >= plan.beats.length) {
+  if (p >= 0.40 && !activeEventRef.current && now > randomSwarmCooldownUntilRef.current && now > eventCooldownUntilRef.current) {
+    // Roughly ~1 swarm every 15–25s on average, but only late-game.
+    if (Math.random() < 0.20) {
+      const dur = 6500 + Math.floor(Math.random() * 2200);
+      startEvent('SWARM', { duration: dur });
+      randomSwarmCooldownUntilRef.current = now + 14000 + Math.floor(Math.random() * 11000);
+    }
+  }
+  return;
+}
+
+const beat = plan.beats[plan.idx];
+    if (!beat) return;
+
+    if (p < beat.atPct) return;
+
+    const pp = playerRef.current;
+    const difficulty = computeDifficulty(progElapsedRef.current);
+    const t = getProgressT();
+
+    if (beat.kind === 'EVENT') {
+      const id = beat.id;
+
+      if (id === 'SWARM') {
+        const safeAngle = Math.random() * Math.PI * 2;
+        const safeArc = Math.PI * (0.50 + Math.random() * 0.16);
+        const variant = Math.random() < 0.52 ? 'encircle' : 'three_sides';
+
+        const dur = Math.round((EVENT_DEFS.SWARM.duration * (0.95 + Math.random() * 0.35)) * (p < 0.30 ? 1.15 : 1.0));
+        if (startEvent('SWARM', { variant, safeAngle, safeArc, duration: dur })) {
+          juicePunch(0.70, 0.70);
+          plan.idx += 1;
+          return;
+        }
+      }
+
+      if (id === 'WALL') {
+        const meta = {
+          ringN: 26 + Math.floor(Math.random() * 10),
+          radiusStart: 1850 + Math.floor(Math.random() * 450),
+          encroachSpeed: 1.35 + Math.random() * 0.55,
+          minRadius: 12,
+          hpMult: 2.4 + Math.random() * 0.7,
+          size: 52,
+          spawned: true
+        };
+
+        if (startEvent('WALL', meta)) {
+          juicePunch(0.85, 0.80);
+          enemiesRef.current = [
+            ...(enemiesRef.current || []),
+            ...spawnWallRing(pp, difficulty, meta, t)
+          ];
+          plan.idx += 1;
+          return;
+        }
+      }
+
+      // failed to start due to constraints, try next tick
+      return;
+    }
+
+    if (beat.kind === 'MINI') {
+      enemiesRef.current = [
+        ...(enemiesRef.current || []),
+        ...spawnMiniPack(pp, difficulty, beat.count || 1)
+      ];
+      juicePunch(1.0, 0.92);
+      // Don’t empty the arena after minis; keep pressure + a short breather.
+      triggerReliefSoft(1600 + Math.floor(Math.random() * 900), 46);
+      plan.idx += 1;
+      return;
+    }
+
+    if (beat.kind === 'RELIEF_EMPTY') {
+      triggerReliefEmpty(beat.ms || 8200);
+      juicePunch(0.55, 0.65);
+      plan.idx += 1;
+      return;
     }
   };
 
   const maybeDropPickup = (x, y, source = 'elite') => {
-    const base = source === 'boss' ? 0.35 : source === 'mini' ? 0.18 : 0.08;
-    if (Math.random() > base) return;
+    const tNow = getProgressT();
+    const late = norm01(tNow, 0.60, 1.0);
 
-    const r = Math.random();
-    const type = r < 0.32 ? 'MAGNET' : r < 0.56 ? 'OVERDRIVE' : r < 0.78 ? 'SHIELD' : 'FREEZE';
+    // Late-game stabilizers: slightly higher drop chance + more shield/freeze bias
+    const base = source === 'boss' ? 0.35 : source === 'mini' ? 0.18 : 0.08;
+    const chance = base * lerp(1.0, 1.55, late);
+    if (Math.random() > chance) return;
+
+    // Weighted roll (early: magnet/overdrive heavier; late: shield/freeze heavier)
+    const wMag = lerp(0.32, 0.22, late);
+    const wOvr = lerp(0.24, 0.20, late);
+    const wShd = lerp(0.22, 0.30, late);
+    const wFrz = lerp(0.22, 0.28, late);
+
+    const total = wMag + wOvr + wShd + wFrz;
+    let r = Math.random() * total;
+
+    let type = 'MAGNET';
+    if ((r -= wMag) <= 0) type = 'MAGNET';
+    else if ((r -= wOvr) <= 0) type = 'OVERDRIVE';
+    else if ((r -= wShd) <= 0) type = 'SHIELD';
+    else type = 'FREEZE';
+
     pickupsRef.current = [...(pickupsRef.current || []), { id: Math.random(), type, x, y, t: Date.now(), life: 24000 }];
   };
 
@@ -1039,7 +1224,6 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
   useEffect(() => {
     if (!selectedWeapons.length) return;
 
-    // Initialize Canvas
     if (canvasRef.current) {
       ctxRef.current = canvasRef.current.getContext('2d');
       canvasRef.current.width = window.innerWidth;
@@ -1305,7 +1489,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
       // advance clocks
       elapsed.current += 16;
 
-      // FIX: progression pauses while ANY event is active (SWARM/WALL) so no new events/boss triggers
+      // progression pauses while ANY event is active (SWARM/WALL)
       const eventActive = !!(activeEventRef.current && Date.now() < activeEventRef.current.endsAt);
       if (!eventActive) progElapsedRef.current += 16;
 
@@ -1313,7 +1497,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
         setProgress(Math.min(1, progElapsedRef.current / (runTimeRef.current || BOSS_TIME)));
       }
 
-      // scripted beats
+      // randomized beats
       scheduleBeats();
 
       // decay VFX (throttled)
@@ -1388,23 +1572,34 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
         }
       }
 
-      const p = playerRef.current;
+      const pPos = playerRef.current;
       const freezeWorld = Date.now() < freezeUntil.current;
 
       // -------------------- SPAWNING --------------------
-      const difficulty = tileDifficulty + Math.floor(progElapsedRef.current / 20000);
+      const runT = getRunT();
+      const progT = getProgressT();
+      const lateT = getLateT();
 
-      const lateRamp = Math.max(0, (progElapsedRef.current - 90000) / 30000);
-      const spawnIntervalBase = Math.max(140, 1250 - difficulty * 80 - lateRamp * 260);
+      const difficulty = computeDifficulty(progElapsedRef.current);
+
+      const panicRamp = Math.pow(norm01(progT, 0.76, 1.0), 1.10); // progress-based endgame ramp (capped)
+      const spawnIntervalBase = Math.max(190, 1250 - difficulty * 80 - panicRamp * 120);
 
       const inRelief = Date.now() < reliefUntilRef.current;
+      const bossAlive = (enemiesRef.current || []).some((x) => x.type === 'boss' && x.hp > 0);
 
-      // 15% fewer enemies over time
-      let spawnInterval = spawnIntervalBase * SPAWN_INTERVAL_MULT * (inRelief ? 2.2 : 1.0);
+      // base: fewer enemies
+      let spawnInterval = spawnIntervalBase * SPAWN_INTERVAL_MULT * (inRelief ? RELIEF_SPAWN_INTERVAL_MULT : 1.0);
 
-      // scripted event modifiers
+      // late game: progressively fewer spawns
+      spawnInterval *= lerp(1.0, LATE_SPAWN_INTERVAL_BOOST, lateT);
+
+      // boss: MUCH fewer adds (and no events schedule while boss alive)
+      if (bossAlive) spawnInterval *= BOSS_ADD_INTERVAL_MULT;
+
+      // event modifiers
       if (isEventActive('SWARM')) spawnInterval *= 0.60;
-      if (isEventActive('WALL')) spawnInterval *= 999; // FIX: NO spawns during WALL (ring is the event)
+      if (isEventActive('WALL')) spawnInterval *= 1.25; // allow trickle spawns during wall event
 
       let nextEnemies = [...enemiesRef.current];
 
@@ -1416,20 +1611,54 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
           lastSpawn.current = elapsed.current;
 
           const countBase = Math.min(2 + Math.floor(difficulty / 2), 12);
-          const count = Math.max(1, Math.round(countBase + lateRamp * 4));
+          let count = Math.max(1, Math.round(countBase + panicRamp * 2));
+
+          // late: scale count smoothly (negative LATE_SPAWN_COUNT_REDUCE increases count)
+          count = Math.max(1, Math.round(count * lerp(1.0, 1.0 - LATE_SPAWN_COUNT_REDUCE, lateT)));
+
+          // after 40%: keep the arena busy
+          const after40 = norm01(progT, 0.40, 0.60);
+          count = Math.max(1, Math.round(count * lerp(1.0, AFTER40_ENEMY_MULT, after40)));
+
+          // boss: reduce count hard
+          if (bossAlive) count = Math.max(1, Math.round(count * BOSS_ADD_COUNT_MULT));
+
+          // soft cap late-game trash so density can't spiral (keeps difficulty high but fair)
+          if (!bossAlive && progT > 0.68 && !isEventActive('WALL') && !isEventActive('SWARM')) {
+            const isSpecial = (x) => x.type === 'boss' || String(x.type).startsWith('mini_') || x.type === 'wall';
+            const trashCount = nextEnemies.filter((e) => !isSpecial(e)).length;
+            const maxTrash = Math.round(lerp(110, 90, norm01(progT, 0.68, 1.0)));
+            const room = maxTrash - trashCount;
+            if (room <= 0) count = 0;
+            else count = Math.min(count, room);
+          }
 
           if (isEventActive('SWARM')) {
-            const swarmCount = Math.max(6, Math.round((14 + Math.floor(difficulty * 0.45)) * (1 / SPAWN_INTERVAL_MULT)));
-            const variant = (activeEventRef.current && activeEventRef.current.meta && activeEventRef.current.meta.variant) || swarmPlanRef.current.variant || 'encircle';
+            const meta = activeEventRef.current?.meta || {};
+            const variant = meta.variant || 'encircle';
+            const safeAngle = meta.safeAngle ?? 0;
+            const safeArc = meta.safeArc ?? (Math.PI * 0.55);
+
+            // swarm is still intense, but softened late so it doesn't become impossible
+            let swarmCount = Math.max(8, Math.round((18 + Math.floor(difficulty * 0.55)) * (1 / SPAWN_INTERVAL_MULT)));
+            swarmCount = Math.max(8, Math.round(swarmCount * lerp(1.0, 1.18, lateT)));
+            const after40s = norm01(progT, 0.40, 0.60);
+            swarmCount = Math.max(8, Math.round(swarmCount * lerp(1.0, 1.20, after40s)));
+            if (bossAlive) swarmCount = Math.max(6, Math.round(swarmCount * 0.70));
+
+            // cap swarm spawns if we're already at/over late trash budget
+            if (!bossAlive && progT > 0.68) {
+              const isSpecial = (x) => x.type === 'boss' || String(x.type).startsWith('mini_') || x.type === 'wall';
+              const trashCount = nextEnemies.filter((e) => !isSpecial(e)).length;
+              const maxTrash = Math.round(lerp(125, 105, norm01(progT, 0.68, 1.0)));
+              const room = maxTrash - trashCount;
+              swarmCount = Math.max(0, Math.min(swarmCount, room));
+            }
 
             for (let i = 0; i < swarmCount; i += 1) {
-              const en = spawnEnemy(difficulty, 'swarm');
+              const en = spawnEnemy(difficulty, 'swarm', progT);
 
               if (variant === 'three_sides') {
-                const meta = activeEventRef.current?.meta || {};
-                const safeAngle = meta.safeAngle ?? 0;
-                const safeArc = meta.safeArc ?? (Math.PI * 0.55);
-
                 const centers = [
                   safeAngle + Math.PI,
                   safeAngle + Math.PI + (Math.PI * 2 / 3),
@@ -1440,18 +1669,14 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
                 const a = c + (Math.random() - 0.5) * 0.55;
                 const dist = 760 + Math.random() * 180;
 
-                const x = clamp(p.x + Math.cos(a) * dist, 40, ARENA_SIZE - 40);
-                const y = clamp(p.y + Math.sin(a) * dist, 40, ARENA_SIZE - 40);
+                const x = clamp(pPos.x + Math.cos(a) * dist, 40, ARENA_SIZE - 40);
+                const y = clamp(pPos.y + Math.sin(a) * dist, 40, ARENA_SIZE - 40);
                 nextEnemies.push({ ...en, x, y });
               } else {
-                const meta = activeEventRef.current?.meta || {};
-                const safeAngle = meta.safeAngle ?? 0;
-                const safeArc = meta.safeArc ?? (Math.PI * 0.55);
-
                 let placed = null;
                 for (let tries = 0; tries < 6; tries++) {
-                  const cand = spawnEnemy(difficulty, 'swarm');
-                  const ang = Math.atan2(cand.y - p.y, cand.x - p.x);
+                  const cand = spawnEnemy(difficulty, 'swarm', progT);
+                  const ang = Math.atan2(cand.y - pPos.y, cand.x - pPos.x);
                   let v = ang - safeAngle;
                   while (v > Math.PI) v -= Math.PI * 2;
                   while (v < -Math.PI) v += Math.PI * 2;
@@ -1461,16 +1686,23 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
                 nextEnemies.push(placed || en);
               }
             }
-          } else if (!isEventActive('WALL')) {
-            for (let i = 0; i < count; i += 1) nextEnemies.push(spawnEnemy(difficulty));
+          } else {
+            // During WALL events, keep a steady trickle of normal enemies (prevents "empty" feeling).
+            const wallTrickle = isEventActive('WALL');
+            const n = wallTrickle ? Math.max(1, Math.round(count * 0.35)) : count;
+            for (let i = 0; i < n; i += 1) nextEnemies.push(spawnEnemy(difficulty, null, progT));
           }
         }
 
-        // FIX: boss spawn depends on progElapsedRef (paused during events)
+        // boss spawn depends on progElapsedRef (paused during events)
         if (!bossSpawnedRef.current && progElapsedRef.current > (runTimeRef.current || BOSS_TIME)) {
           bossSpawnedRef.current = true;
           setBossSpawned(true);
-          nextEnemies.push(spawnBoss(p, difficulty));
+
+          // boss intro relief: clear adds so it feels fair + satisfying
+          triggerReliefSoft(2200 + Math.floor(Math.random() * 900), 34);
+
+          nextEnemies.push(spawnBoss(pPos, difficulty));
           juicePunch(1.25, 1);
         }
       }
@@ -1483,8 +1715,8 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
         // mini-boss behaviors
         if (en.type === 'mini_charger') {
           const now2 = Date.now();
-          const dx = p.x - en.x;
-          const dy = p.y - en.y;
+          const dx = pPos.x - en.x;
+          const dy = pPos.y - en.y;
           const angToPlayer = Math.atan2(dy, dx);
 
           if (!en.dashUntil && now2 > (en.nextDashAt || 0) && !en.windupUntil) {
@@ -1525,7 +1757,21 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
           }
         }
 
-        // WALL ring behavior: fixed angle, radius shrinks, fixed center
+        // assassin blink: punish standing still, but still fair
+        if (en.type === 'mini_assassin') {
+          const now2 = Date.now();
+          if (now2 > (en.nextBlinkAt || 0)) {
+            const dx = pPos.x - en.x;
+            const dy = pPos.y - en.y;
+            const d = Math.hypot(dx, dy) || 1;
+            const jump = clamp(220 + Math.random() * 140, 220, 360);
+            const nx = clamp(pPos.x - (dx / d) * jump + (Math.random() - 0.5) * 60, 80, ARENA_SIZE - 80);
+            const ny = clamp(pPos.y - (dy / d) * jump + (Math.random() - 0.5) * 60, 80, ARENA_SIZE - 80);
+            return { ...en, x: nx, y: ny, nextBlinkAt: now2 + (en.blinkCd || 1600) };
+          }
+        }
+
+        // WALL ring behavior
         if (en.type === 'wall' && Number.isFinite(en.wallA)) {
           const spd = en.wallEncroach ?? 2.0;
           const minR = en.wallMinR ?? 180;
@@ -1545,8 +1791,8 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
         }
 
         // default chase
-        const dx = p.x - en.x;
-        const dy = p.y - en.y;
+        const dx = pPos.x - en.x;
+        const dy = pPos.y - en.y;
         const d = Math.hypot(dx, dy) || 1;
 
         const slowMult = en.slowUntil && Date.now() < en.slowUntil ? (en.slowFactor ?? 0.75) : 1;
@@ -1574,10 +1820,10 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
           if (b.isHoming) {
             const enemiesNow = movedEnemies;
             if (enemiesNow.length) {
-              let t = null;
-              if (b.homeTargetId) t = enemiesNow.find((e) => e.id === b.homeTargetId) || null;
-              if (!t) {
-                t = enemiesNow.reduce((best, en) => {
+              let tEn = null;
+              if (b.homeTargetId) tEn = enemiesNow.find((e) => e.id === b.homeTargetId) || null;
+              if (!tEn) {
+                tEn = enemiesNow.reduce((best, en) => {
                   const dd = (en.x - x) * (en.x - x) + (en.y - y) * (en.y - y);
                   if (!best) return en;
                   const bd = (best.x - x) * (best.x - x) + (best.y - y) * (best.y - y);
@@ -1585,8 +1831,8 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
                 }, null);
               }
 
-              if (t) {
-                const desired = Math.atan2(t.y - y, t.x - x);
+              if (tEn) {
+                const desired = Math.atan2(tEn.y - y, tEn.x - x);
                 const cur = Math.atan2(vy, vx);
 
                 let dA = desired - cur;
@@ -1622,6 +1868,28 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
             vy = 0;
           }
 
+          // split projectiles (TIME / VOID upgrades)
+          if (b.split && b.split > 0 && !b.didSplit && b.life < (b.lifeStart || 1000) * 0.68) {
+            const sp = Math.hypot(vx, vy) || 1;
+            const created = [];
+            const n = b.split;
+            for (let i = 0; i < n; i++) {
+              const off = (i - (n - 1) / 2) * 0.18 + (Math.random() - 0.5) * 0.08;
+              const a = Math.atan2(vy, vx) + off;
+              created.push({
+                ...b,
+                id: Math.random(),
+                vx: Math.cos(a) * sp,
+                vy: Math.sin(a) * sp,
+                life: Math.max(260, b.life - 120),
+                didSplit: true,
+                split: 0
+              });
+            }
+            bulletsRef.current = [...(bulletsRef.current || []), ...created];
+            return { ...b, didSplit: true };
+          }
+
           return { ...b, x: nx, y: ny, vx, vy, life: b.life - 16 };
         })
         .filter((b) => b.x > -140 && b.x < ARENA_SIZE + 140 && b.y > -140 && b.y < ARENA_SIZE + 140 && b.life > 0);
@@ -1631,7 +1899,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
         .map((sl) => ({ ...sl, age: (sl.age || 0) + 16 }))
         .filter((sl) => (sl.age || 0) <= sl.life);
 
-      // beams tick damage (LASER)
+      // beams tick damage (LASER) + status
       const beamHits = new Map();
       const statusHits = new Map();
       {
@@ -1647,8 +1915,15 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
             const d = distPointToSeg(en.x, en.y, bm.x1, bm.y1, bm.x2, bm.y2);
             if (d <= (bm.width || 30) * 0.55) {
               beamHits.set(en.id, (beamHits.get(en.id) || 0) + bm.damage);
+
               const st = statusHits.get(en.id) || {};
               if (bm.burn) st.burn = Math.max(st.burn || 0, bm.burn);
+              if (bm.slow) {
+                st.slow = Math.max(st.slow || 0, bm.slow);
+                st.slowDuration = Math.max(st.slowDuration || 0, bm.slowDuration || 520);
+              }
+              if (bm.microFreeze) st.stun = Math.max(st.stun || 0, bm.microFreeze);
+              if (bm.stun) st.stun = Math.max(st.stun || 0, bm.stun);
               statusHits.set(en.id, st);
             }
           }
@@ -1687,9 +1962,13 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
 
         for (const en of movedEnemies) {
           if (b.hit) break;
+
           const d = Math.hypot(b.x - en.x, b.y - en.y);
           if (d < en.size * 0.7) {
-            bulletHits.set(en.id, (bulletHits.get(en.id) || 0) + b.damage);
+            const eliteMult = isEliteType(en.type) ? (b.eliteDmgMult ?? 1) : 1;
+            const dmgHit = (b.damage || 0) * eliteMult;
+
+            bulletHits.set(en.id, (bulletHits.get(en.id) || 0) + dmgHit);
 
             const st = statusHits.get(en.id) || {};
             if (b.slow) {
@@ -1708,7 +1987,11 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
                 x: en.x,
                 y: en.y,
                 radius: b.explodeRadius,
-                damage: b.damage * b.explodeMult
+                damage: dmgHit * b.explodeMult,
+                slow: b.slow || 0,
+                slowDuration: b.slowDuration || 0,
+                stun: b.stun || 0,
+                burn: b.burn || 0
               });
             }
 
@@ -1729,7 +2012,8 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
               for (const e2 of movedEnemies) {
                 const dd = distPointToSeg(e2.x, e2.y, b.originX, b.originY, en.x, en.y);
                 if (dd <= (b.railWidth || 18) * 0.65) {
-                  bulletHits.set(e2.id, (bulletHits.get(e2.id) || 0) + b.damage * 0.22);
+                  const eliteMult2 = isEliteType(e2.type) ? (b.eliteDmgMult ?? 1) : 1;
+                  bulletHits.set(e2.id, (bulletHits.get(e2.id) || 0) + (b.damage || 0) * eliteMult2 * 0.22);
                 }
               }
             }
@@ -1768,11 +2052,18 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
               }
               if (best) {
                 arcsRef.current = [...(arcsRef.current || []), { id: Math.random(), x1: en.x, y1: en.y, x2: best.x, y2: best.y, t: Date.now(), life: 150, color: b.color }];
-                bulletHits.set(best.id, (bulletHits.get(best.id) || 0) + b.damage * 0.60);
+
+                const eliteMult2 = isEliteType(best.type) ? (b.eliteDmgMult ?? 1) : 1;
+                bulletHits.set(best.id, (bulletHits.get(best.id) || 0) + (b.damage || 0) * eliteMult2 * 0.60);
+
                 const st2 = statusHits.get(best.id) || {};
                 if (b.stun) st2.stun = Math.max(st2.stun || 0, Math.floor(b.stun * 0.7));
+                if (b.microFreeze) st2.stun = Math.max(st2.stun || 0, Math.floor(b.microFreeze * 0.75));
                 if (b.slow) st2.slow = Math.max(st2.slow || 0, Math.max(0.06, b.slow * 0.6));
+                if (b.slowDuration) st2.slowDuration = Math.max(st2.slowDuration || 0, Math.floor(b.slowDuration * 0.85));
+                if (b.burn) st2.burn = Math.max(st2.burn || 0, Math.floor(b.burn * 0.8));
                 statusHits.set(best.id, st2);
+
                 juicePunch(0.28, 0.5);
               }
             }
@@ -1780,7 +2071,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
         }
       });
 
-      // explosion damage
+      // explosion damage + status
       if (explosionBursts.length) {
         for (const burst of explosionBursts) {
           explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: burst.x, y: burst.y, r: burst.radius, t: Date.now(), life: 260 }];
@@ -1788,7 +2079,17 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
             const d = Math.hypot(en.x - burst.x, en.y - burst.y);
             if (d <= burst.radius) {
               const fall = 1 - d / burst.radius;
-              bulletHits.set(en.id, (bulletHits.get(en.id) || 0) + burst.damage * Math.max(0.25, fall));
+              const dmg = burst.damage * Math.max(0.25, fall);
+              bulletHits.set(en.id, (bulletHits.get(en.id) || 0) + dmg);
+
+              const st = statusHits.get(en.id) || {};
+              if (burst.slow) {
+                st.slow = Math.max(st.slow || 0, burst.slow);
+                if (burst.slowDuration) st.slowDuration = Math.max(st.slowDuration || 0, burst.slowDuration);
+              }
+              if (burst.stun) st.stun = Math.max(st.stun || 0, burst.stun);
+              if (burst.burn) st.burn = Math.max(st.burn || 0, burst.burn);
+              statusHits.set(en.id, st);
             }
           }
           juicePunch(0.48, 0.6);
@@ -1814,7 +2115,40 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
           if (!weapon) return;
 
           const lvl = weaponLevelsRef.current[id] || 1;
-          const wStats = buildWeaponStats(weapon, lvl);
+          let wStats = buildWeaponStats(weapon, lvl);
+
+          // Late game (rank 3–5): scale utility/CC/AoE so builds feel like they come online
+          if (lvl >= 3) {
+            const fxT = norm01(progT, 0.55, 1.0);
+            if (fxT > 0) {
+              const rankBoost = (lvl - 2) / 3; // 0.33..1
+              const fx = fxT * rankBoost;
+
+              if (wStats.slow) wStats.slow = clamp(wStats.slow * (1 + fx * 0.55), 0, 0.65);
+              if (wStats.slowDuration) wStats.slowDuration = Math.round(wStats.slowDuration * (1 + fx * 0.70));
+              if (wStats.zapSlow) wStats.zapSlow = clamp(wStats.zapSlow * (1 + fx * 0.45), 0, 0.55);
+              if (wStats.zapSlowDuration) wStats.zapSlowDuration = Math.round(wStats.zapSlowDuration * (1 + fx * 0.60));
+              if (wStats.stun) wStats.stun = Math.round(wStats.stun * (1 + fx * 0.55));
+              if (wStats.microFreeze) wStats.microFreeze = Math.round(wStats.microFreeze * (1 + fx * 0.60));
+
+              if (wStats.explodeRadius) wStats.explodeRadius = Math.round(wStats.explodeRadius * (1 + fx * 0.45));
+              if (wStats.explodeMult) wStats.explodeMult = wStats.explodeMult * (1 + fx * 0.22);
+
+              if (wStats.pull) wStats.pull = wStats.pull * (1 + fx * 0.50);
+              if (wStats.pullRadius) wStats.pullRadius = Math.round(wStats.pullRadius * (1 + fx * 0.30));
+              if (wStats.vortexDps) wStats.vortexDps = wStats.vortexDps * (1 + fx * 0.30);
+
+              if (wStats.knockback) wStats.knockback = wStats.knockback * (1 + fx * 0.40);
+
+              // tasteful extra proc counts very late (kept small so it doesn't break balance)
+              if (fxT > 0.78 && lvl >= 4) {
+                if (wStats.chain) wStats.chain = Math.min(10, (wStats.chain || 0) + 1);
+                if (wStats.ricochets) wStats.ricochets = Math.min(4, (wStats.ricochets || 0) + 1);
+                if (wStats.fork) wStats.fork = Math.min(4, (wStats.fork || 0) + 1);
+                if (wStats.split) wStats.split = Math.min(3, (wStats.split || 0) + 1);
+              }
+            }
+          }
 
           const last = lastFire.current[id] || 0;
           const fireCooldownBase = (wStats.cooldown || 600) / (statsRef.current.attackSpeed || 1);
@@ -1982,7 +2316,14 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
                 color: pat.color,
                 lineWidth: pat.lineWidth,
                 glowColor: pat.glowColor,
-                glowBlur: pat.glowBlur
+                glowBlur: pat.glowBlur,
+
+                // NEW: rank 3-5 effects
+                slow: pat.slow || 0,
+                slowDuration: pat.slowDuration || 0,
+                stun: pat.stun || 0,
+                microFreeze: pat.microFreeze || 0,
+                knockback: pat.knockback || 0
               };
             });
 
@@ -2014,6 +2355,13 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
                 damage: (wStats.damage || 8) * (statsRef.current.damageMult || 1) * crewDamageMult,
                 tickMs,
                 burn,
+
+                // NEW: beam control
+                slow: wStats.slow || 0,
+                slowDuration: wStats.slowDuration || 0,
+                microFreeze: wStats.microFreeze || 0,
+                stun: wStats.stun || 0,
+
                 t: Date.now(),
                 life: beamMs
               }];
@@ -2066,6 +2414,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
               damage: (wStats.damage || 1) * (statsRef.current.damageMult || 1) * crewDamageMult,
               color: weapon.color,
               life: wStats.lifeMs || (isSniper ? 900 : 1000),
+              lifeStart: wStats.lifeMs || (isSniper ? 900 : 1000),
               width: wStats.width,
               height: wStats.height,
               pierce: (wStats.pierce ?? 0) + smgPierceBonus,
@@ -2081,6 +2430,9 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
               explodeMult: wStats.explodeMult || 0,
               burn: wStats.burn || 0,
               microFreeze: wStats.microFreeze || 0,
+
+              // Sniper fairness vs elites
+              eliteDmgMult: wStats.eliteDmgMult || 1,
 
               isHoming: !!wStats.homing,
               accel: wStats.accel || 0,
@@ -2128,13 +2480,24 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
           if (!withinArc(sl.angle, sl.arc, enemyAngle)) return;
 
           totalDamage += sl.damage;
+
+          // NEW: katana CC on hit (rank 3-5)
+          const st = statusHits.get(en.id) || {};
+          if (sl.slow) {
+            st.slow = Math.max(st.slow || 0, sl.slow);
+            st.slowDuration = Math.max(st.slowDuration || 0, sl.slowDuration || 780);
+          }
+          if (sl.microFreeze) st.stun = Math.max(st.stun || 0, sl.microFreeze);
+          if (sl.stun) st.stun = Math.max(st.stun || 0, sl.stun);
+          if (sl.knockback) st.knockback = Math.max(st.knockback || 0, sl.knockback);
+          statusHits.set(en.id, st);
         });
 
         // VOID pull
         const pulls = movedBullets.filter((b) => {
           if (!b.pull) return false;
           if (Math.hypot(b.x - en.x, b.y - en.y) >= (b.pullRadius || 190)) return false;
-          const dToPlayer = Math.hypot(b.x - p.x, b.y - p.y);
+          const dToPlayer = Math.hypot(b.x - pPos.x, b.y - pPos.y);
           return dToPlayer > 140;
         });
 
@@ -2159,6 +2522,16 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
         if (voidFields.length) {
           const dps = voidFields.reduce((acc, b) => acc + (b.vortexDps || 0), 0);
           totalDamage += dps * 0.016;
+
+          // Void slow field support
+          const bestSlow = voidFields.reduce((acc, b) => Math.max(acc, b.slow || 0), 0);
+          const bestSlowDur = voidFields.reduce((acc, b) => Math.max(acc, b.slowDuration || 0), 0);
+          if (bestSlow > 0 && en.type !== 'juggernaut' && !isBossy) {
+            const st = statusHits.get(en.id) || {};
+            st.slow = Math.max(st.slow || 0, bestSlow);
+            st.slowDuration = Math.max(st.slowDuration || 0, bestSlowDur || 650);
+            statusHits.set(en.id, st);
+          }
         }
 
         if (totalDamage > 0) {
@@ -2175,16 +2548,22 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
 
         let out = { ...en };
 
-        if (st.slow && out.type !== 'juggernaut') {
+        const isMini = String(out.type || '').startsWith('mini_');
+        const isCharging = out.type === 'mini_charger' && ((out.windupUntil && Date.now() < out.windupUntil) || (out.dashUntil && Date.now() < out.dashUntil));
+
+        // Don't let slow/knockback/stun trivialize RAM chargers while they're charging.
+        if (st.slow && out.type !== 'juggernaut' && !(out.type === 'mini_charger')) {
           out.slowUntil = Date.now() + (st.slowDuration || 520);
           out.slowFactor = clamp(1 - st.slow, 0.45, 0.95);
         }
-        if (st.stun && out.type !== 'juggernaut') {
-          out.stunnedUntil = Math.max(out.stunnedUntil || 0, Date.now() + st.stun);
+
+        if (st.stun && out.type !== 'juggernaut' && !isCharging) {
+          const stunMs = isMini ? Math.min(st.stun, 180) : st.stun;
+          out.stunnedUntil = Math.max(out.stunnedUntil || 0, Date.now() + stunMs);
         }
 
-        if (st.knockback && !freezeWorld && out.type !== 'juggernaut') {
-          const ang = Math.atan2(out.y - p.y, out.x - p.x);
+        if (st.knockback && !freezeWorld && out.type !== 'juggernaut' && !isMini) {
+          const ang = Math.atan2(out.y - pPos.y, out.x - pPos.x);
           const push = 5.0 * st.knockback;
           out.x += Math.cos(ang) * push;
           out.y += Math.sin(ang) * push;
@@ -2217,7 +2596,9 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
               const fall = 1 - d / (v.explodeRadius || 120);
               bulletHits.set(en.id, (bulletHits.get(en.id) || 0) + (v.damage || 14) * (v.explodeMult || 0.95) * Math.max(0.35, fall));
               const st = statusHits.get(en.id) || {};
-              st.stun = Math.max(st.stun || 0, 120);
+              st.stun = Math.max(st.stun || 0, v.stun || 140);
+              st.slow = Math.max(st.slow || 0, 0.18);
+              st.slowDuration = Math.max(st.slowDuration || 0, 820);
               statusHits.set(en.id, st);
             }
           });
@@ -2285,7 +2666,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
       // -------------------- ORBS: attract + cluster + merge + pickup --------------------
       orbsRef.current = (() => {
         const prev = orbsRef.current || [];
-        const pp = playerRef.current;
+        const pp2 = playerRef.current;
         const magnet = Date.now() < magnetUntil.current;
 
         const clustered = prev.map((o) => {
@@ -2309,8 +2690,8 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
         });
 
         const drifted = clustered.map((o) => {
-          const dx = pp.x - o.x;
-          const dy = pp.y - o.y;
+          const dx = pp2.x - o.x;
+          const dy = pp2.y - o.y;
           const d = Math.hypot(dx, dy);
           const range = magnet ? 1250 : 170;
           if (d > 0 && d < range) {
@@ -2326,13 +2707,17 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
         const kept = [];
         let gained = 0;
         merged.forEach((o) => {
-          const d = Math.hypot(o.x - pp.x, o.y - pp.y);
+          const d = Math.hypot(o.x - pp2.x, o.y - pp2.y);
           if (d < 36) gained += o.value;
           else kept.push(o);
         });
 
-        const t = elapsed.current / (runTimeRef.current || BOSS_TIME);
-        const xpMult = 1.22 * (t > 0.65 ? 1.25 : 1.0);
+        // XP feels stronger late so builds actually reach rank 3-5 reliably
+        const tNow = clamp(elapsed.current / (runTimeRef.current || BOSS_TIME), 0, 1);
+        const late = norm01(tNow, 0.45, 1.0);
+        const kick = norm01(tNow, 0.58, 0.72);
+        const xpMult = lerp(LATE_XP_MIN_MULT, LATE_XP_MAX_MULT, late) * lerp(1.0, 1.12, kick);
+
         if (gained > 0) xpRef.current += gained * xpMult;
 
         return kept;
@@ -2340,11 +2725,11 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
 
       // -------------------- PICKUPS --------------------
       {
-        const pp = playerRef.current;
+        const pp2 = playerRef.current;
         const prev = pickupsRef.current || [];
         const kept = [];
         for (const pk of prev) {
-          const d = Math.hypot(pk.x - pp.x, pk.y - pp.y);
+          const d = Math.hypot(pk.x - pp2.x, pk.y - pp2.y);
           if (d < 44) activatePickup(pk.type);
           else kept.push(pk);
         }
@@ -2357,7 +2742,13 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
       if (xpRef.current >= xpTargetRef.current) {
         xpRef.current = xpRef.current - xpTargetRef.current;
         levelRef.current = (levelRef.current || 1) + 1;
-        xpTargetRef.current = Math.floor(xpTargetRef.current * 1.30);
+
+        // Slightly easier XP curve so you reach higher ranks by late game
+        const t = getProgressT();
+        const late = norm01(t, 0.45, 1.0);
+        const growth = lerp(1.27, 1.20, late); // late: slower requirement increase
+        xpTargetRef.current = Math.floor(xpTargetRef.current * growth);
+
         setUpgradeOptions(rollUpgradeOptions(selectedWeaponsRef.current, weaponLevelsRef.current, statsRef.current));
         syncUI(true);
         juicePunch(0.55, 0.55);
@@ -2371,7 +2762,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
         let hazardDamage = 0;
         explosionsRef.current.forEach((e) => {
           if (!e.hazard) return;
-          const d = Math.hypot(p.x - e.x, p.y - e.y);
+          const d = Math.hypot(pPos.x - e.x, pPos.y - e.y);
           if (d <= e.r) hazardDamage += 7;
         });
 
@@ -2384,9 +2775,9 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
 
         if (now2 - lastDamage.current > 260) {
           let totalDamage = 0;
-          const pp = playerRef.current;
+          const pp2 = playerRef.current;
           alive.forEach((en) => {
-            const d = Math.hypot(en.x - pp.x, en.y - pp.y);
+            const d = Math.hypot(en.x - pp2.x, en.y - pp2.y);
             if (d < en.size * 0.55 + 16) totalDamage += en.contactDamage || 8;
           });
           if (totalDamage > 0) {
@@ -2434,12 +2825,13 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
     progElapsedRef.current = 0;
     elapsed.current = 0;
 
-    flagsRef.current = { swarm1: false, wall1: false, mini25: false, mini50: false, mini75: false, reliefLock: false };
+    flagsRef.current = { reliefLock: false };
     activeEventRef.current = null;
     eventCooldownUntilRef.current = 0;
     reliefUntilRef.current = 0;
     reliefStartedAtRef.current = 0;
-    swarmPlanRef.current = { total: 0, done: 0, nextAt: 0, variant: 'encircle' };
+
+    beatPlanRef.current = { ready: false, idx: 0, beats: [] };
 
     enemiesRef.current = [];
     bulletsRef.current = [];
@@ -2536,13 +2928,22 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1 }) 
         <div className="world-border" />
         <div className="player-tracer" ref={playerTracerRef} />
         <div
-          className="player-sprite"
-          ref={playerSpriteRef}
-          style={{
-            boxShadow: showShield ? '0 0 16px rgba(120,220,255,0.75), 0 0 36px rgba(120,220,255,0.55)' : undefined,
-            filter: showOverdrive ? 'brightness(1.15) saturate(1.2)' : undefined
-          }}
-        />
+  className="player-sprite"
+  ref={playerSpriteRef}
+  style={{
+    // ✅ show selected hero portrait instead of the blue square
+    backgroundImage: selectedHero?.portrait ? `url(${selectedHero.portrait})` : undefined,
+    backgroundSize: selectedHero?.portrait ? "cover" : undefined,
+    backgroundPosition: selectedHero?.portrait ? "center" : undefined,
+    backgroundRepeat: selectedHero?.portrait ? "no-repeat" : undefined,
+    backgroundColor: selectedHero?.portrait ? "transparent" : undefined,
+
+    boxShadow: showShield
+      ? "0 0 16px rgba(120,220,255,0.75), 0 0 36px rgba(120,220,255,0.55)"
+      : undefined,
+    filter: showOverdrive ? "brightness(1.15) saturate(1.2)" : undefined,
+  }}
+/>
 
         {pickups.map((pk) => (
           <div
