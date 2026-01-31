@@ -69,7 +69,13 @@ body {
 
 /* --- COMBAT ARENA --- */
 .combat-world { width: 100vw; height: 100vh; background: #010206; position: relative; overflow: hidden; }
-.world-container { position: absolute; transition: transform 0.05s linear; }
+.world-container{
+  position: absolute;
+  transition: none;          /* IMPORTANT */
+  will-change: transform;
+  transform: translateZ(0);  /* compositor */
+}
+* { backface-visibility: hidden; }
 .world-border { 
   position: absolute;
   width: 2800px;
@@ -568,6 +574,11 @@ body {
   animation: pickupFloat 1.45s ease-in-out infinite, pickupPulse 1.05s ease-in-out infinite;
   will-change: transform, filter, opacity;
   filter: drop-shadow(0 0 10px rgba(255,255,255,0.45)) drop-shadow(0 0 26px rgba(255,255,255,0.30));
+}
+
+.pickup{
+  will-change: transform, opacity, filter;
+  transform: translateZ(0);
 }
 
 .pickup::after {
