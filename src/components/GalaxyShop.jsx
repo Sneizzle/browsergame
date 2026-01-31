@@ -56,7 +56,7 @@ const NODES = [
     desc:
   "Press SPACEBAR to activate.\n" +
   "ACTIVE: 5.6s\n" +
-  "COOLDOWN: 15.0s (reduced by Quick Rearm)\n" +
+  "COOLDOWN: 25 seconds (reduced by Quick Rearm)\n" +
   "RAM: 34 impact damage per hit\n" +
   "\n" +
   "EFFECT:\n" +
@@ -77,7 +77,7 @@ const NODES = [
     prereq: ["MIL_THORNS"],
     desc:
       "Passive / Stat\n" +
-      "• +Max HP per rank\n" +
+      "• + 25 Max HP per rank\n" +
       "Your **Vanguard Spine**.",
   },
   {
@@ -95,7 +95,7 @@ const NODES = [
       "When you take damage:\n" +
       "• Freeze time for 2s\n" +
       "• Blast an explosion around you\n" +
-      "Cooldown starts at ~60s and improves with ranks.",
+      "Cooldown starts at ~60s and improves with 8 seconds per rank.",
   },
 
   // Row 2 (pick ONE) — Tier gate starts here: need 5 points spent
@@ -111,8 +111,8 @@ const NODES = [
     prereq: ["MIL_THORNS"],
     desc:
       "Stat\n" +
-      "• +Thorns duration\n" +
-      "• -Thorns cooldown",
+      "• +Thorns duration 1.2 seconds\n" +
+      "• -Thorns cooldown -3 seconds",
   },
   {
     id: "MIL_PLATE_CARRIER",
@@ -231,6 +231,7 @@ export default function GalaxyShop({
   onBuildChange = () => {},
 }) {
   const storageNs = useMemo(() => (storageKey ? `xeno:shop:${storageKey}` : null), [storageKey]);
+  const lastResetTokenRef = useRef(resetToken);
   const [purchased, setPurchased] = useState(() => {
     if (!storageNs) return {};
     try {
@@ -243,13 +244,18 @@ export default function GalaxyShop({
 
   // reset between runs / characters
   useEffect(() => {
-    // resetToken is used by App to wipe a run; storageKey change indicates new character.
+    // resetToken is used by App to wipe a run.
+    // IMPORTANT: do NOT wipe on initial mount; only wipe when resetToken actually changes.
     if (!storageNs) {
       setPurchased({});
+      lastResetTokenRef.current = resetToken;
       return;
     }
+
+    if (lastResetTokenRef.current === resetToken) return;
+    lastResetTokenRef.current = resetToken;
+
     try {
-      // if resetToken changes, wipe the current session build for this character
       sessionStorage.removeItem(storageNs);
     } catch {}
     setPurchased({});
