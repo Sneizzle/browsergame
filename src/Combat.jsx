@@ -8,7 +8,8 @@ const TRASH_HP_MULT = 0.95;           // trash HP slightly up (less one-shot mid
 const ELITE_HP_MULT = 1.05;           // elites keep their identity late
 const MINI_HP_MULT = 1.15;            // mini-bosses a bit sturdier
 const BOSS_HP_MULT = 1.65;            // boss much sturdier (was dying too fast)
-const SPAWN_INTERVAL_MULT = 0.78;     // faster spawns overall (~+28% density)
+// Slightly softer early-game spawn density (prevents guaranteed wall encroach / early overwhelm)
+const SPAWN_INTERVAL_MULT = 0.90;
 
 // -------------------- LATE GAME FIX (45% -> 100%) --------------------
 // Add HP nerf for "adds" ramps from -40% to -60% (mult 0.60 -> 0.40)
@@ -26,7 +27,7 @@ const LATE_SPAWN_COUNT_REDUCE = -0.35;   // late game: MORE spawns (+35% at end)
 const BOSS_ADD_INTERVAL_MULT = 1.6;     // fewer adds during boss, but not empty
 const BOSS_ADD_COUNT_MULT = 0.85;       // keep pressure during boss
 // -------------------- PLAYER FEEDBACK TWEAKS --------------------
-const AFTER40_ENEMY_MULT = 1.65;     // +65% enemies after 40% progress
+const AFTER40_ENEMY_MULT = 1.50;     // +50% enemies after 40% progress
 const WALL_HP_MULT = 0.70;           // -30% wall unit HP
 const RAM_HP_MULT = 0.60;            // ~15% faster RAM kill (was 0.70)
 const RELIEF_SPAWN_INTERVAL_MULT = 1.15; // relief slows spawns slightly
@@ -66,6 +67,48 @@ const pickDistinctTargets = (enemies, origin, count) => {
   return pool.slice(0, Math.min(count, pool.length));
 };
 
+// Keep enemies from perfectly stacking on top of each other.
+// Allows clumping, but applies a small separation when their hitboxes overlap.
+const applyEnemySeparation = (list) => {
+  const enemies = Array.isArray(list) ? list.map((e) => ({ ...e })) : [];
+  const n = enemies.length;
+  if (n <= 1) return enemies;
+
+  for (let i = 0; i < n; i += 1) {
+    const a = enemies[i];
+    if (!a || a.despawn) continue;
+    if (a.type === 'wall') continue;
+
+    for (let j = i + 1; j < n; j += 1) {
+      const b = enemies[j];
+      if (!b || b.despawn) continue;
+      if (b.type === 'wall') continue;
+
+      // Keep minis from overlapping each other more aggressively (RAM stacking complaint)
+      const aMini = String(a.type || '').startsWith('mini_');
+      const bMini = String(b.type || '').startsWith('mini_');
+
+      const min = (Number(a.size) + Number(b.size)) * (aMini || bMini ? 0.62 : 0.52);
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const d = Math.hypot(dx, dy) || 0.0001;
+      if (d >= min) continue;
+
+      const overlap = (min - d);
+      const nx = dx / d;
+      const ny = dy / d;
+      const push = overlap * (aMini || bMini ? 0.55 : 0.40);
+
+      // push both away (bounded)
+      a.x = clamp(a.x - nx * push, 0, ARENA_SIZE);
+      a.y = clamp(a.y - ny * push, 0, ARENA_SIZE);
+      b.x = clamp(b.x + nx * push, 0, ARENA_SIZE);
+      b.y = clamp(b.y + ny * push, 0, ARENA_SIZE);
+    }
+  }
+  return enemies;
+};
+
 const isEliteType = (type) => {
   const t = String(type || '');
   return (
@@ -103,8 +146,8 @@ const WEAPONS = [
         title: 'Katana I',
         description: 'Neon cut. Tight forward arc.',
         stats: {
-          cooldown: 880,
-          damage: 16,
+          cooldown: 820,
+          damage: 18,
           range: 155,
           slashPattern: [
             { delay: 0, offset: 0.0, arc: Math.PI * 0.34, kind: 'crescent', dmgMult: 1.0,
@@ -215,7 +258,7 @@ const WEAPONS = [
     targeting: 'closest',
     color: '#ffd36b',
     levels: [
-      { title: 'Shotgun I', description: 'Arc blast (knockback).', stats: { cooldown: 820, bulletSpeed: 13, damage: 9, pellets: 7, spread: 0.85, width: 14, height: 5, pierce: 0, knockback: 1.35 } },
+      { title: 'Shotgun I', description: 'Arc blast (knockback).', stats: { cooldown: 820, bulletSpeed: 13, damage: 10, pellets: 7, spread: 0.85, width: 14, height: 5, pierce: 0, knockback: 1.55 } },
       { title: 'Shotgun II', description: 'Denser spread + harder shove.', stats: { pellets: 8, damage: 9, knockback: 1.55 } },
       // Rank 3+: crowd control + pops
       { title: 'Shotgun III', description: 'Ricochet shrapnel (chaos) + micro-stun.', stats: { pellets: 9, damage: 9, pierce: 1, knockback: 1.65, ricochets: 1, microFreeze: 120 } },
@@ -733,6 +776,15 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   const [orbs, setOrbs] = useState([]);
   const [pickups, setPickups] = useState([]);
 
+  // Lightweight "expired" popups for buffs/pickups (Danish clarity request)
+  const [toasts, setToasts] = useState([]);
+  const pushToast = (text) => {
+    const id = (crypto?.randomUUID?.() ?? Math.random().toString(16).slice(2));
+    const until = Date.now() + 1700;
+    setToasts((prev) => [...(prev || []).filter((t) => (t.until || 0) > Date.now()), { id, text, until }]);
+  };
+  const prevBuffsRef = useRef({});
+
   const [selectedWeapons, setSelectedWeapons] = useState([]);
   const [weaponLevels, setWeaponLevels] = useState({});
   const [xp, setXp] = useState(0);
@@ -755,7 +807,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   // runBuild?.purchased contains ranks keyed by MIL_* ids from GalaxyShop.
   const talentsRef = useRef({
     thornsUnlocked: false,
-    thornsDurationMs: 2800,
+    thornsDurationMs: 5600,
     thornsCooldownMs: 15000,
     thornsRamDamage: 34,
     quickRearmRank: 0,
@@ -813,7 +865,8 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
 
     talentsRef.current = {
       thornsUnlocked,
-      thornsDurationMs: 2800 + quickRearmRank * 600,
+    // Danish feedback: thorns felt too short-lived; make it last ~2x.
+    thornsDurationMs: (2800 + quickRearmRank * 600) * 2,
       thornsCooldownMs: Math.max(6000, 15000 - quickRearmRank * 2500),
       thornsRamDamage: 32 + tileDifficulty * 4,
       quickRearmRank,
@@ -1186,13 +1239,15 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     const lateMiniPct    = r(0.70, 0.82);
     const fourthEventPct = r(0.80, 0.90);
 
-    // Mostly swarms; walls are rarer "shape change" beats.
-    const pickEventId = (swarmBias = 0.85) => (Math.random() < swarmBias ? 'SWARM' : 'WALL');
+    // Mostly swarms; walls are *late* and rare "shape change" beats.
+    // Danish feedback: early WALL was happening too often / too punishing with fast early spawn ramp.
+    const pickLateEventId = (swarmBias = 0.85) => (Math.random() < swarmBias ? 'SWARM' : 'WALL');
 
-    beats.push({ kind: 'EVENT', atPct: firstEventPct, id: pickEventId(0.92) });
-    beats.push({ kind: 'MINI', atPct: firstMiniPct, count: 2, mix: 'charger' });
+    // Force early beats to be swarms for readability + fairness.
+    beats.push({ kind: 'EVENT', atPct: firstEventPct, id: 'SWARM' });
+    beats.push({ kind: 'MINI', atPct: firstMiniPct, count: 1, mix: 'charger' });
 
-    beats.push({ kind: 'EVENT', atPct: secondEventPct, id: pickEventId(0.88) });
+    beats.push({ kind: 'EVENT', atPct: secondEventPct, id: 'SWARM' });
 
     // Midgame: multiple rams WHILE trash keeps coming.
     beats.push({ kind: 'MINI', atPct: midMiniPct, count: 2 + Math.floor(Math.random() * 2), mix: 'charger' });
@@ -1202,7 +1257,8 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     // Late: 3–5 RAMs at once
     beats.push({ kind: 'MINI', atPct: lateMiniPct, count: 3 + Math.floor(Math.random() * 3), mix: 'charger' });
 
-    beats.push({ kind: 'EVENT', atPct: fourthEventPct, id: pickEventId(0.86) });
+    // Only the final event can roll WALL, and it's still biased toward SWARM.
+    beats.push({ kind: 'EVENT', atPct: fourthEventPct, id: pickLateEventId(0.78) });
 
     beats.sort((a, b) => a.atPct - b.atPct);
 
@@ -1370,6 +1426,11 @@ const beat = plan.beats[plan.idx];
     }
 
     if (beat.kind === 'MINI') {
+      // Don't stack RAM packs on top of each other.
+      // We pause progression during RAM, but this also ensures we never spawn a new pack while one is alive.
+      const anyRamAlive = (enemiesRef.current || []).some((e) => e.type === 'mini_charger' && e.hp > 0);
+      if (anyRamAlive) return;
+
       enemiesRef.current = [
         ...(enemiesRef.current || []),
         ...spawnMiniPack(pp, difficulty, beat.count || 1)
@@ -1494,7 +1555,7 @@ const beat = plan.beats[plan.idx];
         const thornsActive = now < thornsActiveUntilRef.current;
         if (thornsWasActiveRef.current && !thornsActive && t.discharge) {
           const p = playerRef.current;
-          const radius = 280;
+          const radius = 340;
           explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: p.x, y: p.y, r: radius, t: now, life: 280 }];
 
           enemiesRef.current = (enemiesRef.current || []).map((en) => {
@@ -1503,7 +1564,7 @@ const beat = plan.beats[plan.idx];
             if (d <= radius && en.type !== 'juggernaut') {
               const fall = 1 - d / radius;
               const ang = Math.atan2(en.y - p.y, en.x - p.x);
-              const push = 18 * Math.max(0.25, fall);
+              const push = 36 * Math.max(0.25, fall);
               return {
                 ...en,
                 x: clamp(en.x + Math.cos(ang) * push, 0, ARENA_SIZE),
@@ -1515,6 +1576,7 @@ const beat = plan.beats[plan.idx];
           });
 
           juicePunch(0.95, 0.9);
+          pushToast('🌵 THORNS expired');
         }
         thornsWasActiveRef.current = thornsActive;
       }
@@ -1579,6 +1641,44 @@ const beat = plan.beats[plan.idx];
         // Bullets
         bulletsRef.current.forEach(b => {
           if (b.x < viewL || b.x > viewR || b.y < viewT || b.y > viewB) return;
+
+          // Void Orbs: render as circles (enemies are squares) for readability.
+          const isVoid = !!(b.pullRadius || b.vortexDps || b.singularity || b.anchorOnMaxRange);
+          if (isVoid) {
+            const r = Math.max(10, (b.width || 20) * 0.5);
+            const col = b.color || '#c08bff';
+
+            ctx.save();
+            ctx.translate(b.x - cam.x, b.y - cam.y);
+
+            ctx.globalAlpha = 0.85;
+            ctx.shadowColor = col;
+            ctx.shadowBlur = b.singularity ? 22 : 14;
+
+            ctx.fillStyle = col;
+            ctx.beginPath();
+            ctx.arc(0, 0, r, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.globalAlpha = 0.55;
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+            ctx.beginPath();
+            ctx.arc(0, 0, r + 4, 0, Math.PI * 2);
+            ctx.stroke();
+
+            if (b.singularity) {
+              ctx.globalAlpha = 0.65;
+              ctx.lineWidth = 2;
+              ctx.strokeStyle = col;
+              ctx.beginPath();
+              ctx.arc(0, 0, r + 10, 0, Math.PI * 2);
+              ctx.stroke();
+            }
+
+            ctx.restore();
+            return;
+          }
 
           ctx.fillStyle = b.color || '#fff';
           ctx.save();
@@ -1775,8 +1875,12 @@ const beat = plan.beats[plan.idx];
       elapsed.current += 16;
 
       // progression pauses while ANY event is active (SWARM/WALL)
+      // and also while RAM chargers are alive (Danish feedback: RAM timing vs swarm/wall felt unfair).
       const eventActive = !!(activeEventRef.current && Date.now() < activeEventRef.current.endsAt);
-      if (!eventActive) progElapsedRef.current += 16;
+      const ramActive = (enemiesRef.current || []).some((e) => e.type === 'mini_charger' && e.hp > 0);
+      const progPaused = eventActive || ramActive;
+      if (!progPaused) progElapsedRef.current += 16;
+
 
       if (elapsed.current % 160 === 0) {
         setProgress(Math.min(1, progElapsedRef.current / (runTimeRef.current || BOSS_TIME)));
@@ -1794,7 +1898,51 @@ const beat = plan.beats[plan.idx];
         railLinesRef.current = (railLinesRef.current || []).filter((l) => nowV - l.t < (l.life || 120));
         beamsRef.current = (beamsRef.current || []).filter((b) => nowV - b.t < (b.life || 120));
         slashesRef.current = (slashesRef.current || []).filter((s) => nowV - (s.t || (nowV - (s.age || 0))) < (s.life || 260));
-        pickupsRef.current = (pickupsRef.current || []).filter((p) => nowV - p.t < p.life);
+        {
+          const before = (pickupsRef.current || []);
+          const kept = before.filter((p) => nowV - p.t < p.life);
+          if (kept.length !== before.length) {
+            const expired = before.filter((p) => nowV - p.t >= p.life);
+            const counts = {};
+            for (const p of expired) {
+              const k = String(p.type || '');
+              counts[k] = (counts[k] || 0) + 1;
+            }
+            for (const [k, n] of Object.entries(counts)) {
+              const label = PICKUP_DEFS[k]?.title || k || 'Pickup';
+              pushToast(`${label} expired${n > 1 ? ` (${n})` : ''}`);
+            }
+          }
+          pickupsRef.current = kept;
+        }
+
+        // Buff expiration popups
+        {
+          const cur = {
+            thorns: nowV < thornsActiveUntilRef.current,
+            magnet: nowV < magnetUntil.current,
+            freeze: nowV < freezeUntil.current,
+            overdrive: nowV < overdriveUntil.current,
+            shield: nowV < shieldUntil.current,
+            adrenal: nowV < milAdrenalMoveUntilRef.current,
+          };
+
+          const prev = prevBuffsRef.current || {};
+          const labels = {
+            thorns: '🌵 THORNS',
+            magnet: '🧲 MAGNET',
+            freeze: '❄ FREEZE',
+            overdrive: '⚡ OVERDRIVE',
+            shield: '🛡 SHIELD',
+            adrenal: '💉 ADRENAL',
+          };
+          for (const k of Object.keys(labels)) {
+            if (prev[k] && !cur[k] && k !== 'thorns') {
+              pushToast(`${labels[k]} expired`);
+            }
+          }
+          prevBuffsRef.current = cur;
+        }
       }
 
       // regen
@@ -1872,11 +2020,14 @@ const beat = plan.beats[plan.idx];
       const panicRamp = Math.pow(norm01(progT, 0.76, 1.0), 1.10); // progress-based endgame ramp (capped)
       const spawnIntervalBase = Math.max(190, 1250 - difficulty * 80 - panicRamp * 120);
 
+      // Danish feedback: early ramp was too steep. Slow the first 25% a bit.
+      const earlySlow = lerp(1.22, 1.0, clamp(progT / 0.25, 0, 1));
+
       const inRelief = Date.now() < reliefUntilRef.current;
       const bossAlive = (enemiesRef.current || []).some((x) => x.type === 'boss' && x.hp > 0);
 
       // base: fewer enemies
-      let spawnInterval = spawnIntervalBase * SPAWN_INTERVAL_MULT * (inRelief ? RELIEF_SPAWN_INTERVAL_MULT : 1.0);
+      let spawnInterval = spawnIntervalBase * SPAWN_INTERVAL_MULT * earlySlow * (inRelief ? RELIEF_SPAWN_INTERVAL_MULT : 1.0);
 
       // late game: progressively fewer spawns
       spawnInterval *= lerp(1.0, LATE_SPAWN_INTERVAL_BOOST, lateT);
@@ -2087,7 +2238,9 @@ const beat = plan.beats[plan.idx];
         return { ...en, x: en.x + (dx / d) * spd, y: en.y + (dy / d) * spd };
       });
 
-      const movedEnemies = movedEnemiesRaw.filter((e) => !e.despawn);
+      // Filter despawned and apply a small separation force so enemies don't stack perfectly.
+      let movedEnemies = movedEnemiesRaw.filter((e) => !e.despawn);
+      movedEnemies = applyEnemySeparation(movedEnemies);
 
       // -------------------- BULLETS UPDATE (homing/accel) --------------------
       const movedBullets = bulletsRef.current
@@ -3189,12 +3342,21 @@ const beat = plan.beats[plan.idx];
     juicePunch(0.40, 0.55);
   };
 
-  const showShield = Date.now() < shieldUntil.current;
-  const showOverdrive = Date.now() < overdriveUntil.current;
-  const showMagnet = Date.now() < magnetUntil.current;
-  const showFreeze = Date.now() < freezeUntil.current;
-  const showThorns = Date.now() < thornsActiveUntilRef.current;
-  const showAdrenalMove = Date.now() < milAdrenalMoveUntilRef.current;
+  const nowHUD = Date.now();
+  const showShield = nowHUD < shieldUntil.current;
+  const showOverdrive = nowHUD < overdriveUntil.current;
+  const showMagnet = nowHUD < magnetUntil.current;
+  const showFreeze = nowHUD < freezeUntil.current;
+  const showThorns = nowHUD < thornsActiveUntilRef.current;
+  const showAdrenalMove = nowHUD < milAdrenalMoveUntilRef.current;
+
+  const fmtS = (ms) => `${Math.max(0, ms) / 1000 < 10 ? (Math.max(0, ms) / 1000).toFixed(1) : Math.ceil(Math.max(0, ms) / 1000)}s`;
+  const remThorns = thornsActiveUntilRef.current - nowHUD;
+  const remMagnet = magnetUntil.current - nowHUD;
+  const remFreeze = freezeUntil.current - nowHUD;
+  const remOverdrive = overdriveUntil.current - nowHUD;
+  const remShield = shieldUntil.current - nowHUD;
+  const remAdrenal = milAdrenalMoveUntilRef.current - nowHUD;
   const platesStacks = platesStacksRef.current || 0;
   const platesMax = talentsRef.current.platesMax || 0;
 
@@ -3263,15 +3425,82 @@ const beat = plan.beats[plan.idx];
             </div>
           )}
 
-          {showThorns && <div className="boss-warning" style={{ padding: '6px 10px', fontSize: 12 }}>🌵 THORNS</div>}
-          {showAdrenalMove && <div className="boss-warning" style={{ padding: '6px 10px', fontSize: 12 }}>💉 ADRENAL</div>}
+          {showThorns && (
+            <div className="boss-warning" style={{ padding: '6px 10px', fontSize: 12 }}>
+              🌵 THORNS {fmtS(remThorns)}
+            </div>
+          )}
+          {showAdrenalMove && (
+            <div className="boss-warning" style={{ padding: '6px 10px', fontSize: 12 }}>
+              💉 ADRENAL {fmtS(remAdrenal)}
+            </div>
+          )}
 
-          {showMagnet && <div className="boss-warning" style={{ padding: '6px 10px', fontSize: 12 }}>🧲 MAGNET</div>}
-          {showFreeze && <div className="boss-warning" style={{ padding: '6px 10px', fontSize: 12 }}>❄ FREEZE</div>}
-          {showOverdrive && <div className="boss-warning" style={{ padding: '6px 10px', fontSize: 12 }}>⚡ OVERDRIVE</div>}
-          {showShield && <div className="boss-warning" style={{ padding: '6px 10px', fontSize: 12 }}>🛡 SHIELD</div>}
+          {showMagnet && (
+            <div className="boss-warning" style={{ padding: '6px 10px', fontSize: 12 }}>
+              🧲 MAGNET {fmtS(remMagnet)}
+            </div>
+          )}
+          {showFreeze && (
+            <div className="boss-warning" style={{ padding: '6px 10px', fontSize: 12 }}>
+              ❄ FREEZE {fmtS(remFreeze)}
+            </div>
+          )}
+          {showOverdrive && (
+            <div className="boss-warning" style={{ padding: '6px 10px', fontSize: 12 }}>
+              ⚡ OVERDRIVE {fmtS(remOverdrive)}
+            </div>
+          )}
+          {showShield && (
+            <div className="boss-warning" style={{ padding: '6px 10px', fontSize: 12 }}>
+              🛡 SHIELD {fmtS(remShield)}
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Expiration toasts */}
+      {toasts.length > 0 && (
+        <div
+          style={{
+            position: 'fixed',
+            left: '50%',
+            top: 110,
+            transform: 'translateX(-50%)',
+            zIndex: 50,
+            pointerEvents: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            alignItems: 'center',
+            width: 'min(520px, calc(100vw - 40px))'
+          }}
+        >
+          {toasts
+            .filter((t) => (t.until || 0) > nowHUD)
+            .slice(-4)
+            .map((t) => (
+              <div
+                key={t.id}
+                style={{
+                  width: '100%',
+                  textAlign: 'center',
+                  padding: '10px 12px',
+                  borderRadius: 14,
+                  background: 'rgba(0,0,0,0.68)',
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  boxShadow: '0 0 24px rgba(0,242,255,0.08)',
+                  fontWeight: 900,
+                  letterSpacing: 1.5,
+                  fontSize: 12,
+                  opacity: 0.95,
+                }}
+              >
+                {String(t.text || '').toUpperCase()}
+              </div>
+            ))}
+        </div>
+      )}
 
       <div className="world-container" ref={worldRef} style={{ willChange: 'transform' }}>
         <div className="world-border" />
@@ -3297,6 +3526,13 @@ const beat = plan.beats[plan.idx];
 />
 
         {pickups.map((pk) => (
+          (() => {
+            const nowP = Date.now();
+            const ttl = (pk.t || 0) + (pk.life || 0) - nowP;
+            const danger = ttl < 4000;
+            const blink = danger ? (0.35 + 0.65 * Math.abs(Math.sin(nowP / 120))) : 1;
+            const ring = danger ? `0 0 0 2px rgba(255,82,119,0.55), 0 0 18px rgba(255,82,119,0.25)` : undefined;
+            return (
           <div
             key={pk.id}
             className={`pickup pickup--${String(pk.type || '').toLowerCase()}`}
@@ -3314,10 +3550,13 @@ const beat = plan.beats[plan.idx];
                   pk.type === 'FREEZE' ? 'rgba(160,220,255,0.9)' :
                     pk.type === 'OVERDRIVE' ? 'rgba(255,220,140,0.92)' :
                       'rgba(200,170,255,0.92)',
-              boxShadow: '0 0 12px rgba(255,255,255,0.45), 0 0 28px rgba(255,255,255,0.25)'
+              boxShadow: ring ? `${ring}, 0 0 12px rgba(255,255,255,0.45), 0 0 28px rgba(255,255,255,0.25)` : '0 0 12px rgba(255,255,255,0.45), 0 0 28px rgba(255,255,255,0.25)',
+              opacity: blink,
             }}
-            title={PICKUP_DEFS[pk.type]?.title || pk.type}
+            title={`${PICKUP_DEFS[pk.type]?.title || pk.type}${ttl > 0 ? ` • ${Math.ceil(ttl / 1000)}s` : ''}`}
           />
+            );
+          })()
         ))}
       </div>
 

@@ -123,6 +123,9 @@ export default function App() {
   const [heroOptions, setHeroOptions] = useState(() => genUniqueHeroOptions(5));
   const [selectedHero, setSelectedHero] = useState(null);
 
+  // Perks/talents persist for the session (until browser restart) per character.
+  const shopStorageKey = selectedHero?.id ? `hero:${selectedHero.id}` : null;
+
   // ✅ tutorial (in-memory only; refresh wipes it)
   const [tutorialShownThisSession, setTutorialShownThisSession] = useState(false);
   const [tutorialVisible, setTutorialVisible] = useState(false);
@@ -566,8 +569,9 @@ export default function App() {
               onClick={(e) => e.stopPropagation()}
               style={{
                 position: "fixed",
-                left: 20,
-                right: 20,
+                left: "50%",
+                transform: "translateX(-50%)",
+                width: "min(1040px, calc(100vw - 40px))",
                 top: 80,
                 bottom: 20,
                 zIndex: 9050,
@@ -585,7 +589,7 @@ export default function App() {
                 credits={talentPills}
                 onSpend={(amount) => setTalentPills((p) => Math.max(0, p - amount))}
                 resetToken={runId}
-                storageKey={null}
+                storageKey={shopStorageKey}
                 onBuildChange={setRunBuild}
               />
             </div>

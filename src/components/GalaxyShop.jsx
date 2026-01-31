@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import t1 from "./t1.PNG";
 import t2 from "./t2.PNG";
 import t3 from "./t3.PNG";
@@ -9,25 +10,61 @@ import t7 from "./t7.PNG";
 import t8 from "./t8.PNG";
 import t9 from "./t9.PNG";
 
-function iconUrl(node) {
-  return node.iconPath; // direct string url/path
+/**
+ * GalaxyShop (MILITARY DOCTRINE) — WoW-classic style talent tree (left tree)
+ *
+ * - 1 "Doctrine Pill" per mission (App grants it).
+ * - Spend 1 pill per rank.
+ * - You can only pick ONE talent per row (row-exclusive).
+ * - Tier gate: to unlock row N (N>=2), you must have spent (N-1)*5 points in this tree.
+ *   (Row 0 and 1 are available after prerequisites.)
+ *
+ * This component intentionally does NOT persist to localStorage to match roguelite "refresh wipes run".
+ */
+
+const ICON_BASE =
+  "https://raw.githubusercontent.com/itsrealfarhan/xenowarfare-assets/main/talent-icons/";
+const LOCAL_ICON_MAP = {
+  25: t1, // THORNS
+  15: t2, // FIELD ARMOR
+  21: t3, // GHOST PROTOCOL
+  3:  t4, // QUICK REARM
+  12: t5, // PLATE CARRIER
+  7:  t6, // ADRENAL
+  2:  t7, // KATANA
+  20: t8, // THORNS: DISCHARGE
+  9:  t9, // TITANIUM PLATES
+};
+
+function iconUrl(n) {
+  return LOCAL_ICON_MAP[n] || `${ICON_BASE}${n}.png`;
 }
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 const NODES = [
+  // Row 0
   {
     id: "MIL_THORNS",
-    name: "THORNS",
+    name: "DEFENSIVE COUNTERMEASURE",
     type: "ability",
     rarity: "major",
     row: 0,
     col: 1,
     maxRank: 1,
-    iconPath: t1,
-    desc: "...",
+    icon: 25,
+    desc:
+  "Press SPACEBAR to activate.\n" +
+  "ACTIVE: 5.6s\n" +
+  "COOLDOWN: 15.0s (reduced by Quick Rearm)\n" +
+  "RAM: 34 impact damage per hit\n" +
+  "\n" +
+  "EFFECT:\n" +
+  "• Ignore all incoming damage while active\n" +
+  "• Slam through enemies and break their line",
   },
 
+  // Row 1 (pick ONE)
   {
     id: "MIL_FIELD_ARMOR",
     name: "FIELD ARMOR",
@@ -36,11 +73,13 @@ const NODES = [
     row: 1,
     col: 0,
     maxRank: 5,
-    iconPath: t2,
+    icon: 15,
     prereq: ["MIL_THORNS"],
-    desc: "...",
+    desc:
+      "Passive / Stat\n" +
+      "• +Max HP per rank\n" +
+      "Your **Vanguard Spine**.",
   },
-
   {
     id: "MIL_GHOST_PROTOCOL",
     name: "GHOST PROTOCOL",
@@ -49,11 +88,17 @@ const NODES = [
     row: 1,
     col: 2,
     maxRank: 5,
-    iconPath: t3,
+    icon: 21,
     prereq: ["MIL_THORNS"],
-    desc: "...",
+    desc:
+      "Major Passive\n" +
+      "When you take damage:\n" +
+      "• Freeze time for 2s\n" +
+      "• Blast an explosion around you\n" +
+      "Cooldown starts at ~60s and improves with ranks.",
   },
 
+  // Row 2 (pick ONE) — Tier gate starts here: need 5 points spent
   {
     id: "MIL_QUICK_REARM",
     name: "THORNS: QUICK REARM",
@@ -62,11 +107,13 @@ const NODES = [
     row: 2,
     col: 0,
     maxRank: 2,
-    iconPath: t4,
+    icon: 3,
     prereq: ["MIL_THORNS"],
-    desc: "...",
+    desc:
+      "Stat\n" +
+      "• +Thorns duration\n" +
+      "• -Thorns cooldown",
   },
-
   {
     id: "MIL_PLATE_CARRIER",
     name: "PLATE CARRIER",
@@ -75,11 +122,15 @@ const NODES = [
     row: 2,
     col: 2,
     maxRank: 5,
-    iconPath: t5,
+    icon: 12,
     prereq: ["MIL_FIELD_ARMOR"],
-    desc: "...",
+    desc:
+      "Stat (requires Field Armor)\n" +
+      "• Damage reduction per rank\n" +
+      "Small, consistent mitigation.",
   },
 
+  // Row 3 — Tier gate: need 10 points spent
   {
     id: "MIL_ADRENAL",
     name: "ADRENAL OVERDRIVE",
@@ -88,11 +139,17 @@ const NODES = [
     row: 3,
     col: 1,
     maxRank: 1,
-    iconPath: t6,
+    icon: 7,
     prereq: [],
-    desc: "...",
+    desc:
+      "Major Passive\n" +
+      "After taking damage OR getting a kill:\n" +
+      "• 4s Overdrive (+move speed, +melee/attack speed)\n" +
+      "• Heal 8% of missing HP\n" +
+      "30s cooldown.",
   },
 
+  // Row 4 (pick ONE) — Tier gate: need 15 points spent
   {
     id: "MIL_KATANA_BACKUP",
     name: "KATANA: BACKUP BLADE",
@@ -101,11 +158,13 @@ const NODES = [
     row: 4,
     col: 0,
     maxRank: 1,
-    iconPath: t7,
+    icon: 2,
     prereq: ["MIL_ADRENAL"],
-    desc: "...",
+    desc:
+      "Passive\n" +
+      "Always start the match with an extra **Rank 1 Katana**.\n" +
+      "Cyan-blue slash.",
   },
-
   {
     id: "MIL_THRONS_DISCHARGE",
     name: "THORNS: DISCHARGE",
@@ -114,11 +173,15 @@ const NODES = [
     row: 4,
     col: 2,
     maxRank: 1,
-    iconPath: t8,
+    icon: 20,
     prereq: ["MIL_THORNS"],
-    desc: "...",
+    desc:
+      "Passive\n" +
+      "When Thorns expires:\n" +
+      "• Shockwave knocks back enemies in a wide radius.",
   },
 
+  // Row 5 — Tier gate: need 20 points spent
   {
     id: "MIL_TITANIUM_PLATES",
     name: "TITANIUM PLATES",
@@ -127,9 +190,14 @@ const NODES = [
     row: 5,
     col: 1,
     maxRank: 3,
-    iconPath: t9,
+    icon: 9,
     prereq: ["MIL_ADRENAL"],
-    desc: "...",
+    desc:
+      "Capstone\n" +
+      "Every 20s, generate a Plating.\n" +
+      "• Completely blocks the next instance of damage\n" +
+      "• Max stacks: 1/2/3 (by rank)\n" +
+      "After 60s without hits, you're stacked.",
   },
 ];
 
@@ -159,19 +227,54 @@ export default function GalaxyShop({
   credits = 0,
   onSpend = () => {},
   resetToken = 0,
-  storageKey = null, // ignored by design for roguelite wipe-on-refresh
+  storageKey = null, // if provided, we persist to sessionStorage (until browser/tab closes)
   onBuildChange = () => {},
 }) {
-  const [purchased, setPurchased] = useState({});
+  const storageNs = useMemo(() => (storageKey ? `xeno:shop:${storageKey}` : null), [storageKey]);
+  const [purchased, setPurchased] = useState(() => {
+    if (!storageNs) return {};
+    try {
+      const raw = sessionStorage.getItem(storageNs);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
 
-  // roguelite: reset between runs / characters
+  // reset between runs / characters
   useEffect(() => {
+    // resetToken is used by App to wipe a run; storageKey change indicates new character.
+    if (!storageNs) {
+      setPurchased({});
+      return;
+    }
+    try {
+      // if resetToken changes, wipe the current session build for this character
+      sessionStorage.removeItem(storageNs);
+    } catch {}
     setPurchased({});
-  }, [resetToken]);
+  }, [resetToken, storageNs]);
+
+  // when storageKey changes, load (or clear) that character's build
+  useEffect(() => {
+    if (!storageNs) return;
+    try {
+      const raw = sessionStorage.getItem(storageNs);
+      setPurchased(raw ? JSON.parse(raw) : {});
+    } catch {
+      setPurchased({});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageNs]);
 
   useEffect(() => {
-    onBuildChange({ purchased });
-  }, [purchased, onBuildChange]);
+    if (storageNs) {
+      try {
+        sessionStorage.setItem(storageNs, JSON.stringify(purchased || {}));
+      } catch {}
+    }
+    onBuildChange({ purchased: purchased || {} });
+  }, [purchased, onBuildChange, storageNs]);
 
   const grid = useMemo(() => {
     const maxRow = Math.max(...NODES.map((n) => n.row));
@@ -255,9 +358,9 @@ export default function GalaxyShop({
     });
   }
 
-  // --- layout ---
-  const cellW = 98;
-  const cellH = 92;
+  // --- layout (narrower window) ---
+  const cellW = 84;
+  const cellH = 82;
 
   const padX = 16;
   const padY = 16;
@@ -349,6 +452,7 @@ export default function GalaxyShop({
           gap:14px;
           align-items:flex-start;
           flex-wrap:wrap;
+          max-width: 980px;
         }
 
         .xshop-tree{
@@ -399,7 +503,7 @@ export default function GalaxyShop({
           width:${width}px;
           height:${height}px;
           border-radius:12px;
-          overflow:hidden;
+          overflow:visible;
           background:
             radial-gradient(900px 500px at 50% 0%, rgba(0,242,255,0.06), transparent 60%),
             linear-gradient(180deg, rgba(10,12,24,0.85), rgba(4,6,14,0.85));
@@ -426,7 +530,7 @@ export default function GalaxyShop({
 
         .xshop-node{
           position:absolute;
-          width:74px; height:74px;
+          width:66px; height:66px;
           border-radius:14px;
           transform: translate(-50%, -50%);
           display:flex;
@@ -485,7 +589,7 @@ export default function GalaxyShop({
         }
 
         .xshop-icon{
-          width:52px; height:52px;
+          width:46px; height:46px;
           border-radius:12px;
           background: rgba(255,255,255,0.06);
           display:flex;
@@ -550,8 +654,8 @@ export default function GalaxyShop({
         }
 
         .xshop-tip{
-          position:absolute;
-          z-index:20;
+          position:fixed;
+          z-index:100000;
           min-width:260px;
           max-width:340px;
           padding:10px 12px;
@@ -650,22 +754,36 @@ function TalentGrid({
   buy,
 }) {
   const [tip, setTip] = useState(null);
+  const lastTipRef = useRef(null);
 
   function onEnter(e, node) {
-    const rect = e.currentTarget.parentElement.getBoundingClientRect();
-    const p = nodePos(node);
-    const sx = rect.left + p.x;
-    const sy = rect.top + p.y;
-    setTip({
-      node,
-      x: clamp(sx + 42, 10, window.innerWidth - 360),
-      y: clamp(sy - 20, 10, window.innerHeight - 220),
-    });
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = clamp(rect.right + 10, 10, window.innerWidth - 360);
+    const y = clamp(rect.top - 10, 10, window.innerHeight - 220);
+    const next = { node, x, y };
+    lastTipRef.current = next;
+    setTip(next);
   }
 
   function onLeave() {
     setTip(null);
   }
+
+  useEffect(() => {
+    if (!tip) return;
+    const onMove = () => {
+      // keep tooltip in-bounds even if the user scrolls the panel
+      const t = lastTipRef.current;
+      if (!t) return;
+      setTip((prev) => (prev ? { ...prev, x: clamp(prev.x, 10, window.innerWidth - 360), y: clamp(prev.y, 10, window.innerHeight - 220) } : prev));
+    };
+    window.addEventListener('resize', onMove);
+    window.addEventListener('scroll', onMove, true);
+    return () => {
+      window.removeEventListener('resize', onMove);
+      window.removeEventListener('scroll', onMove, true);
+    };
+  }, [tip]);
 
   return (
     <div className="xshop-grid" style={{ width, height }}>
@@ -717,10 +835,10 @@ function TalentGrid({
             onClick={() => buy(node)}
             onMouseEnter={(e) => onEnter(e, node)}
             onMouseLeave={onLeave}
-            title={st === "locked" ? lockReason(node) : undefined}
+            title= {undefined}
           >
             <div className="xshop-icon">
-              <img src={iconUrl(node)} alt="" />
+              <img src={iconUrl(node.icon)} alt="" />
             </div>
 
             <div className="xshop-cost">💠 1</div>
@@ -731,16 +849,18 @@ function TalentGrid({
         );
       })}
 
-      {tip && (
-        <div className="xshop-tip" style={{ left: tip.x, top: tip.y }}>
-          <h4>{tip.node.name}</h4>
-          <div className="meta">
-            {tip.node.type.toUpperCase()} • Rank {Number(purchased?.[tip.node.id] || 0)}/{tip.node.maxRank}
-            {lockReason(tip.node) ? ` • ${lockReason(tip.node)}` : ""}
-          </div>
-          <pre>{tip.node.desc}</pre>
-        </div>
-      )}
+      {tip &&
+        createPortal(
+          <div className="xshop-tip" style={{ left: tip.x, top: tip.y }}>
+            <h4>{tip.node.name}</h4>
+            <div className="meta">
+              {tip.node.type.toUpperCase()} • Rank {Number(purchased?.[tip.node.id] || 0)}/{tip.node.maxRank}
+              {lockReason(tip.node) ? ` • ${lockReason(tip.node)}` : ""}
+            </div>
+            <pre>{tip.node.desc}</pre>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
