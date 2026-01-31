@@ -1,2266 +1,744 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import t1 from "./t1.PNG";
+import t2 from "./t2.PNG";
+import t3 from "./t3.PNG";
+import t4 from "./t4.PNG";
+import t5 from "./t5.PNG";
+import t6 from "./t6.PNG";
+import t7 from "./t7.PNG";
+import t8 from "./t8.PNG";
+import t9 from "./t9.PNG";
 
-/**
- * GalaxyShop.jsx (Xeno Purge Roguelite Shop / Talent Trees)
- *
- * What it does:
- * - 3 Trees (side-by-side)
- * - Each tree is 8 tiers deep (rows 0..7)
- * - Up to 3 nodes per row (grid 3 columns)
- * - Click node to buy:
- *    - requires prerequisites
- *    - requires currency
- *    - supports multi-rank nodes (e.g., XP Pull Range x5)
- * - Ability & Passive selection limits:
- *    - max 2 abilities
- *    - max 2 passives
- *   (Buying an ability/passive will attempt to equip it; if full, it prompts to replace.)
- * - SVG dependency lines: grey when locked; bright when path is active.
- * - Optional persistence:
- *    - provide `storageKey` to persist until resetToken changes (game over / restart).
- *
- * How to use:
- * <GalaxyShop
- *   credits={runCredits}
- *   onSpend={(amount) => setRunCredits(c => c - amount)}
- *   resetToken={runIdOrDeathCounter}
- *   storageKey={`xenopurge_run_${runId}`}
- *   onBuildChange={(build) => setBuild(build)} // { abilities:[], passives:[], purchased:{} }
- * />
- */
-
-function clamp(n, a, b) {
-  return Math.max(a, Math.min(b, n));
+function iconUrl(node) {
+  return node.iconPath; // direct string url/path
 }
 
-function makeIconUrl(n) {
-  // Adjust relative path if you place this file elsewhere
-  // This expects: src/assets/shop/t(1).png etc
-  return new URL(`../assets/shop/t(${n}).png`, import.meta.url).href;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+const NODES = [
+  {
+    id: "MIL_THORNS",
+    name: "THORNS",
+    type: "ability",
+    rarity: "major",
+    row: 0,
+    col: 1,
+    maxRank: 1,
+    iconPath: t1,
+    desc: "...",
+  },
+
+  {
+    id: "MIL_FIELD_ARMOR",
+    name: "FIELD ARMOR",
+    type: "passive",
+    rarity: "stat",
+    row: 1,
+    col: 0,
+    maxRank: 5,
+    iconPath: t2,
+    prereq: ["MIL_THORNS"],
+    desc: "...",
+  },
+
+  {
+    id: "MIL_GHOST_PROTOCOL",
+    name: "GHOST PROTOCOL",
+    type: "passive",
+    rarity: "major",
+    row: 1,
+    col: 2,
+    maxRank: 5,
+    iconPath: t3,
+    prereq: ["MIL_THORNS"],
+    desc: "...",
+  },
+
+  {
+    id: "MIL_QUICK_REARM",
+    name: "THORNS: QUICK REARM",
+    type: "passive",
+    rarity: "stat",
+    row: 2,
+    col: 0,
+    maxRank: 2,
+    iconPath: t4,
+    prereq: ["MIL_THORNS"],
+    desc: "...",
+  },
+
+  {
+    id: "MIL_PLATE_CARRIER",
+    name: "PLATE CARRIER",
+    type: "passive",
+    rarity: "stat",
+    row: 2,
+    col: 2,
+    maxRank: 5,
+    iconPath: t5,
+    prereq: ["MIL_FIELD_ARMOR"],
+    desc: "...",
+  },
+
+  {
+    id: "MIL_ADRENAL",
+    name: "ADRENAL OVERDRIVE",
+    type: "passive",
+    rarity: "major",
+    row: 3,
+    col: 1,
+    maxRank: 1,
+    iconPath: t6,
+    prereq: [],
+    desc: "...",
+  },
+
+  {
+    id: "MIL_KATANA_BACKUP",
+    name: "KATANA: BACKUP BLADE",
+    type: "passive",
+    rarity: "major",
+    row: 4,
+    col: 0,
+    maxRank: 1,
+    iconPath: t7,
+    prereq: ["MIL_ADRENAL"],
+    desc: "...",
+  },
+
+  {
+    id: "MIL_THRONS_DISCHARGE",
+    name: "THORNS: DISCHARGE",
+    type: "passive",
+    rarity: "major",
+    row: 4,
+    col: 2,
+    maxRank: 1,
+    iconPath: t8,
+    prereq: ["MIL_THORNS"],
+    desc: "...",
+  },
+
+  {
+    id: "MIL_TITANIUM_PLATES",
+    name: "TITANIUM PLATES",
+    type: "passive",
+    rarity: "capstone",
+    row: 5,
+    col: 1,
+    maxRank: 3,
+    iconPath: t9,
+    prereq: ["MIL_ADRENAL"],
+    desc: "...",
+  },
+];
+
+const LINES = [
+  ["MIL_THORNS", "MIL_FIELD_ARMOR"],
+  ["MIL_THORNS", "MIL_GHOST_PROTOCOL"],
+  ["MIL_THORNS", "MIL_QUICK_REARM"],
+  ["MIL_FIELD_ARMOR", "MIL_PLATE_CARRIER"],
+  ["MIL_QUICK_REARM", "MIL_ADRENAL"],
+  ["MIL_PLATE_CARRIER", "MIL_ADRENAL"],
+  ["MIL_ADRENAL", "MIL_KATANA_BACKUP"],
+  ["MIL_THORNS", "MIL_THRONS_DISCHARGE"],
+  ["MIL_ADRENAL", "MIL_TITANIUM_PLATES"],
+];
+
+function tierRequirementPoints(row) {
+  // Row 0: 0, Row 1: 0, Row 2: 5, Row 3: 10, Row 4: 15, Row 5: 20 ...
+  return Math.max(0, (row - 1) * 5);
 }
 
-const TREE_LAYOUT = {
-  cols: 3,
-  rows: 8,
-  // Compact, WoW-classic-ish layout
-  cellW: 74,
-  cellH: 74,
-};
-
-const BUILD_LIMITS = {
-  abilities: 2,
-  passives: 2,
-};
-
-const TYPE_LABEL = {
-  stat: "Upgrade",
-  passive: "Passive",
-  ability: "Ability",
-  capstone: "Capstone",
-};
-
-const RARITY = {
-  minor: { badge: "MINOR" },
-  major: { badge: "MAJOR" },
-  capstone: { badge: "CAPSTONE" },
-};
-
-function defaultTrees() {
-  /**
-   * DESIGN RULES:
-   * - 3 trees with Xeno-Purge flavor.
-   * - Early ability: THORNS (SPACEBAR) on Tree B (defense).
-   * - Early passive: TURRET (shitty Rifle rank 1 you always start with) on Tree A (weapons).
-   * - XP pull range node is multi-rank x5.
-   * - Double HP upgrade exists.
-   *
-   * Node schema:
-   * {
-   *   id, treeId,
-   *   row, col, iconN,
-   *   name, desc,
-   *   type: 'stat'|'passive'|'ability'|'capstone'
-   *   rarity: 'minor'|'major'|'capstone'
-   *   cost: number (base cost)
-   *   maxRank: number (default 1)
-   *   prereq: [nodeId...]
-   *   tags: [ 'hp', 'xp', 'weapon', ... ] // for your later effect mapping
-   * }
-   */
-
-  const trees = [
-    {
-      id: "arsenal",
-      title: "ARSENAL GRAFTS",
-      subtitle: "weapon mods • drones • ammo logic",
-      theme: "arsenal",
-      nodes: [
-        // ROW 0 (Start choices)
-        {
-          id: "arsenal_start_turret",
-          treeId: "arsenal",
-          row: 0,
-          col: 0,
-          iconN: 1,
-          name: "SENTRY SEED",
-          desc:
-            "Passive. Start each planet with a weak micro-turret (Rifle Rank 1 vibe). Auto-fires at nearest xeno. (Placeholder: set turret DPS / range).",
-          type: "passive",
-          rarity: "minor",
-          cost: 25,
-          maxRank: 1,
-          prereq: [],
-          tags: ["passive", "turret", "starter"],
-        },
-        {
-          id: "arsenal_start_reload",
-          treeId: "arsenal",
-          row: 0,
-          col: 1,
-          iconN: 2,
-          name: "MAG LATCH",
-          desc:
-            "Upgrade. +8% reload speed per rank. After reloading, your next shot deals +10% damage.",
-          type: "stat",
-          rarity: "minor",
-          cost: 25,
-          maxRank: 2,
-          prereq: [],
-          tags: ["weapon", "reload"],
-        },
-        {
-          id: "arsenal_start_shrapnel",
-          treeId: "arsenal",
-          row: 0,
-          col: 2,
-          iconN: 3,
-          name: "SHRAPNEL JACKETS",
-          desc:
-            "Upgrade. Bullets have +10% proc chance per rank to fracture into 2 shards dealing 35% damage.",
-          type: "stat",
-          rarity: "minor",
-          cost: 25,
-          maxRank: 3,
-          prereq: [],
-          tags: ["weapon", "aoe"],
-        },
-
-        // ROW 1
-        {
-          id: "arsenal_r1_drone",
-          treeId: "arsenal",
-          row: 1,
-          col: 0,
-          iconN: 4,
-          name: "DRONE CRADLE",
-          desc:
-            "Passive. Gain a companion drone that fires at the nearest enemy (0.8s, 35% weapon damage).",
-          type: "passive",
-          rarity: "minor",
-          cost: 40,
-          maxRank: 1,
-          prereq: ["arsenal_start_turret"],
-          tags: ["passive", "drone"],
-        },
-        {
-          id: "arsenal_r1_pierce",
-          treeId: "arsenal",
-          row: 1,
-          col: 1,
-          iconN: 5,
-          name: "PIERCE RAILS",
-          desc:
-            "Upgrade. +1 pierce per rank. Pierced hits deal 80% damage.",
-          type: "stat",
-          rarity: "minor",
-          cost: 40,
-          maxRank: 2,
-          prereq: ["arsenal_start_reload", "arsenal_start_shrapnel"],
-          tags: ["weapon", "pierce"],
-        },
-        {
-          id: "arsenal_r1_heat",
-          treeId: "arsenal",
-          row: 1,
-          col: 2,
-          iconN: 6,
-          name: "HEAT SINK PLATES",
-          desc:
-            "Upgrade. Continuous hits build Heat; at 12 hits, your next shot ignites for 60% weapon damage over 2s.",
-          type: "stat",
-          rarity: "minor",
-          cost: 40,
-          maxRank: 1,
-          prereq: ["arsenal_start_shrapnel"],
-          tags: ["weapon", "burn"],
-        },
-
-        // ROW 2 (BIG talent placeholder)
-        {
-          id: "arsenal_big_overclock",
-          treeId: "arsenal",
-          row: 2,
-          col: 1,
-          iconN: 7,
-          name: "OVERKILL OVERCLOCK",
-          desc:
-            "MAJOR. After a kill, gain OVERCLOCK for 3s: +25% fire rate (refresh on kill).\nEvery 5th shot becomes a RAIL shot: +2 pierce and heavy knockback.",
-          type: "ability",
-          rarity: "major",
-          cost: 85,
-          maxRank: 1,
-          prereq: ["arsenal_r1_pierce", "arsenal_r1_heat"],
-          tags: ["ability", "weapon", "major"],
-        },
-        {
-          id: "arsenal_r2_ammo",
-          treeId: "arsenal",
-          row: 2,
-          col: 0,
-          iconN: 8,
-          name: "AMMO PRINTER",
-          desc:
-            "Upgrade. +20% ammo per rank. 6% chance on hit to refund 1 ammo.",
-          type: "stat",
-          rarity: "minor",
-          cost: 60,
-          maxRank: 2,
-          prereq: ["arsenal_r1_drone"],
-          tags: ["weapon", "ammo"],
-        },
-        {
-          id: "arsenal_r2_crit",
-          treeId: "arsenal",
-          row: 2,
-          col: 2,
-          iconN: 9,
-          name: "CRIT CALIBRATOR",
-          desc:
-            "Upgrade. +3% crit chance per rank. Crits splash 30% damage in a small radius.",
-          type: "stat",
-          rarity: "minor",
-          cost: 60,
-          maxRank: 3,
-          prereq: ["arsenal_r1_heat"],
-          tags: ["weapon", "crit"],
-        },
-
-        // ROW 3
-        {
-          id: "arsenal_r3_turret2",
-          treeId: "arsenal",
-          row: 3,
-          col: 0,
-          iconN: 10,
-          name: "SENTRY PATCH v2",
-          desc:
-            "Passive upgrade. Turret gains tracking + slightly better DPS. (Placeholder: turret rank 2 stats).",
-          type: "passive",
-          rarity: "minor",
-          cost: 80,
-          maxRank: 1,
-          prereq: ["arsenal_start_turret"],
-          tags: ["passive", "turret"],
-        },
-        {
-          id: "arsenal_r3_spread",
-          treeId: "arsenal",
-          row: 3,
-          col: 1,
-          iconN: 11,
-          name: "PATTERN SPLITTER",
-          desc:
-            "Upgrade. Every 6/5 shots, fire a 3-round fan at 60% damage.",
-          type: "stat",
-          rarity: "minor",
-          cost: 80,
-          maxRank: 2,
-          prereq: ["arsenal_big_overclock"],
-          tags: ["weapon", "multishot"],
-        },
-        {
-          id: "arsenal_r3_scrap",
-          treeId: "arsenal",
-          row: 3,
-          col: 2,
-          iconN: 12,
-          name: "SCRAP HARVEST",
-          desc:
-            "Upgrade. +8% / +15% rewards from kills.",
-          type: "stat",
-          rarity: "minor",
-          cost: 80,
-          maxRank: 2,
-          prereq: ["arsenal_r2_crit"],
-          tags: ["economy"],
-        },
-
-        // ROW 4
-        {
-          id: "arsenal_r4_drone_laser",
-          treeId: "arsenal",
-          row: 4,
-          col: 0,
-          iconN: 13,
-          name: "DRONE: NEEDLE LASER",
-          desc:
-            "Passive. Drone swaps to a piercing beam (ticks every 0.25s, 18% damage, pierces).",
-          type: "passive",
-          rarity: "minor",
-          cost: 110,
-          maxRank: 1,
-          prereq: ["arsenal_r1_drone"],
-          tags: ["passive", "drone", "laser"],
-        },
-        {
-          id: "arsenal_r4_combo",
-          treeId: "arsenal",
-          row: 4,
-          col: 1,
-          iconN: 14,
-          name: "COMBO COUNTER",
-          desc:
-            "Upgrade. Hitting enemies grants COMBO stacks (+2/+3/+4% damage each) up to 10. Lose 1 stack every 0.6s without a hit.",
-          type: "stat",
-          rarity: "minor",
-          cost: 110,
-          maxRank: 3,
-          prereq: ["arsenal_r3_spread"],
-          tags: ["weapon", "damage"],
-        },
-        {
-          id: "arsenal_r4_knock",
-          treeId: "arsenal",
-          row: 4,
-          col: 2,
-          iconN: 15,
-          name: "KNOCKBACK SERVOS",
-          desc:
-            "Upgrade. +20% / +35% knockback. First hit on an Elite every 4s mini-stuns (0.25s).",
-          type: "stat",
-          rarity: "minor",
-          cost: 110,
-          maxRank: 2,
-          prereq: ["arsenal_r3_scrap"],
-          tags: ["control"],
-        },
-
-        // ROW 5 (BIG)
-        {
-          id: "arsenal_big_saturation",
-          treeId: "arsenal",
-          row: 5,
-          col: 1,
-          iconN: 16,
-          name: "SATURATION DOCTRINE",
-          desc:
-            "MAJOR. Your shots duplicate (+1 projectile) but base damage is -12%. Duplicates prefer new targets.",
-          type: "ability",
-          rarity: "major",
-          cost: 160,
-          maxRank: 1,
-          prereq: ["arsenal_r4_combo", "arsenal_r4_knock"],
-          tags: ["ability", "major"],
-        },
-
-        // ROW 6
-        {
-          id: "arsenal_r6_armor_pierce",
-          treeId: "arsenal",
-          row: 6,
-          col: 0,
-          iconN: 17,
-          name: "ARMOR PUNCTURE",
-          desc:
-            "Upgrade. Shots apply BREACH for 2s: target takes +6% / +12% damage (refreshes).",
-          type: "stat",
-          rarity: "minor",
-          cost: 180,
-          maxRank: 2,
-          prereq: ["arsenal_big_saturation"],
-          tags: ["debuff"],
-        },
-        {
-          id: "arsenal_r6_drone_swarm",
-          treeId: "arsenal",
-          row: 6,
-          col: 2,
-          iconN: 18,
-          name: "DRONE SWARM BUS",
-          desc:
-            "Passive. Your drone splits into 2 drones at 65% power each.",
-          type: "passive",
-          rarity: "minor",
-          cost: 180,
-          maxRank: 1,
-          prereq: ["arsenal_r4_drone_laser"],
-          tags: ["passive", "drone"],
-        },
-        {
-          id: "arsenal_r6_ricochet",
-          treeId: "arsenal",
-          row: 6,
-          col: 1,
-          iconN: 19,
-          name: "RICOCHET LOGIC",
-          desc:
-            "Upgrade. Your shots ricochet once to a nearby target.",
-          type: "stat",
-          rarity: "minor",
-          cost: 180,
-          maxRank: 1,
-          prereq: ["arsenal_big_saturation"],
-          tags: ["weapon", "chain"],
-        },
-
-        // ROW 7 (Capstones — 3 bottom choices)
-        {
-          id: "arsenal_cap_murderclock",
-          treeId: "arsenal",
-          row: 7,
-          col: 0,
-          iconN: 20,
-          name: "CAPSTONE: MURDERCLOCK",
-          desc:
-            "CAPSTONE. On a 10-kill streak, spawn 3 orbiting saws for 6s (each hits for 45% damage). Streak refreshes duration.",
-          type: "capstone",
-          rarity: "capstone",
-          cost: 260,
-          maxRank: 1,
-          prereq: ["arsenal_r6_armor_pierce"],
-          tags: ["capstone", "aoe"],
-        },
-        {
-          id: "arsenal_cap_blackmag",
-          treeId: "arsenal",
-          row: 7,
-          col: 1,
-          iconN: 21,
-          name: "CAPSTONE: BLACK MAG",
-          desc:
-            "CAPSTONE. Reloads create a gravity pulse that pulls enemies and empowers your next magazine (+20% damage, +1 pierce).",
-          type: "capstone",
-          rarity: "capstone",
-          cost: 260,
-          maxRank: 1,
-          prereq: ["arsenal_r6_ricochet"],
-          tags: ["capstone", "control"],
-        },
-        {
-          id: "arsenal_cap_hivebreaker",
-          treeId: "arsenal",
-          row: 7,
-          col: 2,
-          iconN: 22,
-          name: "CAPSTONE: HIVEBREAKER",
-          desc:
-            "CAPSTONE. Drone/Turret hits mark enemies. Marked enemies explode on death (80% damage in 80px) and spread the mark once.",
-          type: "capstone",
-          rarity: "capstone",
-          cost: 260,
-          maxRank: 1,
-          prereq: ["arsenal_r6_drone_swarm"],
-          tags: ["capstone", "drone"],
-        },
-      ],
-    },
-
-    {
-      id: "aegis",
-      title: "AEGIS PROTOCOL",
-      subtitle: "defense • shields • retaliation",
-      theme: "aegis",
-      nodes: [
-        // ROW 0 (Start choices) — includes THORNS early ability
-        {
-          id: "aegis_start_thorns",
-          treeId: "aegis",
-          row: 0,
-          col: 0,
-          iconN: 23,
-          name: "THORNS (SPACE)",
-          desc:
-            "Ability. SPACE: 2.5s invulnerable. Enemies touching you take 40 damage/s and are pushed back. Cooldown 18s.",
-          type: "ability",
-          rarity: "minor",
-          cost: 35,
-          maxRank: 1,
-          prereq: [],
-          tags: ["ability", "thorns", "invuln"],
-        },
-        {
-          id: "aegis_start_hp",
-          treeId: "aegis",
-          row: 0,
-          col: 1,
-          iconN: 24,
-          name: "BONEPLATE LINING",
-          desc:
-            "Upgrade. +15 max HP per rank.",
-          type: "stat",
-          rarity: "minor",
-          cost: 25,
-          maxRank: 3,
-          prereq: [],
-          tags: ["hp"],
-        },
-        {
-          id: "aegis_start_shield",
-          treeId: "aegis",
-          row: 0,
-          col: 2,
-          iconN: 25,
-          name: "SCRAP SHIELD",
-          desc:
-            "Passive. Gain a tiny shield that recharges out of combat. (Placeholder: shield value, recharge delay).",
-          type: "passive",
-          rarity: "minor",
-          cost: 25,
-          maxRank: 1,
-          prereq: [],
-          tags: ["passive", "shield"],
-        },
-
-        // ROW 1
-        {
-          id: "aegis_r1_thorns_cooldown",
-          treeId: "aegis",
-          row: 1,
-          col: 0,
-          iconN: 26,
-          name: "THORNS: QUICK REARM",
-          desc:
-            "Upgrade. -2s cooldown per rank and +0.3s duration per rank.",
-          type: "stat",
-          rarity: "minor",
-          cost: 55,
-          maxRank: 2,
-          prereq: ["aegis_start_thorns"],
-          tags: ["thorns", "cdr"],
-        },
-        {
-          id: "aegis_r1_regen",
-          treeId: "aegis",
-          row: 1,
-          col: 1,
-          iconN: 27,
-          name: "FIELD STIM",
-          desc:
-            "Upgrade. Regenerate 0.6 / 1.0 HP/s if you haven't been hit for 3s.",
-          type: "stat",
-          rarity: "minor",
-          cost: 45,
-          maxRank: 2,
-          prereq: ["aegis_start_hp"],
-          tags: ["hp", "regen"],
-        },
-        {
-          id: "aegis_r1_reflect",
-          treeId: "aegis",
-          row: 1,
-          col: 2,
-          iconN: 28,
-          name: "REFLEX PLATING",
-          desc:
-            "Upgrade. Taking damage deals 20/30/40 retaliation damage to nearby enemies (1s internal cooldown).",
-          type: "stat",
-          rarity: "minor",
-          cost: 45,
-          maxRank: 3,
-          prereq: ["aegis_start_shield"],
-          tags: ["retaliation"],
-        },
-
-        // ROW 2 (BIG)
-        {
-          id: "aegis_big_secondskin",
-          treeId: "aegis",
-          row: 2,
-          col: 1,
-          iconN: 29,
-          name: "SECOND SKIN MATRIX",
-          desc:
-            "MAJOR. Gain FORTIFY stacks: every 4s without taking damage, gain 1 stack (max 3). A stack reduces the next hit by 35% and emits a 25-damage shock.",
-          type: "ability",
-          rarity: "major",
-          cost: 95,
-          maxRank: 1,
-          prereq: ["aegis_r1_regen", "aegis_r1_reflect"],
-          tags: ["ability", "major", "defense"],
-        },
-        {
-          id: "aegis_r2_hp_double",
-          treeId: "aegis",
-          row: 2,
-          col: 0,
-          iconN: 30,
-          name: "DOUBLE VITALS",
-          desc:
-            "Upgrade. +100% Max HP. Move speed -6%.",
-          type: "stat",
-          rarity: "major",
-          cost: 120,
-          maxRank: 1,
-          prereq: ["aegis_start_hp"],
-          tags: ["hp", "major"],
-        },
-        {
-          id: "aegis_r2_shield_burst",
-          treeId: "aegis",
-          row: 2,
-          col: 2,
-          iconN: 31,
-          name: "SHIELD: BURST RECHARGE",
-          desc:
-            "Passive upgrade. When shield breaks, it starts recharging 2s sooner and recharges 25% faster.",
-          type: "passive",
-          rarity: "minor",
-          cost: 70,
-          maxRank: 1,
-          prereq: ["aegis_start_shield"],
-          tags: ["passive", "shield"],
-        },
-
-        // ROW 3
-        {
-          id: "aegis_r3_thorns_damage",
-          treeId: "aegis",
-          row: 3,
-          col: 0,
-          iconN: 32,
-          name: "THORNS: RAZOR CROWN",
-          desc:
-            "Upgrade. Thorns damage +25% per rank. Final 0.5s deals double.",
-          type: "stat",
-          rarity: "minor",
-          cost: 115,
-          maxRank: 2,
-          prereq: ["aegis_r1_thorns_cooldown"],
-          tags: ["thorns", "damage"],
-        },
-        {
-          id: "aegis_r3_armor",
-          treeId: "aegis",
-          row: 3,
-          col: 1,
-          iconN: 33,
-          name: "HARDENED WEAVE",
-          desc:
-            "Upgrade. Take -4% / -6% / -8% damage.",
-          type: "stat",
-          rarity: "minor",
-          cost: 100,
-          maxRank: 3,
-          prereq: ["aegis_big_secondskin"],
-          tags: ["dr"],
-        },
-        {
-          id: "aegis_r3_bleedout",
-          treeId: "aegis",
-          row: 3,
-          col: 2,
-          iconN: 34,
-          name: "BLEEDOUT FAILSAFE",
-          desc:
-            "Upgrade. Once per planet: lethal damage leaves you at 1 HP, grants 2s invuln and +30% move for 3s.",
-          type: "stat",
-          rarity: "minor",
-          cost: 120,
-          maxRank: 1,
-          prereq: ["aegis_r2_shield_burst"],
-          tags: ["survival"],
-        },
-
-        // ROW 4
-        {
-          id: "aegis_r4_spike_wave",
-          treeId: "aegis",
-          row: 4,
-          col: 0,
-          iconN: 35,
-          name: "THORNS: SPIKE WAVE",
-          desc:
-            "Ability upgrade. Activating Thorns sends a spike ring (90 damage) and strong knockback.",
-          type: "ability",
-          rarity: "minor",
-          cost: 150,
-          maxRank: 1,
-          prereq: ["aegis_r3_thorns_damage"],
-          tags: ["ability", "thorns"],
-        },
-        {
-          id: "aegis_r4_shield_siphon",
-          treeId: "aegis",
-          row: 4,
-          col: 1,
-          iconN: 36,
-          name: "SHIELD SIPHON",
-          desc:
-            "Upgrade. XP pickups restore 4 / 7 shield. Large pickups restore double.",
-          type: "stat",
-          rarity: "minor",
-          cost: 140,
-          maxRank: 2,
-          prereq: ["aegis_r3_armor"],
-          tags: ["shield", "xp"],
-        },
-        {
-          id: "aegis_r4_reflect_pop",
-          treeId: "aegis",
-          row: 4,
-          col: 2,
-          iconN: 37,
-          name: "REFLECT: POPPING SPINES",
-          desc:
-            "Upgrade. Retaliation can crit and chains to 1 extra target at 60% damage.",
-          type: "stat",
-          rarity: "minor",
-          cost: 140,
-          maxRank: 2,
-          prereq: ["aegis_r1_reflect"],
-          tags: ["retaliation", "chain"],
-        },
-
-        // ROW 5 (BIG)
-        {
-          id: "aegis_big_bastion",
-          treeId: "aegis",
-          row: 5,
-          col: 1,
-          iconN: 38,
-          name: "BASTION DECISION",
-          desc:
-            "MAJOR. While shield is up: +15% damage and +25% retaliation radius. While shield is down: +10% move speed and +8% damage reduction.",
-          type: "ability",
-          rarity: "major",
-          cost: 220,
-          maxRank: 1,
-          prereq: ["aegis_r4_shield_siphon", "aegis_r4_reflect_pop"],
-          tags: ["ability", "major"],
-        },
-
-        // ROW 6
-        {
-          id: "aegis_r6_thorns_extend",
-          treeId: "aegis",
-          row: 6,
-          col: 0,
-          iconN: 39,
-          name: "THORNS: EXTEND + LEECH",
-          desc:
-            "Upgrade. While Thorns is active, heal 1% max HP per enemy touched (max 6% per use).",
-          type: "stat",
-          rarity: "minor",
-          cost: 240,
-          maxRank: 1,
-          prereq: ["aegis_r4_spike_wave"],
-          tags: ["thorns", "heal"],
-        },
-        {
-          id: "aegis_r6_barrier",
-          treeId: "aegis",
-          row: 6,
-          col: 1,
-          iconN: 40,
-          name: "BARRIER STACKS",
-          desc:
-            "Passive. Every 10s gain a Barrier charge (max 2). A charge negates one hit and triggers a 0.3s time-slow.",
-          type: "passive",
-          rarity: "minor",
-          cost: 230,
-          maxRank: 1,
-          prereq: ["aegis_big_bastion"],
-          tags: ["passive", "barrier"],
-        },
-        {
-          id: "aegis_r6_ironheart",
-          treeId: "aegis",
-          row: 6,
-          col: 2,
-          iconN: 41,
-          name: "IRONHEART ROUTING",
-          desc:
-            "Upgrade. Convert 20% of your Max HP into Shield strength (or vice versa) based on whichever is lower.",
-          type: "stat",
-          rarity: "minor",
-          cost: 230,
-          maxRank: 1,
-          prereq: ["aegis_big_bastion"],
-          tags: ["hp", "dr"],
-        },
-
-        // ROW 7 (Capstones — 3 choices)
-        {
-          id: "aegis_cap_apex_thorns",
-          treeId: "aegis",
-          row: 7,
-          col: 0,
-          iconN: 42,
-          name: "CAPSTONE: APEX THORNS",
-          desc:
-            "CAPSTONE. Thorns cooldown -35% and duration +1s. Enemies killed by Thorns burst into 6 spikes (each 35% damage).",
-          type: "capstone",
-          rarity: "capstone",
-          cost: 320,
-          maxRank: 1,
-          prereq: ["aegis_r6_thorns_extend"],
-          tags: ["capstone", "thorns"],
-        },
-        {
-          id: "aegis_cap_unkillable",
-          treeId: "aegis",
-          row: 7,
-          col: 1,
-          iconN: 43,
-          name: "CAPSTONE: UNKILLABLE PROTOCOL",
-          desc:
-            "CAPSTONE. First lethal hit each planet: refill shield, slow time 50% for 2s, and clear debuffs.",
-          type: "capstone",
-          rarity: "capstone",
-          cost: 320,
-          maxRank: 1,
-          prereq: ["aegis_r6_barrier"],
-          tags: ["capstone", "survival"],
-        },
-        {
-          id: "aegis_cap_revenant",
-          treeId: "aegis",
-          row: 7,
-          col: 2,
-          iconN: 44,
-          name: "CAPSTONE: REVENANT PLATING",
-          desc:
-            "CAPSTONE. Store 35% of damage taken (cap 200). Using an ability releases it as a nova; cap scales with Max HP.",
-          type: "capstone",
-          rarity: "capstone",
-          cost: 320,
-          maxRank: 1,
-          prereq: ["aegis_r6_ironheart"],
-          tags: ["capstone", "nova"],
-        },
-      ],
-    },
-
-    {
-      id: "voidwalk",
-      title: "VOIDWALK SYSTEMS",
-      subtitle: "mobility • XP vacuum • time tricks",
-      theme: "voidwalk",
-      nodes: [
-        // ROW 0
-        {
-          id: "void_start_xpvac",
-          treeId: "voidwalk",
-          row: 0,
-          col: 0,
-          iconN: 45,
-          name: "XP VACUUM COIL",
-          desc:
-            "Upgrade. +70 XP pull range per rank (max 5).",
-          type: "stat",
-          rarity: "minor",
-          cost: 20,
-          maxRank: 5,
-          prereq: [],
-          tags: ["xp", "vacuum"],
-        },
-        {
-          id: "void_start_dash",
-          treeId: "voidwalk",
-          row: 0,
-          col: 1,
-          iconN: 46,
-          name: "PHASE STEP",
-          desc:
-            "Ability. Dash 150px, ignores collision. Cooldown 9s.",
-          type: "ability",
-          rarity: "minor",
-          cost: 35,
-          maxRank: 1,
-          prereq: [],
-          tags: ["ability", "dash"],
-        },
-        {
-          id: "void_start_speed",
-          treeId: "voidwalk",
-          row: 0,
-          col: 2,
-          iconN: 47,
-          name: "LIGHTWEIGHT RIG",
-          desc:
-            "Upgrade. +4% move speed per rank.",
-          type: "stat",
-          rarity: "minor",
-          cost: 25,
-          maxRank: 3,
-          prereq: [],
-          tags: ["move"],
-        },
-
-        // ROW 1
-        {
-          id: "void_r1_xpheal",
-          treeId: "voidwalk",
-          row: 1,
-          col: 0,
-          iconN: 48,
-          name: "ORB MEDICINE",
-          desc:
-            "Upgrade. XP pickups heal 0.6% / 1.0% max HP.",
-          type: "stat",
-          rarity: "minor",
-          cost: 45,
-          maxRank: 2,
-          prereq: ["void_start_xpvac"],
-          tags: ["xp", "heal"],
-        },
-        {
-          id: "void_r1_dash_i",
-          treeId: "voidwalk",
-          row: 1,
-          col: 1,
-          iconN: 49,
-          name: "PHASE STEP: I-FRAMES",
-          desc:
-            "Upgrade. Dash grants 0.20s / 0.35s i-frames.",
-          type: "stat",
-          rarity: "minor",
-          cost: 55,
-          maxRank: 2,
-          prereq: ["void_start_dash"],
-          tags: ["dash", "iframes"],
-        },
-        {
-          id: "void_r1_time",
-          treeId: "voidwalk",
-          row: 1,
-          col: 2,
-          iconN: 50,
-          name: "CHRONO SENSOR",
-          desc:
-            "Upgrade. Enemies within 90px are slowed 10% / 16% while you're moving.",
-          type: "stat",
-          rarity: "minor",
-          cost: 45,
-          maxRank: 2,
-          prereq: ["void_start_speed"],
-          tags: ["slow", "control"],
-        },
-
-        // ROW 2 (BIG)
-        {
-          id: "void_big_gravity",
-          treeId: "voidwalk",
-          row: 2,
-          col: 1,
-          iconN: 51,
-          name: "GRAVITY ENGINE",
-          desc:
-            "MAJOR. XP orbs and loot are pulled 35% faster. Nearby enemies are gently tugged toward you (no effect on bosses).",
-          type: "ability",
-          rarity: "major",
-          cost: 95,
-          maxRank: 1,
-          prereq: ["void_r1_dash_i", "void_r1_time"],
-          tags: ["ability", "major", "mobility"],
-        },
-        {
-          id: "void_r2_xpbonus",
-          treeId: "voidwalk",
-          row: 2,
-          col: 0,
-          iconN: 52,
-          name: "XP DIVIDEND",
-          desc:
-            "Upgrade. +6% XP gained per rank.",
-          type: "stat",
-          rarity: "minor",
-          cost: 60,
-          maxRank: 3,
-          prereq: ["void_r1_xpheal"],
-          tags: ["xp"],
-        },
-        {
-          id: "void_r2_loot",
-          treeId: "voidwalk",
-          row: 2,
-          col: 2,
-          iconN: 53,
-          name: "SALVAGE MAGNET",
-          desc:
-            "Upgrade. +12% / +20% pickup radius; pickups drift to you.",
-          type: "stat",
-          rarity: "minor",
-          cost: 60,
-          maxRank: 2,
-          prereq: ["void_start_xpvac"],
-          tags: ["economy"],
-        },
-
-        // ROW 3
-        {
-          id: "void_r3_dash_reset",
-          treeId: "voidwalk",
-          row: 3,
-          col: 1,
-          iconN: 54,
-          name: "PHASE STEP: RESET ON KILL",
-          desc:
-            "Upgrade. Kills have a 10% / 18% chance to reset dash cooldown.",
-          type: "stat",
-          rarity: "minor",
-          cost: 115,
-          maxRank: 2,
-          prereq: ["void_big_gravity"],
-          tags: ["dash", "cdr"],
-        },
-        {
-          id: "void_r3_orb_sprint",
-          treeId: "voidwalk",
-          row: 3,
-          col: 0,
-          iconN: 55,
-          name: "ORBITAL SPRINT",
-          desc:
-            "Upgrade. Picking up XP grants +10% / +16% move speed for 2.5s.",
-          type: "stat",
-          rarity: "minor",
-          cost: 105,
-          maxRank: 2,
-          prereq: ["void_r2_xpbonus"],
-          tags: ["xp", "move"],
-        },
-        {
-          id: "void_r3_blinkmine",
-          treeId: "voidwalk",
-          row: 3,
-          col: 2,
-          iconN: 56,
-          name: "BLINK MINE",
-          desc:
-            "Ability. Drop a mine (14s cd) that blinks enemies 120px away and slows them 30% for 2s.",
-          type: "ability",
-          rarity: "minor",
-          cost: 120,
-          maxRank: 1,
-          prereq: ["void_r2_loot"],
-          tags: ["ability", "control"],
-        },
-
-        // ROW 4
-        {
-          id: "void_r4_vac_rank",
-          treeId: "voidwalk",
-          row: 4,
-          col: 0,
-          iconN: 57,
-          name: "XP VACUUM: OVERDRIVE",
-          desc:
-            "Upgrade. At 5 ranks of Vacuum Coil, pull radius doubles and orb travel speed increases.",
-          type: "stat",
-          rarity: "minor",
-          cost: 140,
-          maxRank: 1,
-          prereq: ["void_start_xpvac"],
-          tags: ["xp", "vacuum"],
-        },
-        {
-          id: "void_r4_timeslip",
-          treeId: "voidwalk",
-          row: 4,
-          col: 1,
-          iconN: 58,
-          name: "TIME SLIP",
-          desc:
-            "Ability. Slow time in a 220px bubble for 2.5s (22s cd). Your attack speed is unaffected.",
-          type: "ability",
-          rarity: "minor",
-          cost: 150,
-          maxRank: 1,
-          prereq: ["void_r3_dash_reset"],
-          tags: ["ability", "time"],
-        },
-        {
-          id: "void_r4_afterimage",
-          treeId: "voidwalk",
-          row: 4,
-          col: 2,
-          iconN: 59,
-          name: "AFTERIMAGE ECHO",
-          desc:
-            "Passive. Dashing leaves an echo for 2s that taunts and absorbs 1 hit.",
-          type: "passive",
-          rarity: "minor",
-          cost: 140,
-          maxRank: 1,
-          prereq: ["void_r3_blinkmine"],
-          tags: ["passive", "taunt"],
-        },
-
-        // ROW 5 (BIG)
-        {
-          id: "void_big_paradox",
-          treeId: "voidwalk",
-          row: 5,
-          col: 1,
-          iconN: 60,
-          name: "PARADOX ROUTER",
-          desc:
-            "MAJOR. After using an ability, gain PARADOX for 6s: +20% move speed and your next dash shocks nearby enemies (60 damage, 3s cd).",
-          type: "ability",
-          rarity: "major",
-          cost: 220,
-          maxRank: 1,
-          prereq: ["void_r4_timeslip", "void_r4_afterimage"],
-          tags: ["ability", "major"],
-        },
-
-        // ROW 6
-        {
-          id: "void_r6_telefrag",
-          treeId: "voidwalk",
-          row: 6,
-          col: 0,
-          iconN: 61,
-          name: "TELEFRAG WINDOW",
-          desc:
-            "Upgrade. Dashing through enemies deals 85 damage (6s internal cooldown).",
-          type: "stat",
-          rarity: "minor",
-          cost: 240,
-          maxRank: 1,
-          prereq: ["void_big_paradox"],
-          tags: ["dash", "damage"],
-        },
-        {
-          id: "void_r6_orb_frenzy",
-          treeId: "voidwalk",
-          row: 6,
-          col: 1,
-          iconN: 62,
-          name: "ORB FRENZY",
-          desc:
-            "Upgrade. Picking up a large XP bundle grants +20% fire rate for 4s.",
-          type: "stat",
-          rarity: "minor",
-          cost: 240,
-          maxRank: 1,
-          prereq: ["void_big_paradox"],
-          tags: ["xp", "weapon"],
-        },
-        {
-          id: "void_r6_voidcloak",
-          treeId: "voidwalk",
-          row: 6,
-          col: 2,
-          iconN: 63,
-          name: "VOID CLOAK",
-          desc:
-            "Passive. Every 12s, when you would be hit, become untargetable for 0.4s (shimmer).",
-          type: "passive",
-          rarity: "minor",
-          cost: 250,
-          maxRank: 1,
-          prereq: ["void_big_paradox"],
-          tags: ["passive", "evasion"],
-        },
-
-        // ROW 7 capstones (3 choices)
-        {
-          id: "void_cap_singularity",
-          treeId: "voidwalk",
-          row: 7,
-          col: 0,
-          iconN: 64,
-          name: "CAPSTONE: SINGULARITY HEART",
-          desc:
-            "CAPSTONE. Every 14s spawn a mini-singularity for 3s: pulls enemies; you deal +18% damage inside.",
-          type: "capstone",
-          rarity: "capstone",
-          cost: 320,
-          maxRank: 1,
-          prereq: ["void_r6_telefrag"],
-          tags: ["capstone", "control"],
-        },
-        {
-          id: "void_cap_speedgod",
-          treeId: "voidwalk",
-          row: 7,
-          col: 1,
-          iconN: 65,
-          name: "CAPSTONE: SPEED GOD",
-          desc:
-            "CAPSTONE. Move speed above 100% converts to damage (+0.6% dmg per 1% speed above base) and leaves a damaging wake (25% dmg).",
-          type: "capstone",
-          rarity: "capstone",
-          cost: 320,
-          maxRank: 1,
-          prereq: ["void_r6_orb_frenzy"],
-          tags: ["capstone", "move", "damage"],
-        },
-        {
-          id: "void_cap_timezero",
-          treeId: "voidwalk",
-          row: 7,
-          col: 2,
-          iconN: 66,
-          name: "CAPSTONE: TIME ZERO",
-          desc:
-            "CAPSTONE. Once per planet: freeze time for 2s. During freeze, dash has no cooldown and reload is instant.",
-          type: "capstone",
-          rarity: "capstone",
-          cost: 320,
-          maxRank: 1,
-          prereq: ["void_r6_voidcloak"],
-          tags: ["capstone", "time"],
-        },
-      ],
-    },
-  ];
-
-  return trees;
-}
-
-function buildNodeIndex(trees) {
-  const byId = new Map();
-  trees.forEach((t) => t.nodes.forEach((n) => byId.set(n.id, n)));
-  return byId;
-}
-
-function canBuyNode(node, purchased, credits) {
-  const rank = purchased[node.id]?.rank || 0;
-  if (rank >= (node.maxRank || 1)) return { ok: false, reason: "MAXED" };
-
-  // prereqs must be purchased (rank >=1)
-  for (const pre of node.prereq || []) {
-    if (!purchased[pre] || (purchased[pre].rank || 0) < 1) {
-      return { ok: false, reason: "LOCKED" };
-    }
-  }
-
-  const cost = getNodeCost(node, rank);
-  if (credits < cost) return { ok: false, reason: "NO_CREDITS" };
-
-  return { ok: true, reason: "OK", cost };
-}
-
-function getNodeCost(node, currentRank) {
-  // simple scaling: each rank after the first costs +35%
-  const base = node.cost || 50;
-  const r = currentRank || 0;
-  const scaled = base * Math.pow(1.35, r);
-  return Math.round(scaled);
-}
-
-function isAbility(node) {
-  return node.type === "ability" || node.type === "capstone";
-}
-function isPassive(node) {
-  return node.type === "passive";
-}
-
-function cx(...parts) {
-  return parts.filter(Boolean).join(" ");
-}
-
-function usePersistentState(storageKey, resetToken, initial) {
-  const [state, setState] = useState(() => {
-    if (!storageKey) return initial;
-    try {
-      const raw = localStorage.getItem(storageKey);
-      if (!raw) return initial;
-      const parsed = JSON.parse(raw);
-      return parsed ?? initial;
-    } catch {
-      return initial;
-    }
-  });
-
-  useEffect(() => {
-    if (!storageKey) return;
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(state));
-    } catch {
-      // ignore
-    }
-  }, [storageKey, state]);
-
-  // reset when resetToken changes
-  const prevReset = useRef(resetToken);
-  useEffect(() => {
-    if (prevReset.current !== resetToken) {
-      prevReset.current = resetToken;
-      setState(initial);
-      if (storageKey) {
-        try {
-          localStorage.removeItem(storageKey);
-        } catch {
-          // ignore
-        }
-      }
-    }
-  }, [resetToken]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  return [state, setState];
+function sumRanks(purchased) {
+  return Object.values(purchased || {}).reduce((a, b) => a + (Number(b) || 0), 0);
 }
 
 export default function GalaxyShop({
+  title = "MILITARY // DOCTRINE",
   credits = 0,
   onSpend = () => {},
-  onBuildChange = () => {},
-  storageKey = null,
   resetToken = 0,
-  title = "PLANETARY SHOP",
+  storageKey = null, // ignored by design for roguelite wipe-on-refresh
+  onBuildChange = () => {},
 }) {
-  const trees = useMemo(() => defaultTrees(), []);
-  const nodeIndex = useMemo(() => buildNodeIndex(trees), [trees]);
+  const [purchased, setPurchased] = useState({});
 
-  const initialBuild = useMemo(
-    () => ({
-      purchased: {}, // { [nodeId]: { rank:number } }
-      abilities: [], // nodeIds
-      passives: [], // nodeIds
-    }),
-    []
-  );
-
-  const [build, setBuild] = usePersistentState(storageKey, resetToken, initialBuild);
-  const [toast, setToast] = useState(null);
-
-  // Hover tooltip (WoW-style)
-  const [hoverNodeId, setHoverNodeId] = useState(null);
-  const [hoverXY, setHoverXY] = useState({ x: 0, y: 0 });
-
-  const [replacePrompt, setReplacePrompt] = useState(null);
-  // { kind:'ability'|'passive', incomingNodeId, options:[equippedNodeId...] }
+  // roguelite: reset between runs / characters
+  useEffect(() => {
+    setPurchased({});
+  }, [resetToken]);
 
   useEffect(() => {
-    onBuildChange(build);
-  }, [build]); // eslint-disable-line react-hooks/exhaustive-deps
+    onBuildChange({ purchased });
+  }, [purchased, onBuildChange]);
 
-  function showToast(msg) {
-    setToast(msg);
-    window.clearTimeout(showToast._t);
-    showToast._t = window.setTimeout(() => setToast(null), 2000);
-  }
+  const grid = useMemo(() => {
+    const maxRow = Math.max(...NODES.map((n) => n.row));
+    const maxCol = Math.max(...NODES.map((n) => n.col));
+    return { rows: maxRow + 1, cols: maxCol + 1 };
+  }, []);
 
-  function equip(kind, nodeId) {
-    setBuild((prev) => {
-      const next = { ...prev };
-      const listName = kind === "ability" ? "abilities" : "passives";
-      const list = [...(next[listName] || [])];
+  const pointsSpent = useMemo(() => sumRanks(purchased), [purchased]);
 
-      if (list.includes(nodeId)) return prev; // already equipped
+  const nodeById = useMemo(() => {
+    const m = new Map();
+    for (const n of NODES) m.set(n.id, n);
+    return m;
+  }, []);
 
-      const limit = kind === "ability" ? BUILD_LIMITS.abilities : BUILD_LIMITS.passives;
-
-      if (list.length < limit) {
-        list.push(nodeId);
-        next[listName] = list;
-        return next;
-      }
-
-      // prompt replace
-      setReplacePrompt({
-        kind,
-        incomingNodeId: nodeId,
-        options: list,
-      });
-      return prev;
-    });
-  }
-
-  function replaceEquipped(targetId) {
-    if (!replacePrompt) return;
-
-    const { kind, incomingNodeId, options } = replacePrompt;
-    const listName = kind === "ability" ? "abilities" : "passives";
-
-    setBuild((prev) => {
-      const next = { ...prev };
-      const list = [...(next[listName] || [])];
-      const idx = list.indexOf(targetId);
-      if (idx >= 0) list[idx] = incomingNodeId;
-      next[listName] = list;
-      return next;
-    });
-
-    setReplacePrompt(null);
-    showToast(`Equipped ${nodeIndex.get(incomingNodeId)?.name || "new item"}`);
-  }
-
-  function unequip(kind, nodeId) {
-    const listName = kind === "ability" ? "abilities" : "passives";
-    setBuild((prev) => {
-      const next = { ...prev };
-      next[listName] = (next[listName] || []).filter((id) => id !== nodeId);
-      return next;
-    });
-  }
-
-  function buy(node) {
-    setBuild((prev) => {
-      const purchased = prev.purchased || {};
-      const rank = purchased[node.id]?.rank || 0;
-
-      const check = canBuyNode(node, purchased, credits);
-      if (!check.ok) {
-        if (check.reason === "LOCKED") showToast("Locked: buy prerequisites first.");
-        else if (check.reason === "NO_CREDITS") showToast("Not enough rewards.");
-        else if (check.reason === "MAXED") showToast("Already maxed.");
-        return prev;
-      }
-
-      const cost = check.cost;
-      onSpend(cost);
-
-      const next = { ...prev, purchased: { ...purchased } };
-      next.purchased[node.id] = { rank: rank + 1 };
-
-      // auto-equip on first purchase for abilities/passives
-      if (rank === 0) {
-        if (isAbility(node)) equip("ability", node.id);
-        if (isPassive(node)) equip("passive", node.id);
-      }
-
-      showToast(`Purchased: ${node.name} (-${cost})`);
-      return next;
-    });
-  }
-
-  function isPurchased(nodeId) {
-    return (build.purchased?.[nodeId]?.rank || 0) > 0;
-  }
-
-  function currentRank(nodeId) {
-    return build.purchased?.[nodeId]?.rank || 0;
-  }
-
-  function nodeIsUnlockable(node) {
-    const purchased = build.purchased || {};
-    for (const pre of node.prereq || []) {
-      if (!purchased[pre] || (purchased[pre].rank || 0) < 1) return false;
+  const rowPickedId = useMemo(() => {
+    const byRow = new Map();
+    for (const n of NODES) {
+      const r = Number(purchased[n.id] || 0);
+      if (r > 0) byRow.set(n.row, n.id);
     }
-    return true;
+    return byRow; // row -> chosen id
+  }, [purchased]);
+
+  function prereqOk(node) {
+    const prereq = node.prereq || [];
+    if (!prereq.length) return true;
+    return prereq.every((pid) => (purchased?.[pid] || 0) > 0);
   }
 
-  function nodeStatus(node) {
-    const rank = currentRank(node.id);
-    const unlockable = nodeIsUnlockable(node);
-    const cost = getNodeCost(node, rank);
-    const affordable = credits >= cost;
+  function tierOk(node) {
+    const req = tierRequirementPoints(node.row);
+    return pointsSpent >= req;
+  }
 
-    if (rank >= (node.maxRank || 1)) return "maxed";
-    if (!unlockable) return "locked";
-    if (!affordable) return "unaffordable";
+  function rowExclusiveOk(node) {
+    const chosen = rowPickedId.get(node.row);
+    return !chosen || chosen === node.id;
+  }
+
+  function canBuy(node) {
+    const r = Number(purchased[node.id] || 0);
+    if (r >= node.maxRank) return false;
+    if (!prereqOk(node)) return false;
+    if (!tierOk(node)) return false;
+    if (!rowExclusiveOk(node)) return false;
+    return credits >= 1;
+  }
+
+  function nodeState(node) {
+    const r = Number(purchased[node.id] || 0);
+    if (r >= node.maxRank) return "maxed";
+    if (!prereqOk(node) || !tierOk(node) || !rowExclusiveOk(node)) return "locked";
+    if (credits < 1) return "unaffordable";
     return "available";
   }
 
-  // Build SVG lines per tree
-  function computeLines(tree) {
-    const nodes = tree.nodes;
-    const byId = new Map(nodes.map((n) => [n.id, n]));
-    const lines = [];
-    for (const child of nodes) {
-      for (const parentId of child.prereq || []) {
-        const parent = byId.get(parentId);
-        if (!parent) continue;
-        lines.push({ from: parent, to: child });
-      }
+  function lockReason(node) {
+    if (!prereqOk(node)) {
+      const need = (node.prereq || []).filter((pid) => (purchased?.[pid] || 0) <= 0);
+      return `Requires: ${need.map((id) => nodeById.get(id)?.name || id).join(", ")}`;
     }
-    return lines;
+    if (!tierOk(node)) {
+      const req = tierRequirementPoints(node.row);
+      return `Requires ${req} points spent in tree`;
+    }
+    if (!rowExclusiveOk(node)) {
+      const chosenId = rowPickedId.get(node.row);
+      return `Row locked by: ${nodeById.get(chosenId)?.name || chosenId}`;
+    }
+    return "";
   }
 
-  function renderTree(tree, treeIdx) {
-    const { cols, rows, cellW, cellH } = TREE_LAYOUT;
-    const w = cols * cellW;
-    const h = rows * cellH;
-
-    const lines = computeLines(tree);
-
-    // node -> pixel center
-    const centerOf = (n) => {
-      const x = n.col * cellW + cellW / 2;
-      const y = n.row * cellH + cellH / 2;
-      return { x, y };
-    };
-
-    return (
-      <div key={tree.id} className={cx("xshop-tree", `theme-${tree.theme}`)}>
-        <div className="xshop-treeHeader">
-          <div className="xshop-treeTitle">{tree.title}</div>
-          <div className="xshop-treeSub">{tree.subtitle}</div>
-        </div>
-
-        <div className="xshop-treeBody" style={{ width: w, height: h }}>
-          {/* lines */}
-          <svg className="xshop-lines" width={w} height={h}>
-            {lines.map((ln, i) => {
-              const a = centerOf(ln.from);
-              const b = centerOf(ln.to);
-
-              const fromBought = isPurchased(ln.from.id);
-              const toUnlockable = nodeIsUnlockable(ln.to);
-              const toBought = isPurchased(ln.to.id);
-
-              const active = fromBought && toUnlockable;
-              const completed = fromBought && toBought;
-
-              return (
-                <line
-                  key={i}
-                  x1={a.x}
-                  y1={a.y}
-                  x2={b.x}
-                  y2={b.y}
-                  className={cx(
-                    "xshop-line",
-                    active && "is-active",
-                    completed && "is-complete"
-                  )}
-                />
-              );
-            })}
-          </svg>
-
-          {/* grid */}
-          <div
-            className="xshop-grid"
-            style={{
-              gridTemplateColumns: `repeat(${cols}, ${cellW}px)`,
-              gridTemplateRows: `repeat(${rows}, ${cellH}px)`,
-            }}
-          >
-            {tree.nodes.map((node) => {
-              const status = nodeStatus(node);
-              const rank = currentRank(node.id);
-              const maxRank = node.maxRank || 1;
-              const cost = getNodeCost(node, rank);
-
-              const equippedAbility = build.abilities?.includes(node.id);
-              const equippedPassive = build.passives?.includes(node.id);
-
-              const equipped = equippedAbility || equippedPassive;
-
-              return (
-                <div
-                  key={node.id}
-                  className={cx(
-                    "xshop-cell",
-                    status,
-                    node.rarity === "major" && "is-major",
-                    node.type === "capstone" && "is-capstone",
-                    equipped && "is-equipped"
-                  )}
-                  style={{ gridColumn: node.col + 1, gridRow: node.row + 1 }}
-                >
-                  <button
-                    className="xshop-node"
-                    onClick={() => buy(node)}
-                    onMouseEnter={(e) => {
-                      setHoverNodeId(node.id);
-                      setHoverXY({ x: e.clientX, y: e.clientY });
-                    }}
-                    onMouseMove={(e) => {
-                      if (hoverNodeId === node.id) setHoverXY({ x: e.clientX, y: e.clientY });
-                    }}
-                    onMouseLeave={() => {
-                      if (hoverNodeId === node.id) setHoverNodeId(null);
-                    }}
-                    onFocus={(e) => {
-                      setHoverNodeId(node.id);
-                      const r = e.currentTarget.getBoundingClientRect();
-                      setHoverXY({ x: r.right, y: r.top + r.height / 2 });
-                    }}
-                    onBlur={() => {
-                      if (hoverNodeId === node.id) setHoverNodeId(null);
-                    }}
-                  >
-                    <img className="xshop-icon" src={makeIconUrl(node.iconN)} alt={node.name} />
-
-                    {status !== "maxed" && (
-                      <div className="xshop-costBadge">{cost}</div>
-                    )}
-
-                    {maxRank > 1 && (
-                      <div className="xshop-rankBadge">
-                        {rank}/{maxRank}
-                      </div>
-                    )}
-
-                    {equipped && <div className="xshop-equipPip" />}
-                  </button>
-
-                  {(equippedAbility || equippedPassive) && (
-                    <button
-                      className="xshop-unequip"
-                      onClick={() => unequip(equippedAbility ? "ability" : "passive", node.id)}
-                      title="Unequip"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    );
+  function buy(node) {
+    if (!canBuy(node)) return;
+    onSpend(1);
+    setPurchased((prev) => {
+      const next = { ...(prev || {}) };
+      next[node.id] = Number(next[node.id] || 0) + 1;
+      return next;
+    });
   }
 
-  const equippedAbilityNodes = (build.abilities || []).map((id) => nodeIndex.get(id)).filter(Boolean);
-  const equippedPassiveNodes = (build.passives || []).map((id) => nodeIndex.get(id)).filter(Boolean);
+  // --- layout ---
+  const cellW = 98;
+  const cellH = 92;
 
-  const hoverNode = hoverNodeId ? nodeIndex.get(hoverNodeId) : null;
-  const hoverRank = hoverNode ? currentRank(hoverNode.id) : 0;
-  const hoverMaxRank = hoverNode ? hoverNode.maxRank || 1 : 1;
-  const hoverCost = hoverNode ? getNodeCost(hoverNode, hoverRank) : 0;
-  const hoverStatus = hoverNode ? nodeStatus(hoverNode) : "locked";
-  const hoverPrereqNames = useMemo(() => {
-    if (!hoverNode) return [];
-    return (hoverNode.prereq || []).map((id) => nodeIndex.get(id)?.name).filter(Boolean);
-  }, [hoverNodeId, nodeIndex]);
+  const padX = 16;
+  const padY = 16;
 
-  const tooltipPos = useMemo(() => {
-    if (!hoverNode) return null;
-    const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
-    const vh = typeof window !== "undefined" ? window.innerHeight : 800;
-    const w = 300;
-    const h = 220;
-    const x = clamp(hoverXY.x + 16, 10, vw - w - 10);
-    const y = clamp(hoverXY.y + 16, 10, vh - h - 10);
-    return { left: x, top: y, width: w, height: h };
-  }, [hoverNodeId, hoverXY.x, hoverXY.y]);
+  const width = padX * 2 + grid.cols * cellW;
+  const height = padY * 2 + grid.rows * cellH;
+
+  const nodePos = (node) => ({
+    x: padX + node.col * cellW + cellW / 2,
+    y: padY + node.row * cellH + cellH / 2,
+  });
 
   return (
-    <div className="xshop-root">
+    <div className="xshop">
       <style>{`
-        .xshop-root{
+        .xshop{
+          --bg0:#070a12;
+          --bg1:#0b1021;
+          --line:#223056;
+          --line2:#1a2342;
+          --txt:#d8e6ff;
+          --muted:#91a5d6;
+          --good:#4CFF9A;
+          --bad:#FF5277;
+          --locked:#6c7899;
+          --major:#b691ff;
+          --cap:#ffd16a;
+          font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+          color:var(--txt);
           width:100%;
-          user-select:none;
-          color: rgba(255,255,255,0.92);
-          font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
         }
-        .xshop-wrap{
-          display:grid;
-          grid-template-columns: repeat(3, minmax(260px, 1fr));
-          gap:12px;
-          align-items:start;
-        }
-        .xshop-topbar{
+        .xshop-top{
           display:flex;
           align-items:center;
           justify-content:space-between;
-          gap:12px;
-          margin-bottom:10px;
+          gap:16px;
+          padding:14px 16px;
+          border:1px solid rgba(120,170,255,0.18);
+          background:
+            radial-gradient(1200px 600px at 20% 0%, rgba(86,120,255,0.12), transparent 60%),
+            linear-gradient(180deg, rgba(14,18,36,0.96), rgba(6,8,18,0.96));
+          border-radius:14px;
+          box-shadow: 0 12px 28px rgba(0,0,0,0.45);
+          margin-bottom:14px;
         }
         .xshop-title{
-          font-weight:800;
-          letter-spacing:0.08em;
-          font-size:14px;
-          opacity:0.95;
+          font-weight:900;
+          letter-spacing:0.18em;
           text-transform:uppercase;
+          font-size:14px;
+          opacity:0.92;
         }
-        .xshop-credits{
-          display:flex;
-          gap:10px;
-          align-items:center;
-          background: rgba(0,0,0,0.35);
-          border:1px solid rgba(255,255,255,0.10);
-          border-radius:12px;
-          padding:8px 12px;
-          box-shadow: 0 10px 25px rgba(0,0,0,0.25);
-        }
-        .xshop-credits b{ font-size:15px; }
-        .xshop-build{
-          display:flex;
-          flex-wrap:wrap;
-          gap:10px;
-          align-items:flex-start;
-          justify-content:flex-end;
-        }
-        .xshop-buildBox{
-          min-width: 240px;
-          background: rgba(0,0,0,0.35);
-          border:1px solid rgba(255,255,255,0.10);
-          border-radius:16px;
-          padding:10px 12px;
-          box-shadow: 0 10px 25px rgba(0,0,0,0.25);
-        }
-        .xshop-buildHdr{
-          display:flex;
-          align-items:center;
-          justify-content:space-between;
-          margin-bottom:8px;
+        .xshop-sub{
           font-size:12px;
+          color:var(--muted);
           opacity:0.9;
+          margin-top:2px;
         }
-        .xshop-chipRow{
+        .xshop-pill{
           display:flex;
-          flex-wrap:wrap;
-          gap:8px;
-        }
-        .xshop-chip{
-          border:1px solid rgba(255,255,255,0.14);
-          background: rgba(255,255,255,0.05);
-          padding:6px 10px;
-          border-radius:999px;
-          font-size:12px;
-          display:flex;
-          gap:8px;
           align-items:center;
+          gap:10px;
+          padding:10px 14px;
+          border-radius:999px;
+          border:1px solid rgba(120,170,255,0.22);
+          background:
+            radial-gradient(120px 60px at 30% 30%, rgba(0,242,255,0.15), transparent 70%),
+            linear-gradient(180deg, rgba(18,26,52,0.92), rgba(8,10,20,0.92));
+          box-shadow:
+            0 0 0 1px rgba(0,242,255,0.10) inset,
+            0 14px 26px rgba(0,0,0,0.38);
         }
-        .xshop-chip small{
-          opacity:0.75;
+        .xshop-pillIcon{
+          filter: drop-shadow(0 0 10px rgba(0,242,255,0.35));
+          font-size:16px;
+        }
+        .xshop-pillNum{
+          font-weight:900;
+          font-size:16px;
+          color:#00f2ff;
+          text-shadow: 0 0 18px rgba(0,242,255,0.45), 0 0 26px rgba(0,242,255,0.22);
+          letter-spacing:0.04em;
+          min-width:28px;
+          text-align:right;
         }
 
-        /* (wrap already grid above) */
+        .xshop-wrap{
+          display:flex;
+          gap:14px;
+          align-items:flex-start;
+          flex-wrap:wrap;
+        }
 
         .xshop-tree{
-          background: rgba(0,0,0,0.35);
-          border:1px solid rgba(255,255,255,0.10);
-          border-radius:18px;
-          padding:10px;
-          box-shadow: 0 14px 30px rgba(0,0,0,0.28);
-          overflow:hidden;
-          position:relative;
-        }
-        .xshop-treeHeader{
-          padding:6px 6px 10px;
-        }
-        .xshop-treeTitle{
-          font-weight:900;
-          letter-spacing:0.08em;
-          font-size:12px;
-          text-transform:uppercase;
-          opacity:0.95;
-        }
-        .xshop-treeSub{
-          font-size:11px;
-          opacity:0.7;
-          margin-top:4px;
-        }
-        .xshop-treeBody{
-          position:relative;
-          border-radius:14px;
-          background: rgba(255,255,255,0.03);
-          border:1px solid rgba(255,255,255,0.06);
-          overflow:hidden;
-        }
-        .xshop-treeBody::before{
-          content:"";
-          position:absolute;
-          inset:-40px;
-          background: var(--treeBg, radial-gradient(circle at 30% 20%, rgba(255,255,255,0.08), rgba(0,0,0,0.0) 55%));
-          opacity:0.65;
-          filter: saturate(1.12);
-          z-index:0;
-        }
-        .xshop-treeBody::after{
-          content:"";
-          position:absolute;
-          inset:0;
+          border:1px solid rgba(120,170,255,0.18);
           background:
-            linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px);
-          background-size: 24px 24px;
-          opacity:0.16;
-          z-index:0;
-          pointer-events:none;
+            radial-gradient(1200px 680px at 0% 0%, rgba(182,145,255,0.08), transparent 55%),
+            linear-gradient(180deg, rgba(12,16,34,0.94), rgba(6,8,18,0.94));
+          border-radius:14px;
+          padding:12px;
+          box-shadow: 0 12px 28px rgba(0,0,0,0.45);
         }
-        .xshop-lines{
-          position:absolute;
-          inset:0;
-          z-index:1;
-          pointer-events:none;
+
+        .xshop-help{
+          max-width:420px;
+          border:1px dashed rgba(120,170,255,0.18);
+          border-radius:14px;
+          padding:12px 14px;
+          background: rgba(8,10,20,0.65);
         }
-        .xshop-line{
-          stroke: rgba(255,255,255,0.10);
-          stroke-width: 2.2;
-          stroke-linecap: round;
+        .xshop-help h3{
+          margin:0 0 6px 0;
+          font-size:12px;
+          letter-spacing:0.14em;
+          text-transform:uppercase;
+          opacity:0.9;
         }
-        .xshop-line.is-active{
-          stroke: rgba(120,220,255,0.38);
-          stroke-width: 2.8;
+        .xshop-help p{
+          margin:6px 0;
+          font-size:12px;
+          color:var(--muted);
+          line-height:1.35;
         }
-        .xshop-line.is-complete{
-          stroke: rgba(140,255,180,0.60);
-          stroke-width: 3.2;
+        .xshop-kbd{
+          display:inline-flex;
+          align-items:center;
+          gap:8px;
+          padding:2px 10px;
+          border-radius:999px;
+          border:1px solid rgba(255,255,255,0.12);
+          background: rgba(255,255,255,0.06);
+          color:var(--txt);
+          font-weight:800;
+          letter-spacing:0.04em;
         }
 
         .xshop-grid{
-          position:absolute;
-          inset:0;
-          display:grid;
-          z-index:2;
+          position:relative;
+          width:${width}px;
+          height:${height}px;
+          border-radius:12px;
+          overflow:hidden;
+          background:
+            radial-gradient(900px 500px at 50% 0%, rgba(0,242,255,0.06), transparent 60%),
+            linear-gradient(180deg, rgba(10,12,24,0.85), rgba(4,6,14,0.85));
+        }
+        .xshop-grid::before{
+          content:"";
+          position:absolute; inset:0;
+          background-image:
+            linear-gradient(to right, rgba(80,120,210,0.12) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(80,120,210,0.10) 1px, transparent 1px);
+          background-size:${cellW}px ${cellH}px;
+          opacity:0.22;
+          pointer-events:none;
         }
 
-        .xshop-cell{
-          position:relative;
-          display:flex;
-          align-items:center;
-          justify-content:center;
+        .xshop-line{
+          position:absolute;
+          height:2px;
+          background: linear-gradient(90deg, rgba(0,242,255,0.0), rgba(0,242,255,0.35), rgba(0,242,255,0.0));
+          transform-origin:left center;
+          opacity:0.55;
+          pointer-events:none;
         }
 
         .xshop-node{
-          width: 56px;
-          height: 56px;
-          border-radius: 12px;
-          border: 1px solid rgba(255,255,255,0.12);
-          background: rgba(0,0,0,0.25);
-          box-shadow: 0 10px 20px rgba(0,0,0,0.22);
-          padding: 0;
-          cursor:pointer;
-          text-align:left;
-          transition: transform 120ms ease, border-color 120ms ease, filter 120ms ease;
-          position:relative;
+          position:absolute;
+          width:74px; height:74px;
+          border-radius:14px;
+          transform: translate(-50%, -50%);
           display:flex;
           align-items:center;
           justify-content:center;
-          overflow:hidden;
+          cursor:pointer;
+          border:1px solid rgba(170,210,255,0.20);
+          background:
+            radial-gradient(60px 40px at 30% 25%, rgba(180,220,255,0.18), transparent 60%),
+            linear-gradient(180deg, rgba(18,22,44,0.95), rgba(8,10,18,0.95));
+          box-shadow:
+            0 0 0 1px rgba(0,0,0,0.45) inset,
+            0 14px 22px rgba(0,0,0,0.45);
+          transition: transform 0.12s ease, box-shadow 0.18s ease, border-color 0.18s ease, filter 0.18s ease;
+          user-select:none;
         }
         .xshop-node:hover{
-          transform: translateY(-1px);
-          border-color: rgba(255,255,255,0.22);
-        }
-        .xshop-icon{
-          width: 100%;
-          height: 100%;
-          border-radius: 12px;
-          border:1px solid rgba(255,255,255,0.14);
-          background: rgba(255,255,255,0.04);
-          object-fit: cover;
+          transform: translate(-50%, -50%) scale(1.02);
         }
 
-        .xshop-costBadge{
-          position:absolute;
-          left:4px;
-          bottom:4px;
-          font-size:10px;
-          font-weight:800;
-          padding:2px 6px;
-          border-radius:999px;
-          background: rgba(0,0,0,0.65);
-          border:1px solid rgba(255,255,255,0.18);
+        .xshop-node.available{
+          border-color: rgba(76,255,154,0.42);
+          box-shadow:
+            0 0 0 1px rgba(76,255,154,0.14) inset,
+            0 0 20px rgba(76,255,154,0.18),
+            0 18px 26px rgba(0,0,0,0.55);
+          filter: saturate(1.08);
         }
-        .xshop-rankBadge{
-          position:absolute;
-          right:4px;
-          bottom:4px;
-          font-size:10px;
-          font-weight:800;
-          padding:2px 6px;
-          border-radius:999px;
-          background: rgba(0,0,0,0.65);
-          border:1px solid rgba(255,255,255,0.18);
+        .xshop-node.unaffordable{
+          border-color: rgba(255,82,119,0.34);
+          opacity:0.96;
         }
-        .xshop-equipPip{
-          position:absolute;
-          right:6px;
-          top:6px;
-          width:10px;
-          height:10px;
-          border-radius:999px;
-          background: rgba(140,255,180,0.85);
-          box-shadow: 0 0 12px rgba(140,255,180,0.35);
-        }
-        .xshop-nodeMeta{
-          flex: 1 1 auto;
-          min-width: 0;
-        }
-        .xshop-nodeName{
-          font-size: 11px;
-          font-weight: 900;
-          letter-spacing: 0.03em;
-          text-transform: uppercase;
-          white-space: nowrap;
-          overflow:hidden;
-          text-overflow: ellipsis;
-        }
-        .xshop-nodeType{
-          font-size: 10px;
-          opacity: 0.75;
-          margin-top: 2px;
-          display:flex;
-          align-items:center;
-          gap:6px;
-        }
-        .xshop-badge{
-          font-size:9px;
-          padding:2px 6px;
-          border-radius:999px;
-          border:1px solid rgba(255,255,255,0.16);
-          opacity:0.85;
-        }
-        .xshop-nodeDesc{
-          font-size: 10px;
-          opacity: 0.70;
-          margin-top: 4px;
-          display: -webkit-box;
-          -webkit-line-clamp: 3;
-          -webkit-box-orient: vertical;
-          overflow: hidden;
-        }
-        .xshop-bottomBar{
-          position:absolute;
-          left:8px;
-          right:8px;
-          bottom:6px;
-          display:flex;
-          align-items:center;
-          justify-content:space-between;
-          gap:6px;
-          font-size:10px;
-          opacity:0.9;
-        }
-        .xshop-equippedTag{
-          font-size:9px;
-          padding:2px 6px;
-          border-radius:999px;
-          background: rgba(140,255,180,0.12);
-          border: 1px solid rgba(140,255,180,0.28);
-          white-space:nowrap;
-        }
-
-        /* states */
-        .xshop-cell.locked .xshop-node{
-          filter: grayscale(0.65) brightness(0.75);
-          opacity:0.62;
+        .xshop-node.locked{
+          border-color: rgba(108,120,153,0.30);
+          opacity:0.55;
           cursor:not-allowed;
+          filter: grayscale(0.35);
         }
-        .xshop-cell.unaffordable .xshop-node{
-          filter: grayscale(0.2) brightness(0.85);
-          opacity:0.85;
-        }
-        .xshop-cell.available .xshop-node{
-          opacity:1;
-        }
-        .xshop-cell.maxed .xshop-node{
-          border-color: rgba(140,255,180,0.38);
-          background: rgba(140,255,180,0.08);
-        }
-        .xshop-cell.is-major .xshop-node{
-          border-color: rgba(120,220,255,0.22);
-          box-shadow: 0 14px 24px rgba(0,0,0,0.25);
-        }
-        .xshop-cell.is-capstone .xshop-node{
-          border-color: rgba(255,220,120,0.22);
-          background: rgba(255,220,120,0.06);
-        }
-        .xshop-cell.is-equipped .xshop-node{
-          outline: 2px solid rgba(140,255,180,0.30);
+        .xshop-node.maxed{
+          border-color: rgba(255,209,106,0.48);
+          box-shadow:
+            0 0 0 1px rgba(255,209,106,0.16) inset,
+            0 0 22px rgba(255,209,106,0.16),
+            0 18px 26px rgba(0,0,0,0.55);
         }
 
-        .xshop-unequip{
-          position:absolute;
-          top:8px;
-          right:8px;
-          z-index:5;
-          width:22px;
-          height:22px;
-          border-radius:999px;
-          border:1px solid rgba(255,255,255,0.18);
-          background: rgba(0,0,0,0.40);
-          color: rgba(255,255,255,0.85);
-          cursor:pointer;
+        .xshop-node.major:not(.locked):not(.maxed){
+          border-color: rgba(182,145,255,0.44);
+          box-shadow:
+            0 0 0 1px rgba(182,145,255,0.16) inset,
+            0 0 22px rgba(182,145,255,0.18),
+            0 18px 26px rgba(0,0,0,0.55);
         }
-        .xshop-unequip:hover{
-          border-color: rgba(255,255,255,0.30);
+        .xshop-node.capstone:not(.locked){
+          border-color: rgba(255,209,106,0.55);
         }
 
-        /* WoW-ish hover tooltip */
-        .xshop-tooltip{
-          position:fixed;
-          z-index:9999;
-          pointer-events:none;
-          background: rgba(10,10,14,0.94);
-          border:1px solid rgba(255,255,255,0.16);
-          border-left:3px solid var(--accent, rgba(255,255,255,0.22));
-          border-radius:14px;
-          padding:10px;
-          box-shadow: 0 18px 50px rgba(0,0,0,0.55);
-          backdrop-filter: blur(6px);
-        }
-        .xshop-tipTop{
-          display:flex;
-          gap:10px;
-          align-items:center;
-          margin-bottom:8px;
-        }
-        .xshop-tipIcon{
-          width:52px;
-          height:52px;
+        .xshop-icon{
+          width:52px; height:52px;
           border-radius:12px;
-          border:1px solid rgba(255,255,255,0.16);
-          object-fit:cover;
-          background: rgba(255,255,255,0.04);
-          flex:0 0 auto;
-        }
-        .xshop-tipName{
-          font-weight:900;
-          letter-spacing:0.05em;
-          text-transform:uppercase;
-          font-size:12px;
-        }
-        .xshop-tipSub{
-          font-size:10px;
-          opacity:0.78;
-          margin-top:2px;
-        }
-        .xshop-tipBody{
-          font-size:11px;
-          opacity:0.88;
-          line-height:1.3;
-        }
-        .xshop-tipFoot{
-          margin-top:8px;
-          font-size:10px;
-          opacity:0.9;
-        }
-        .xshop-tipWarn{ opacity:0.85; }
-        .xshop-tipOk{ opacity:0.92; }
-        .xshop-tipReq{ margin-top:4px; opacity:0.82; }
-
-        .xshop-toast{
-          position:fixed;
-          left:50%;
-          transform:translateX(-50%);
-          bottom:22px;
-          padding:10px 14px;
-          border-radius:999px;
-          background: rgba(0,0,0,0.72);
-          border:1px solid rgba(255,255,255,0.12);
-          box-shadow: 0 12px 30px rgba(0,0,0,0.35);
-          font-size:12px;
-          z-index:9999;
-        }
-
-        .xshop-modalBack{
-          position:fixed;
-          inset:0;
-          background: rgba(0,0,0,0.55);
-          z-index:9998;
+          background: rgba(255,255,255,0.06);
           display:flex;
           align-items:center;
           justify-content:center;
-          padding:18px;
+          overflow:hidden;
+          box-shadow: 0 0 0 1px rgba(255,255,255,0.10) inset;
         }
-        .xshop-modal{
-          width:min(560px, 96vw);
-          background: rgba(10,10,14,0.92);
-          border:1px solid rgba(255,255,255,0.14);
-          border-radius:20px;
-          box-shadow: 0 18px 50px rgba(0,0,0,0.55);
-          padding:14px;
+        .xshop-icon img{
+          width:100%; height:100%;
+          object-fit:cover;
+          filter: saturate(1.05) contrast(1.05);
         }
-        .xshop-modal h3{
-          margin:0 0 6px;
-          font-size:14px;
-          letter-spacing:0.05em;
+
+        .xshop-rank{
+          position:absolute;
+          bottom:6px; left:8px;
+          font-size:11px;
+          color: rgba(216,230,255,0.9);
+          background: rgba(0,0,0,0.38);
+          border:1px solid rgba(255,255,255,0.10);
+          border-radius:999px;
+          padding:2px 8px;
+        }
+        .xshop-cost{
+          position:absolute;
+          top:6px; right:7px;
+          font-size:11px;
+          font-weight:900;
+          border-radius:999px;
+          padding:2px 8px;
+          border:1px solid rgba(255,255,255,0.10);
+          background: rgba(0,0,0,0.35);
+          box-shadow: 0 0 0 1px rgba(0,0,0,0.35) inset;
+        }
+
+        .xshop-node.available .xshop-cost{
+          background: rgba(76,255,154,0.14);
+          border-color: rgba(76,255,154,0.28);
+          color: var(--good);
+          box-shadow: 0 0 16px rgba(76,255,154,0.20);
+        }
+        .xshop-node.unaffordable .xshop-cost{
+          background: rgba(255,82,119,0.12);
+          border-color: rgba(255,82,119,0.26);
+          color: var(--bad);
+        }
+        .xshop-node.locked .xshop-cost{
+          background: rgba(108,120,153,0.14);
+          border-color: rgba(108,120,153,0.20);
+          color: rgba(108,120,153,1);
+        }
+        .xshop-node.major .xshop-cost{
+          background: rgba(182,145,255,0.14);
+          border-color: rgba(182,145,255,0.28);
+          color: #d6c1ff;
+        }
+        .xshop-node.capstone .xshop-cost{
+          background: rgba(255,209,106,0.14);
+          border-color: rgba(255,209,106,0.30);
+          color: #ffe2a3;
+        }
+
+        .xshop-tip{
+          position:absolute;
+          z-index:20;
+          min-width:260px;
+          max-width:340px;
+          padding:10px 12px;
+          border-radius:12px;
+          border:1px solid rgba(120,170,255,0.22);
+          background:
+            radial-gradient(420px 220px at 30% 0%, rgba(0,242,255,0.12), transparent 70%),
+            linear-gradient(180deg, rgba(14,18,38,0.96), rgba(6,8,18,0.96));
+          box-shadow: 0 20px 40px rgba(0,0,0,0.55);
+          pointer-events:none;
+        }
+        .xshop-tip h4{
+          margin:0;
+          font-size:12px;
+          letter-spacing:0.12em;
           text-transform:uppercase;
         }
-        .xshop-modal p{
-          margin:0 0 12px;
+        .xshop-tip .meta{
+          font-size:11px;
+          color: var(--muted);
+          margin-top:4px;
+        }
+        .xshop-tip pre{
+          margin:8px 0 0 0;
+          white-space:pre-wrap;
+          font-family:inherit;
           font-size:12px;
-          opacity:0.8;
-          line-height:1.35;
-        }
-        .xshop-modalRow{
-          display:flex;
-          gap:10px;
-          flex-wrap:wrap;
-        }
-        .xshop-modalBtn{
-          flex: 1 1 240px;
-          border-radius:16px;
-          border:1px solid rgba(255,255,255,0.14);
-          background: rgba(255,255,255,0.05);
-          padding:10px;
-          color: rgba(255,255,255,0.9);
-          cursor:pointer;
-          text-align:left;
-        }
-        .xshop-modalBtn:hover{
-          border-color: rgba(255,255,255,0.26);
-          background: rgba(255,255,255,0.08);
-        }
-        .xshop-modalBtn small{ opacity:0.75; display:block; margin-top:4px; }
-        .xshop-modalActions{
-          display:flex;
-          justify-content:flex-end;
-          margin-top:12px;
-        }
-        .xshop-cancel{
-          border-radius:12px;
-          border:1px solid rgba(255,255,255,0.14);
-          background: rgba(0,0,0,0.25);
-          padding:8px 12px;
-          color: rgba(255,255,255,0.85);
-          cursor:pointer;
-        }
-
-        /* Theme backgrounds + accents */
-        .theme-arsenal{
-          --accent: rgba(255,210,120,0.55);
-          --treeBg:
-            radial-gradient(circle at 20% 18%, rgba(255,210,120,0.22), rgba(0,0,0,0.0) 55%),
-            radial-gradient(circle at 80% 70%, rgba(120,220,255,0.12), rgba(0,0,0,0.0) 60%),
-            linear-gradient(140deg, rgba(255,120,80,0.10), rgba(0,0,0,0.0) 55%);
-        }
-        .theme-aegis{
-          --accent: rgba(210,120,255,0.55);
-          --treeBg:
-            radial-gradient(circle at 25% 25%, rgba(210,120,255,0.20), rgba(0,0,0,0.0) 55%),
-            radial-gradient(circle at 75% 75%, rgba(255,120,180,0.10), rgba(0,0,0,0.0) 60%),
-            linear-gradient(140deg, rgba(120,220,255,0.08), rgba(0,0,0,0.0) 55%);
-        }
-        .theme-voidwalk{
-          --accent: rgba(120,220,255,0.55);
-          --treeBg:
-            radial-gradient(circle at 30% 20%, rgba(120,220,255,0.20), rgba(0,0,0,0.0) 55%),
-            radial-gradient(circle at 70% 80%, rgba(180,140,255,0.12), rgba(0,0,0,0.0) 60%),
-            linear-gradient(140deg, rgba(255,120,220,0.07), rgba(0,0,0,0.0) 55%);
-        }
-
-        .xshop-tree.theme-arsenal .xshop-treeTitle,
-        .xshop-tree.theme-aegis .xshop-treeTitle,
-        .xshop-tree.theme-voidwalk .xshop-treeTitle{ text-shadow: 0 0 14px rgba(0,0,0,0.55); }
-
-        .xshop-tree.theme-arsenal{ border-color: rgba(255,210,120,0.18); }
-        .xshop-tree.theme-aegis{ border-color: rgba(210,120,255,0.18); }
-        .xshop-tree.theme-voidwalk{ border-color: rgba(120,220,255,0.18); }
-
-        .xshop-cell.available .xshop-node{ box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 10px 20px rgba(0,0,0,0.22); }
-
-        @media (max-width: 1180px){
-          .xshop-wrap{ grid-template-columns: 1fr; }
-          .xshop-build{ justify-content:flex-start; }
+          line-height:1.3;
+          color: rgba(216,230,255,0.92);
         }
       `}</style>
 
-      <div className="xshop-topbar">
-        <div className="xshop-title">{title}</div>
-
-        <div className="xshop-build">
-          <div className="xshop-credits">
-            <span style={{ opacity: 0.8 }}>Rewards</span>
-            <b>{credits}</b>
+      <div className="xshop-top">
+        <div>
+          <div className="xshop-title">{title}</div>
+          <div className="xshop-sub">
+            Spend 5 points to unlock deeper rows • Pick 1 talent per row • Spacebar activates Thorns
           </div>
+        </div>
 
-          <div className="xshop-buildBox">
-            <div className="xshop-buildHdr">
-              <span>Abilities ({equippedAbilityNodes.length}/{BUILD_LIMITS.abilities})</span>
-              <span style={{ opacity: 0.7 }}>max 2</span>
-            </div>
-            <div className="xshop-chipRow">
-              {equippedAbilityNodes.length === 0 ? (
-                <span style={{ opacity: 0.6, fontSize: 12 }}>None equipped</span>
-              ) : (
-                equippedAbilityNodes.map((n) => (
-                  <span key={n.id} className="xshop-chip">
-                    {n.name} <small>({TYPE_LABEL[n.type]})</small>
-                  </span>
-                ))
-              )}
-            </div>
-          </div>
-
-          <div className="xshop-buildBox">
-            <div className="xshop-buildHdr">
-              <span>Passives ({equippedPassiveNodes.length}/{BUILD_LIMITS.passives})</span>
-              <span style={{ opacity: 0.7 }}>max 2</span>
-            </div>
-            <div className="xshop-chipRow">
-              {equippedPassiveNodes.length === 0 ? (
-                <span style={{ opacity: 0.6, fontSize: 12 }}>None equipped</span>
-              ) : (
-                equippedPassiveNodes.map((n) => (
-                  <span key={n.id} className="xshop-chip">
-                    {n.name} <small>({TYPE_LABEL[n.type]})</small>
-                  </span>
-                ))
-              )}
-            </div>
-          </div>
+        <div className="xshop-pill" title="Doctrine Pills (1 per mission)">
+          <span className="xshop-pillIcon">💠</span>
+          <span className="xshop-pillNum">{credits}</span>
         </div>
       </div>
 
       <div className="xshop-wrap">
-        {trees.map((t, i) => renderTree(t, i))}
-      </div>
-
-      {hoverNode && tooltipPos && (
-        <div
-          className={cx("xshop-tooltip", `theme-${hoverNode.treeId}`)}
-          style={{ left: tooltipPos.left, top: tooltipPos.top, width: tooltipPos.width }}
-        >
-          <div className="xshop-tipTop">
-            <img className="xshop-tipIcon" src={makeIconUrl(hoverNode.iconN)} alt={hoverNode.name} />
-            <div className="xshop-tipMeta">
-              <div className="xshop-tipName">{hoverNode.name}</div>
-              <div className="xshop-tipSub">
-                {TYPE_LABEL[hoverNode.type] || "Upgrade"} · {RARITY[hoverNode.rarity]?.badge || ""}
-                {hoverMaxRank > 1 && (
-                  <span className="xshop-tipRank"> · Rank {hoverRank}/{hoverMaxRank}</span>
-                )}
-              </div>
-            </div>
+        <div className="xshop-tree">
+          <div style={{ fontWeight: 900, letterSpacing: "0.16em", textTransform: "uppercase", fontSize: 12, opacity: 0.9, margin: "2px 4px 10px" }}>
+            Military Doctrine // Left Tree
           </div>
 
-          <div className="xshop-tipBody" style={{ whiteSpace: "pre-line" }}>
-            {hoverNode.desc}
-          </div>
-
-          <div className="xshop-tipFoot">
-            <div>
-              Cost: <b>{hoverStatus === "maxed" ? "—" : hoverCost}</b>
-              {hoverStatus === "locked" && <span className="xshop-tipWarn"> · Locked</span>}
-              {hoverStatus === "unaffordable" && <span className="xshop-tipWarn"> · Not enough rewards</span>}
-              {hoverStatus === "maxed" && <span className="xshop-tipOk"> · Maxed</span>}
-            </div>
-            {hoverPrereqNames.length > 0 && (
-              <div className="xshop-tipReq">
-                Requires: <b>{hoverPrereqNames.join(" · ")}</b>
-              </div>
-            )}
-          </div>
+          <TalentGrid
+            width={width}
+            height={height}
+            nodes={NODES}
+            lines={LINES}
+            nodePos={nodePos}
+            purchased={purchased}
+            pointsSpent={pointsSpent}
+            nodeState={nodeState}
+            lockReason={lockReason}
+            buy={buy}
+          />
         </div>
-      )}
 
-      {toast && <div className="xshop-toast">{toast}</div>}
+        <div className="xshop-help">
+          <h3>Run Rules</h3>
+          <p>
+            You earn <span className="xshop-kbd">💠 1</span> pill per cleared mission. Spend pills to buy ranks.
+            Refreshing the browser wipes the run (roguelite).
+          </p>
+          <p>
+            Tier gates: Row 2 needs <span className="xshop-kbd">5</span> points spent, Row 3 needs{" "}
+            <span className="xshop-kbd">10</span>, Row 4 needs <span className="xshop-kbd">15</span>, Row 5 needs{" "}
+            <span className="xshop-kbd">20</span>.
+          </p>
+          <p>
+            <span className="xshop-kbd">SPACE</span> activates <b>Thorns</b> in combat (invulnerable ramming window).
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-      {replacePrompt && (
-        <div className="xshop-modalBack" onClick={() => setReplacePrompt(null)}>
-          <div className="xshop-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Build Limit Reached</h3>
-            <p>
-              You can only equip <b>2 {replacePrompt.kind === "ability" ? "abilities" : "passives"}</b>.
-              Replace one with <b>{nodeIndex.get(replacePrompt.incomingNodeId)?.name}</b>?
-            </p>
+function TalentGrid({
+  width,
+  height,
+  nodes,
+  lines,
+  nodePos,
+  purchased,
+  nodeState,
+  lockReason,
+  buy,
+}) {
+  const [tip, setTip] = useState(null);
 
-            <div className="xshop-modalRow">
-              {replacePrompt.options.map((id) => {
-                const n = nodeIndex.get(id);
-                return (
-                  <button
-                    key={id}
-                    className="xshop-modalBtn"
-                    onClick={() => replaceEquipped(id)}
-                  >
-                    <b>{n?.name || id}</b>
-                    <small>{n?.desc || ""}</small>
-                  </button>
-                );
-              })}
+  function onEnter(e, node) {
+    const rect = e.currentTarget.parentElement.getBoundingClientRect();
+    const p = nodePos(node);
+    const sx = rect.left + p.x;
+    const sy = rect.top + p.y;
+    setTip({
+      node,
+      x: clamp(sx + 42, 10, window.innerWidth - 360),
+      y: clamp(sy - 20, 10, window.innerHeight - 220),
+    });
+  }
+
+  function onLeave() {
+    setTip(null);
+  }
+
+  return (
+    <div className="xshop-grid" style={{ width, height }}>
+      {/* lines */}
+      {lines.map(([a, b]) => {
+        const na = nodes.find((n) => n.id === a);
+        const nb = nodes.find((n) => n.id === b);
+        if (!na || !nb) return null;
+        const pa = nodePos(na);
+        const pb = nodePos(nb);
+        const dx = pb.x - pa.x;
+        const dy = pb.y - pa.y;
+        const len = Math.hypot(dx, dy);
+        const ang = (Math.atan2(dy, dx) * 180) / Math.PI;
+        return (
+          <div
+            key={`${a}-${b}`}
+            className="xshop-line"
+            style={{
+              left: pa.x,
+              top: pa.y,
+              width: len,
+              transform: `rotate(${ang}deg)`,
+            }}
+          />
+        );
+      })}
+
+      {/* nodes */}
+      {nodes.map((node) => {
+        const pos = nodePos(node);
+        const r = Number(purchased?.[node.id] || 0);
+        const st = nodeState(node);
+
+        return (
+          <div
+            key={node.id}
+            className={[
+              "xshop-node",
+              st,
+              node.rarity === "major" ? "major" : "",
+              node.rarity === "capstone" ? "capstone" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            style={{ left: pos.x, top: pos.y }}
+            role="button"
+            tabIndex={0}
+            onClick={() => buy(node)}
+            onMouseEnter={(e) => onEnter(e, node)}
+            onMouseLeave={onLeave}
+            title={st === "locked" ? lockReason(node) : undefined}
+          >
+            <div className="xshop-icon">
+              <img src={iconUrl(node)} alt="" />
             </div>
 
-            <div className="xshop-modalActions">
-              <button className="xshop-cancel" onClick={() => setReplacePrompt(null)}>
-                Cancel
-              </button>
+            <div className="xshop-cost">💠 1</div>
+            <div className="xshop-rank">
+              {r}/{node.maxRank}
             </div>
           </div>
+        );
+      })}
+
+      {tip && (
+        <div className="xshop-tip" style={{ left: tip.x, top: tip.y }}>
+          <h4>{tip.node.name}</h4>
+          <div className="meta">
+            {tip.node.type.toUpperCase()} • Rank {Number(purchased?.[tip.node.id] || 0)}/{tip.node.maxRank}
+            {lockReason(tip.node) ? ` • ${lockReason(tip.node)}` : ""}
+          </div>
+          <pre>{tip.node.desc}</pre>
         </div>
       )}
     </div>

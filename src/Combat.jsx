@@ -695,12 +695,19 @@ const rollUpgradeOptions = (ownedWeapons, weaponLevels, stats) => {
   });
 };
 
-export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, selectedHero }) {
+export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, selectedHero, runBuild }) {
 
 
   const progElapsedRef = useRef(0); // progression clock (pauses during events)
   const [player, setPlayer] = useState({ x: 1400, y: 1400 });
-  const [stats, setStats] = useState({ hp: 120, maxHp: 120, regen: 0, damageMult: 1, attackSpeed: 1, moveSpeed: 1 });
+  const [stats, setStats] = useState(() => {
+    // --- baseline stats, then apply Military talent start bonuses ---
+    const base = { hp: 120, maxHp: 120, regen: 0, damageMult: 1, attackSpeed: 1, moveSpeed: 1 };
+    const p = (runBuild && runBuild.purchased) ? runBuild.purchased : {};
+    const fieldArmorRank = Number(p.MIL_FIELD_ARMOR || 0);
+    const maxHpBonus = fieldArmorRank * 12; // +12 max HP per rank (5 ranks = +60)
+    return { ...base, hp: base.hp + maxHpBonus, maxHp: base.maxHp + maxHpBonus };
+  });
   const cameraRef = useRef({ x: 0, y: 0 });
   const worldRef = useRef(null);
   const playerSpriteRef = useRef(null);
@@ -743,6 +750,104 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   const lastSpawn = useRef(0);
   const elapsed = useRef(0);
   const lastDamage = useRef(0);
+
+  // -------------------- MILITARY TALENTS (Left Tree) --------------------
+  // runBuild?.purchased contains ranks keyed by MIL_* ids from GalaxyShop.
+  const talentsRef = useRef({
+    thornsUnlocked: false,
+    thornsDurationMs: 2800,
+    thornsCooldownMs: 15000,
+    thornsRamDamage: 34,
+    quickRearmRank: 0,
+
+    fieldArmorRank: 0,
+    plateCarrierRank: 0,
+    damageReduction: 0,
+
+    ghostRank: 0,
+    ghostCooldownMs: 60000,
+    ghostRadius: 240,
+    ghostDamage: 60,
+
+    adrenalUnlocked: false,
+    katanaBackup: false,
+    discharge: false,
+
+    titaniumRank: 0,
+    platesMax: 0,
+  });
+
+  const thornsActiveUntilRef = useRef(0);
+  const thornsCooldownUntilRef = useRef(0);
+  const thornsWasActiveRef = useRef(false);
+  const spaceWasDownRef = useRef(false);
+
+  const milGhostCdUntilRef = useRef(0);
+  const milAdrenalCdUntilRef = useRef(0);
+  const milAdrenalMoveUntilRef = useRef(0);
+
+  const platesStacksRef = useRef(0);
+  const platesLastGenAtRef = useRef(Date.now());
+
+  useEffect(() => {
+    const p = (runBuild && runBuild.purchased) ? runBuild.purchased : {};
+
+    const thornsUnlocked = Number(p.MIL_THORNS || 0) > 0;
+    const quickRearmRank = Number(p.MIL_QUICK_REARM || 0);
+
+    const fieldArmorRank = Number(p.MIL_FIELD_ARMOR || 0);
+    const plateCarrierRank = Number(p.MIL_PLATE_CARRIER || 0);
+    const damageReduction = clamp(plateCarrierRank * 0.04, 0, 0.30); // 4% per rank, up to 30%
+
+    const ghostRank = Number(p.MIL_GHOST_PROTOCOL || 0);
+    const ghostCooldownMs = ghostRank > 0 ? Math.max(25000, 60000 - (ghostRank - 1) * 8000) : 999999999;
+    const ghostRadius = 210 + ghostRank * 10;
+    const ghostDamage = 34 + ghostRank * 14;
+
+    const adrenalUnlocked = Number(p.MIL_ADRENAL || 0) > 0;
+    const katanaBackup = Number(p.MIL_KATANA_BACKUP || 0) > 0;
+    const discharge = Number(p.MIL_THRONS_DISCHARGE || 0) > 0;
+
+    const titaniumRank = Number(p.MIL_TITANIUM_PLATES || 0);
+    const platesMax = clamp(titaniumRank, 0, 3);
+
+    talentsRef.current = {
+      thornsUnlocked,
+      thornsDurationMs: 2800 + quickRearmRank * 600,
+      thornsCooldownMs: Math.max(6000, 15000 - quickRearmRank * 2500),
+      thornsRamDamage: 32 + tileDifficulty * 4,
+      quickRearmRank,
+
+      fieldArmorRank,
+      plateCarrierRank,
+      damageReduction,
+
+      ghostRank,
+      ghostCooldownMs,
+      ghostRadius,
+      ghostDamage,
+
+      adrenalUnlocked,
+      katanaBackup,
+      discharge,
+
+      titaniumRank,
+      platesMax,
+    };
+
+    // reset per-combat talent runtime state
+    thornsActiveUntilRef.current = 0;
+    thornsCooldownUntilRef.current = 0;
+    thornsWasActiveRef.current = false;
+    spaceWasDownRef.current = false;
+
+    milGhostCdUntilRef.current = 0;
+    milAdrenalCdUntilRef.current = 0;
+    milAdrenalMoveUntilRef.current = 0;
+
+    platesStacksRef.current = 0;
+    platesLastGenAtRef.current = Date.now();
+  }, [runBuild, tileDifficulty]);
 
   // per-run duration (random 25–100% longer)
     const runTimeRef = useRef(BOSS_TIME * (1.10 + Math.random() * 0.35));
@@ -836,6 +941,113 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     juice.current.dur = 140;
   };
 
+  // -------------------- MILITARY TALENTS: runtime procs --------------------
+  const tryProcAdrenal = (now, reason = 'damage') => {
+    const t = talentsRef.current;
+    if (!t.adrenalUnlocked) return false;
+    if (now < milAdrenalCdUntilRef.current) return false;
+
+    milAdrenalCdUntilRef.current = now + 30000; // 30s cooldown
+
+    // reuse existing OVERDRIVE pickup mechanics for firing speed
+    overdriveUntil.current = Math.max(overdriveUntil.current, now + 4000);
+    milAdrenalMoveUntilRef.current = Math.max(milAdrenalMoveUntilRef.current, now + 4000);
+
+    // heal 8% missing HP
+    const s = statsRef.current;
+    const missing = Math.max(0, (s.maxHp || 0) - (s.hp || 0));
+    const heal = missing * 0.08;
+    if (heal > 0) s.hp = Math.min(s.maxHp, s.hp + heal);
+
+    // VFX pulse
+    explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: playerRef.current.x, y: playerRef.current.y, r: 120, t: now, life: 220 }];
+    juicePunch(0.55, 0.65);
+    return true;
+  };
+
+  const tryProcGhost = (now) => {
+    const t = talentsRef.current;
+    if (t.ghostRank <= 0) return false;
+    if (now < milGhostCdUntilRef.current) return false;
+
+    milGhostCdUntilRef.current = now + t.ghostCooldownMs;
+
+    // Freeze world (uses existing FREEZE mechanic)
+    freezeUntil.current = Math.max(freezeUntil.current, now + 2000);
+
+    // Explosion around player
+    const p = playerRef.current;
+    explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: p.x, y: p.y, r: t.ghostRadius, t: now, life: 320 }];
+
+    // Deal AoE damage + knockback
+    enemiesRef.current = (enemiesRef.current || []).map((en) => {
+      if (en.hp <= 0) return en;
+      const d = Math.hypot(en.x - p.x, en.y - p.y);
+      if (d <= t.ghostRadius) {
+        const fall = 1 - d / t.ghostRadius;
+        const dmg = t.ghostDamage * Math.max(0.25, fall);
+        const ang = Math.atan2(en.y - p.y, en.x - p.x);
+        const push = 12 * Math.max(0.3, fall);
+        return {
+          ...en,
+          hp: en.hp - dmg,
+          x: clamp(en.x + Math.cos(ang) * push, 0, ARENA_SIZE),
+          y: clamp(en.y + Math.sin(ang) * push, 0, ARENA_SIZE),
+          stunnedUntil: Math.max(en.stunnedUntil || 0, now + 220),
+        };
+      }
+      return en;
+    });
+
+    juicePunch(1.05, 1.0);
+    return true;
+  };
+
+  const applyPlayerDamage = (rawDamage, source = 'contact') => {
+    if (!rawDamage || rawDamage <= 0) return 0;
+
+    const now = Date.now();
+    lastDamage.current = now; // respects the built-in hit gate windows
+
+    const t = talentsRef.current;
+
+    // Thorns: true invuln
+    if (now < thornsActiveUntilRef.current) return 0;
+
+    // Shield pickup: already invuln
+    if (now < shieldUntil.current) return 0;
+
+    // Titanium Plates: block the entire next instance
+    if (t.titaniumRank > 0 && platesStacksRef.current > 0) {
+      platesStacksRef.current = Math.max(0, platesStacksRef.current - 1);
+      explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: playerRef.current.x, y: playerRef.current.y, r: 70, t: now, life: 180 }];
+      juicePunch(0.32, 0.55);
+      syncUI();
+      return 0;
+    }
+
+    // Plate Carrier DR
+    const dr = clamp(t.damageReduction || 0, 0, 0.75);
+    const dmg = Math.max(0, rawDamage * (1 - dr));
+    if (dmg <= 0) return 0;
+
+    const s = statsRef.current;
+    s.hp = Math.max(0, (s.hp || 0) - dmg);
+
+    // procs (only if damage actually went through)
+    tryProcGhost(now);
+    tryProcAdrenal(now, source);
+
+    syncUI();
+    return dmg;
+  };
+
+  const onPlayerKill = (enemy) => {
+    const now = Date.now();
+    // Adrenal triggers on kill too
+    tryProcAdrenal(now, 'kill');
+  };
+
   useEffect(() => {
     if (victory) {
       const t = setTimeout(() => onVictory(), 1800);
@@ -868,7 +1080,15 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   }, []);
 
   useEffect(() => {
-    const handleKey = (e) => { keys.current[e.key.toLowerCase()] = e.type === 'keydown'; };
+    const handleKey = (e) => {
+      const down = e.type === 'keydown';
+      const k = (e.key || '').toLowerCase();
+      if (k) keys.current[k] = down;
+
+      // normalize spacebar so we can reliably read keys.current.space
+      if (e.code === 'Space') keys.current.space = down;
+      if (k === ' ') keys.current.space = down;
+    };
     window.addEventListener('keydown', handleKey);
     window.addEventListener('keyup', handleKey);
     return () => {
@@ -1235,6 +1455,71 @@ const beat = plan.beats[plan.idx];
 
       const now = Date.now();
 
+      // -------------------- MILITARY TALENTS: per-frame updates --------------------
+      {
+        const t = talentsRef.current;
+
+        const freezeWorldNow = now < freezeUntil.current;
+
+        // Titanium Plates regen (every 20s, max stacks by rank)
+        if (t.titaniumRank > 0 && !freezeWorldNow) {
+          const maxStacks = t.platesMax || 0;
+
+          // while full, timer can still tick so when you spend one, you may instantly regen if enough time passed
+          while (now - (platesLastGenAtRef.current || now) >= 20000) {
+            platesLastGenAtRef.current += 20000;
+            if (platesStacksRef.current < maxStacks) {
+              platesStacksRef.current += 1;
+              // tiny UI pulse
+              juicePunch(0.14, 0.22);
+            }
+          }
+        }
+
+        // Thorns activation (SPACE)
+        const spaceDown = !!keys.current.space;
+        const pressed = spaceDown && !spaceWasDownRef.current;
+        spaceWasDownRef.current = spaceDown;
+
+        if (t.thornsUnlocked && pressed && now >= thornsCooldownUntilRef.current) {
+          thornsActiveUntilRef.current = now + t.thornsDurationMs;
+          thornsCooldownUntilRef.current = now + t.thornsCooldownMs;
+
+          const p = playerRef.current;
+          explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: p.x, y: p.y, r: 160, t: now, life: 240 }];
+          juicePunch(0.75, 0.8);
+        }
+
+        // Thorns expiry shockwave (if unlocked)
+        const thornsActive = now < thornsActiveUntilRef.current;
+        if (thornsWasActiveRef.current && !thornsActive && t.discharge) {
+          const p = playerRef.current;
+          const radius = 280;
+          explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: p.x, y: p.y, r: radius, t: now, life: 280 }];
+
+          enemiesRef.current = (enemiesRef.current || []).map((en) => {
+            if (en.hp <= 0) return en;
+            const d = Math.hypot(en.x - p.x, en.y - p.y);
+            if (d <= radius && en.type !== 'juggernaut') {
+              const fall = 1 - d / radius;
+              const ang = Math.atan2(en.y - p.y, en.x - p.x);
+              const push = 18 * Math.max(0.25, fall);
+              return {
+                ...en,
+                x: clamp(en.x + Math.cos(ang) * push, 0, ARENA_SIZE),
+                y: clamp(en.y + Math.sin(ang) * push, 0, ARENA_SIZE),
+                stunnedUntil: Math.max(en.stunnedUntil || 0, now + 220),
+              };
+            }
+            return en;
+          });
+
+          juicePunch(0.95, 0.9);
+        }
+        thornsWasActiveRef.current = thornsActive;
+      }
+
+
       // --- CANVAS DRAWING START ---
       const ctx = ctxRef.current;
       const cam = cameraRef.current;
@@ -1526,7 +1811,9 @@ const beat = plan.beats[plan.idx];
 
         const baseSpeed = 5.8;
         const speedMult = Math.min(crewSpeedMult, 1.45);
-        const finalSpeed = baseSpeed * speedMult * (statsRef.current.moveSpeed || 1);
+        const nowMv = Date.now();
+        const adrenalMove = nowMv < milAdrenalMoveUntilRef.current;
+        const finalSpeed = baseSpeed * speedMult * (statsRef.current.moveSpeed || 1) * (adrenalMove ? 1.22 : 1.0);
 
         if (keys.current.w) ny -= finalSpeed;
         if (keys.current.s) ny += finalSpeed;
@@ -2617,6 +2904,8 @@ const beat = plan.beats[plan.idx];
         }
 
         deathFxRef.current = [...(deathFxRef.current || []), { id: Math.random(), x: en.x, y: en.y, t: Date.now(), size: en.size }];
+        onPlayerKill(en);
+
 
         const total = Math.max(2, Math.floor(en.xp * 0.80));
         const pack = Math.max(1, Math.round(total / 14));
@@ -2759,35 +3048,67 @@ const beat = plan.beats[plan.idx];
         const now2 = Date.now();
         const shielded = now2 < shieldUntil.current;
 
-        let hazardDamage = 0;
-        explosionsRef.current.forEach((e) => {
-          if (!e.hazard) return;
-          const d = Math.hypot(pPos.x - e.x, pPos.y - e.y);
-          if (d <= e.r) hazardDamage += 7;
-        });
+        const t = talentsRef.current;
+        const thornsActive = now2 < thornsActiveUntilRef.current;
 
-        if (!shielded && hazardDamage > 0 && now2 - lastDamage.current > 240) {
-          lastDamage.current = now2;
-          statsRef.current.hp = Math.max(0, statsRef.current.hp - hazardDamage);
-          syncUI();
-          juicePunch(0.6, 0.7);
-        }
-
-        if (now2 - lastDamage.current > 260) {
-          let totalDamage = 0;
+        // Thorns: invuln + ram damage
+        if (thornsActive) {
           const pp2 = playerRef.current;
-          alive.forEach((en) => {
+          const ramDmg = (t.thornsRamDamage || 34) * (statsRef.current.damageMult || 1) * crewDamageMult;
+          enemiesRef.current = (enemiesRef.current || []).map((en) => {
+            if (en.hp <= 0) return en;
             const d = Math.hypot(en.x - pp2.x, en.y - pp2.y);
-            if (d < en.size * 0.55 + 16) totalDamage += en.contactDamage || 8;
+            if (d < en.size * 0.55 + 18) {
+              const last = en._ramHitAt || 0;
+              if (now2 - last < 120) return en;
+
+              const ang = Math.atan2(en.y - pp2.y, en.x - pp2.x);
+              const push = 10.0;
+              return {
+                ...en,
+                _ramHitAt: now2,
+                hp: en.hp - ramDmg,
+                x: clamp(en.x + Math.cos(ang) * push, 0, ARENA_SIZE),
+                y: clamp(en.y + Math.sin(ang) * push, 0, ARENA_SIZE),
+                stunnedUntil: Math.max(en.stunnedUntil || 0, now2 + 120),
+              };
+            }
+            return en;
           });
-          if (totalDamage > 0) {
-            lastDamage.current = now2;
-            if (!shielded) {
-              statsRef.current.hp = Math.max(0, statsRef.current.hp - totalDamage);
-              syncUI();
-              juicePunch(0.55, 0.65);
-            } else {
-              juicePunch(0.35, 0.55);
+
+          // while Thorns is active, also ignore hazards (0 damage)
+        } else {
+          // Hazards
+          let hazardDamage = 0;
+          explosionsRef.current.forEach((e) => {
+            if (!e.hazard) return;
+            const d = Math.hypot(pPos.x - e.x, pPos.y - e.y);
+            if (d <= e.r) hazardDamage += 7;
+          });
+
+          if (hazardDamage > 0 && now2 - lastDamage.current > 240) {
+            const did = applyPlayerDamage(hazardDamage, 'hazard');
+            if (did > 0) juicePunch(0.6, 0.7);
+            else juicePunch(0.22, 0.42);
+          }
+
+          // Contact damage (enemies)
+          if (now2 - lastDamage.current > 260) {
+            let totalDamage = 0;
+            const pp2 = playerRef.current;
+            alive.forEach((en) => {
+              const d = Math.hypot(en.x - pp2.x, en.y - pp2.y);
+              if (d < en.size * 0.55 + 16) totalDamage += en.contactDamage || 8;
+            });
+
+            if (totalDamage > 0) {
+              const did = applyPlayerDamage(totalDamage, 'contact');
+              if (did > 0) {
+                juicePunch(Math.min(0.55, totalDamage / 90), 0.65);
+              } else {
+                // shielded / plated / thorns etc.
+                juicePunch(shielded ? 0.35 : 0.22, shielded ? 0.55 : 0.45);
+              }
             }
           }
         }
@@ -2856,8 +3177,14 @@ const beat = plan.beats[plan.idx];
     setXpTarget(140);
     setLevel(1);
 
-    setSelectedWeapons([weaponId]);
-    setWeaponLevels({ [weaponId]: 1 });
+    const p = (runBuild && runBuild.purchased) ? runBuild.purchased : {};
+    const hasKatanaBackup = Number(p.MIL_KATANA_BACKUP || 0) > 0;
+
+    const initialWeapons = hasKatanaBackup && weaponId !== 'KATANA' ? [weaponId, 'KATANA'] : [weaponId];
+    const initialLevels = hasKatanaBackup && weaponId !== 'KATANA' ? { [weaponId]: 1, KATANA: 1 } : { [weaponId]: 1 };
+
+    setSelectedWeapons(initialWeapons);
+    setWeaponLevels(initialLevels);
     setUpgradeOptions([]);
     juicePunch(0.40, 0.55);
   };
@@ -2866,6 +3193,10 @@ const beat = plan.beats[plan.idx];
   const showOverdrive = Date.now() < overdriveUntil.current;
   const showMagnet = Date.now() < magnetUntil.current;
   const showFreeze = Date.now() < freezeUntil.current;
+  const showThorns = Date.now() < thornsActiveUntilRef.current;
+  const showAdrenalMove = Date.now() < milAdrenalMoveUntilRef.current;
+  const platesStacks = platesStacksRef.current || 0;
+  const platesMax = talentsRef.current.platesMax || 0;
 
   return (
     <div
@@ -2916,7 +3247,25 @@ const beat = plan.beats[plan.idx];
 
         {bossSpawned && !victory && <div className="boss-warning">BOSS ENGAGED</div>}
 
-        <div style={{ display: 'flex', gap: 10, marginTop: 10, opacity: 0.95 }}>
+        <div style={{ display: 'flex', gap: 10, marginTop: 10, opacity: 0.95, flexWrap: 'wrap' }}>
+          {platesMax > 0 && (
+            <div
+              className="boss-warning"
+              style={{
+                padding: '6px 10px',
+                fontSize: 12,
+                opacity: 0.95,
+                borderColor: platesStacks > 0 ? 'rgba(0,242,255,0.55)' : 'rgba(120,120,120,0.35)',
+                boxShadow: platesStacks > 0 ? '0 0 16px rgba(0,242,255,0.22)' : undefined,
+              }}
+            >
+              🧱 PLATES {platesStacks}/{platesMax}
+            </div>
+          )}
+
+          {showThorns && <div className="boss-warning" style={{ padding: '6px 10px', fontSize: 12 }}>🌵 THORNS</div>}
+          {showAdrenalMove && <div className="boss-warning" style={{ padding: '6px 10px', fontSize: 12 }}>💉 ADRENAL</div>}
+
           {showMagnet && <div className="boss-warning" style={{ padding: '6px 10px', fontSize: 12 }}>🧲 MAGNET</div>}
           {showFreeze && <div className="boss-warning" style={{ padding: '6px 10px', fontSize: 12 }}>❄ FREEZE</div>}
           {showOverdrive && <div className="boss-warning" style={{ padding: '6px 10px', fontSize: 12 }}>⚡ OVERDRIVE</div>}
@@ -2940,7 +3289,9 @@ const beat = plan.beats[plan.idx];
 
     boxShadow: showShield
       ? "0 0 16px rgba(120,220,255,0.75), 0 0 36px rgba(120,220,255,0.55)"
-      : undefined,
+      : showThorns
+        ? "0 0 18px rgba(0,242,255,0.65), 0 0 42px rgba(0,242,255,0.35)"
+        : undefined,
     filter: showOverdrive ? "brightness(1.15) saturate(1.2)" : undefined,
   }}
 />

@@ -116,6 +116,7 @@ export default function App() {
   // XP + resources
   const [crewXp, setCrewXp] = useState(0);
   const [resources, setResources] = useState(0);
+  const [talentPills, setTalentPills] = useState(0); // 1 per mission (roguelite talent currency)
   const [combatCtx, setCombatCtx] = useState(null);
 
   // hero selection
@@ -228,6 +229,15 @@ export default function App() {
 
   const gameOver = lives <= 0;
 
+  // Roguelite hard reset after 5 deaths (auto-refresh)
+  useEffect(() => {
+    if (!gameOver) return;
+    const t = setTimeout(() => {
+      window.location.reload();
+    }, 1400);
+    return () => clearTimeout(t);
+  }, [gameOver]);
+
   const hexGrid = focusPlanet
     ? (() => {
         const arr = [];
@@ -300,6 +310,8 @@ export default function App() {
           if (reward > 0) {
             setCrewXp((xp) => xp + reward);
             setResources((r) => r + reward);
+    // Roguelite talent point: +1 pill per cleared mission
+    setTalentPills((p) => p + 1);
           }
 
           // ✅ unlock shop after first win of run
@@ -468,6 +480,7 @@ export default function App() {
                 setLives(5);
                 setCrewXp(0);
                 setResources(0);
+    setTalentPills(0);
                 setClearedHexes({});
                 setFocusPlanet(null);
                 setSelectedHex(null);
@@ -569,10 +582,10 @@ export default function App() {
             >
               <GalaxyShop
                 title="GALAXY SHOP"
-                credits={resources}
-                onSpend={(amount) => setResources((r) => Math.max(0, r - amount))}
+                credits={talentPills}
+                onSpend={(amount) => setTalentPills((p) => Math.max(0, p - amount))}
                 resetToken={runId}
-                storageKey={`xeno_purge_run_${runId}`}
+                storageKey={null}
                 onBuildChange={setRunBuild}
               />
             </div>
