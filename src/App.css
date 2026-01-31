@@ -69,7 +69,13 @@ body {
 
 /* --- COMBAT ARENA --- */
 .combat-world { width: 100vw; height: 100vh; background: #010206; position: relative; overflow: hidden; }
-.world-container { position: absolute; transition: transform 0.05s linear; }
+.world-container{
+  position: absolute;
+  transition: none;          /* IMPORTANT */
+  will-change: transform;
+  transform: translateZ(0);  /* compositor */
+}
+* { backface-visibility: hidden; }
 .world-border { 
   position: absolute;
   width: 2800px;
@@ -80,9 +86,25 @@ body {
   top: 0;
 }
 
-.player-sprite { 
-  position: absolute; width: 38px; height: 38px; background: var(--neon-blue); 
-  border-radius: 4px; box-shadow: 0 0 20px var(--neon-blue); z-index: 10; 
+.player-sprite{
+  position: absolute;   /* so left/top works */
+  width: 44px;
+  height: 44px;
+
+  border-radius: 999px !important;
+  background-repeat: no-repeat;
+  background-position: center;
+  overflow: hidden;
+}
+
+/* Optional: make the visual sprite bigger without changing collision */
+.player-sprite{
+  transform: translate(-50%, -50%) scale(1.8) !important; /* ✅ looks bigger */
+}
+
+.player-sprite{
+  transform: translate(-50%, -50%);
+  transform-origin: center;
 }
 
 @keyframes tracer-pulse {
@@ -563,6 +585,11 @@ body {
   animation: pickupFloat 1.45s ease-in-out infinite, pickupPulse 1.05s ease-in-out infinite;
   will-change: transform, filter, opacity;
   filter: drop-shadow(0 0 10px rgba(255,255,255,0.45)) drop-shadow(0 0 26px rgba(255,255,255,0.30));
+}
+
+.pickup{
+  will-change: transform, opacity, filter;
+  transform: translateZ(0);
 }
 
 .pickup::after {
