@@ -309,12 +309,13 @@ export default function App() {
         if (!already) {
           current.add(combatCtx.hexId);
 
+          // Roguelite talent point: +1 pill per cleared mission (always).
+          setTalentPills((p) => p + 1);
+
           const reward = combatCtx.reward || 0;
           if (reward > 0) {
             setCrewXp((xp) => xp + reward);
             setResources((r) => r + reward);
-    // Roguelite talent point: +1 pill per cleared mission
-    setTalentPills((p) => p + 1);
           }
 
           // ✅ unlock shop after first win of run

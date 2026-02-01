@@ -748,7 +748,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     const base = { hp: 120, maxHp: 120, regen: 0, damageMult: 1, attackSpeed: 1, moveSpeed: 1 };
     const p = (runBuild && runBuild.purchased) ? runBuild.purchased : {};
     const fieldArmorRank = Number(p.MIL_FIELD_ARMOR || 0);
-    const maxHpBonus = fieldArmorRank * 12; // +12 max HP per rank (5 ranks = +60)
+    const maxHpBonus = fieldArmorRank * 25; // +25 max HP per rank (5 ranks = +60)
     return { ...base, hp: base.hp + maxHpBonus, maxHp: base.maxHp + maxHpBonus };
   });
   const cameraRef = useRef({ x: 0, y: 0 });
@@ -867,7 +867,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
       thornsUnlocked,
     // Danish feedback: thorns felt too short-lived; make it last ~2x.
     thornsDurationMs: (2800 + quickRearmRank * 600) * 2,
-      thornsCooldownMs: Math.max(6000, 15000 - quickRearmRank * 2500),
+      thornsCooldownMs: Math.max(10000, 25000 - quickRearmRank * 3500),
       thornsRamDamage: 32 + tileDifficulty * 4,
       quickRearmRank,
 
@@ -1028,11 +1028,22 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     // Freeze world (uses existing FREEZE mechanic)
     freezeUntil.current = Math.max(freezeUntil.current, now + 2000);
 
-    // Explosion around player
+    // Explosion around player (VISIBILITY BOOST: multi-ring + glow)
     const p = playerRef.current;
-    explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: p.x, y: p.y, r: t.ghostRadius, t: now, life: 320 }];
+    const r = t.ghostRadius || 240;
+    explosionsRef.current = [
+      ...(explosionsRef.current || []),
+      // bright core flash
+      { id: Math.random(), x: p.x, y: p.y, r: r * 0.72, t: now, life: 260, kind: 'ghost', fill: true, alpha: 0.18, color: 'rgba(0,242,255,1)', glow: 32, lineWidth: 2 },
+      // main ring
+      { id: Math.random(), x: p.x, y: p.y, r, t: now, life: 640, kind: 'ghost', alpha: 0.95, color: 'rgba(0,242,255,1)', glow: 38, lineWidth: 6 },
+      // outer ring
+      { id: Math.random(), x: p.x, y: p.y, r: r * 1.55, t: now, life: 820, kind: 'ghost', alpha: 0.55, color: 'rgba(255,0,122,1)', glow: 28, lineWidth: 4 },
+    ];
 
-    // Deal AoE damage + knockback
+    pushToast('👻 GHOST PROTOCOL');
+
+    // Deal AoE damage (boss is immune to knockback)
     enemiesRef.current = (enemiesRef.current || []).map((en) => {
       if (en.hp <= 0) return en;
       const d = Math.hypot(en.x - p.x, en.y - p.y);
@@ -1040,7 +1051,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
         const fall = 1 - d / t.ghostRadius;
         const dmg = t.ghostDamage * Math.max(0.25, fall);
         const ang = Math.atan2(en.y - p.y, en.x - p.x);
-        const push = 12 * Math.max(0.3, fall);
+        const push = (en.type === 'boss') ? 0 : (12 * Math.max(0.3, fall));
         return {
           ...en,
           hp: en.hp - dmg,
@@ -1561,7 +1572,7 @@ const beat = plan.beats[plan.idx];
           enemiesRef.current = (enemiesRef.current || []).map((en) => {
             if (en.hp <= 0) return en;
             const d = Math.hypot(en.x - p.x, en.y - p.y);
-            if (d <= radius && en.type !== 'juggernaut') {
+            if (d <= radius && en.type !== 'juggernaut' && en.type !== 'boss') {
               const fall = 1 - d / radius;
               const ang = Math.atan2(en.y - p.y, en.x - p.x);
               const push = 36 * Math.max(0.25, fall);
@@ -1789,13 +1800,39 @@ const beat = plan.beats[plan.idx];
           const p = 1 + (nowV - e.t) / (e.life || 300);
           const rr = (e.r || 80) * p;
 
+          const col = e.color || (e.hazard ? 'rgba(255,120,120,1)' : 'rgba(255,255,255,1)');
+          const lw = Math.max(1, e.lineWidth || (e.hazard ? 3 : 2));
+          const alphaMult = typeof e.alpha === 'number' ? e.alpha : (e.hazard ? 0.35 : 0.45);
+
           ctx.save();
-          ctx.globalAlpha = a * (e.hazard ? 0.35 : 0.45);
-          ctx.strokeStyle = e.hazard ? 'rgba(255,120,120,1)' : 'rgba(255,255,255,1)';
-          ctx.lineWidth = e.hazard ? 3 : 2;
+
+          // glow for big procs (ghost/thorns/etc.)
+          if (e.glow) {
+            ctx.shadowColor = col;
+            ctx.shadowBlur = e.glow;
+          }
+
+          // optional fill flash
+          if (e.fill) {
+            const gx = e.x - cam.x;
+            const gy = e.y - cam.y;
+            const grad = ctx.createRadialGradient(gx, gy, 0, gx, gy, rr);
+            grad.addColorStop(0, col);
+            grad.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.globalAlpha = a * (alphaMult * 0.55);
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(gx, gy, rr, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          ctx.globalAlpha = a * alphaMult;
+          ctx.strokeStyle = col;
+          ctx.lineWidth = lw;
           ctx.beginPath();
           ctx.arc(e.x - cam.x, e.y - cam.y, rr, 0, Math.PI * 2);
           ctx.stroke();
+
           ctx.restore();
         });
 
@@ -3002,7 +3039,7 @@ const beat = plan.beats[plan.idx];
           out.stunnedUntil = Math.max(out.stunnedUntil || 0, Date.now() + stunMs);
         }
 
-        if (st.knockback && !freezeWorld && out.type !== 'juggernaut' && !isMini) {
+        if (st.knockback && !freezeWorld && out.type !== 'juggernaut' && out.type !== 'boss' && !isMini) {
           const ang = Math.atan2(out.y - pPos.y, out.x - pPos.x);
           const push = 5.0 * st.knockback;
           out.x += Math.cos(ang) * push;
@@ -3216,7 +3253,8 @@ const beat = plan.beats[plan.idx];
               if (now2 - last < 120) return en;
 
               const ang = Math.atan2(en.y - pp2.y, en.x - pp2.x);
-              const push = 10.0;
+              // Boss should not be knockbackable
+              const push = en.type === 'boss' ? 0 : 10.0;
               return {
                 ...en,
                 _ramHitAt: now2,
@@ -3343,6 +3381,7 @@ const beat = plan.beats[plan.idx];
   };
 
   const nowHUD = Date.now();
+  const tHUD = talentsRef.current;
   const showShield = nowHUD < shieldUntil.current;
   const showOverdrive = nowHUD < overdriveUntil.current;
   const showMagnet = nowHUD < magnetUntil.current;
@@ -3352,13 +3391,22 @@ const beat = plan.beats[plan.idx];
 
   const fmtS = (ms) => `${Math.max(0, ms) / 1000 < 10 ? (Math.max(0, ms) / 1000).toFixed(1) : Math.ceil(Math.max(0, ms) / 1000)}s`;
   const remThorns = thornsActiveUntilRef.current - nowHUD;
+  const remThornsCd = thornsCooldownUntilRef.current - nowHUD;
+  const remGhostCd = milGhostCdUntilRef.current - nowHUD;
   const remMagnet = magnetUntil.current - nowHUD;
   const remFreeze = freezeUntil.current - nowHUD;
   const remOverdrive = overdriveUntil.current - nowHUD;
   const remShield = shieldUntil.current - nowHUD;
   const remAdrenal = milAdrenalMoveUntilRef.current - nowHUD;
   const platesStacks = platesStacksRef.current || 0;
-  const platesMax = talentsRef.current.platesMax || 0;
+  const platesMax = tHUD.platesMax || 0;
+
+  const thornsUnlockedHUD = !!tHUD.thornsUnlocked;
+  const ghostUnlockedHUD = Number(tHUD.ghostRank || 0) > 0;
+  const thornsReadyHUD = thornsUnlockedHUD && !showThorns && remThornsCd <= 0;
+  const thornsOnCdHUD = thornsUnlockedHUD && !showThorns && remThornsCd > 0;
+  const ghostReadyHUD = ghostUnlockedHUD && remGhostCd <= 0;
+  const ghostOnCdHUD = ghostUnlockedHUD && remGhostCd > 0;
 
   return (
     <div
@@ -3409,51 +3457,133 @@ const beat = plan.beats[plan.idx];
 
         {bossSpawned && !victory && <div className="boss-warning">BOSS ENGAGED</div>}
 
-        <div style={{ display: 'flex', gap: 10, marginTop: 10, opacity: 0.95, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 10, marginTop: 10, opacity: 0.98, flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* Buff/ability chips (DO NOT use .boss-warning here; it has margin-left:auto and was causing the bottom-right jump) */}
           {platesMax > 0 && (
             <div
-              className="boss-warning"
               style={{
                 padding: '6px 10px',
                 fontSize: 12,
-                opacity: 0.95,
-                borderColor: platesStacks > 0 ? 'rgba(0,242,255,0.55)' : 'rgba(120,120,120,0.35)',
-                boxShadow: platesStacks > 0 ? '0 0 16px rgba(0,242,255,0.22)' : undefined,
+                borderRadius: 12,
+                border: `1px solid ${platesStacks > 0 ? 'rgba(0,242,255,0.55)' : 'rgba(120,120,120,0.35)'}`,
+                color: platesStacks > 0 ? 'rgba(0,242,255,0.95)' : 'rgba(190,190,190,0.8)',
+                background: 'rgba(0,0,0,0.35)',
+                boxShadow: platesStacks > 0 ? '0 0 16px rgba(0,242,255,0.18)' : undefined,
+                letterSpacing: 2,
+                textTransform: 'uppercase',
               }}
             >
-              🧱 PLATES {platesStacks}/{platesMax}
+              🧱 Plates {platesStacks}/{platesMax}
             </div>
           )}
 
-          {showThorns && (
-            <div className="boss-warning" style={{ padding: '6px 10px', fontSize: 12 }}>
-              🌵 THORNS {fmtS(remThorns)}
+          {thornsUnlockedHUD && (
+            <div
+              style={{
+                padding: '8px 10px',
+                fontSize: 12,
+                borderRadius: 12,
+                border: `1px solid ${showThorns ? 'rgba(0,255,160,0.65)' : thornsOnCdHUD ? 'rgba(255,120,120,0.55)' : 'rgba(0,255,160,0.35)'}`,
+                color: showThorns ? 'rgba(0,255,160,0.95)' : thornsOnCdHUD ? 'rgba(255,170,170,0.95)' : 'rgba(220,255,240,0.95)',
+                background: 'rgba(0,0,0,0.40)',
+                boxShadow: showThorns ? '0 0 18px rgba(0,255,160,0.22)' : thornsOnCdHUD ? '0 0 12px rgba(255,120,120,0.12)' : undefined,
+                minWidth: 220,
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, letterSpacing: 2, textTransform: 'uppercase' }}>
+                <span>🌵 Thorns</span>
+                <span>
+                  {showThorns ? `ACTIVE ${fmtS(remThorns)}` : thornsOnCdHUD ? `CD ${fmtS(remThornsCd)}` : 'READY (SPACE)'}
+                </span>
+              </div>
+              <div style={{ marginTop: 6, height: 6, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                <div
+                  style={{
+                    height: '100%',
+                    width: `${clamp(
+                      showThorns
+                        ? ((remThorns / Math.max(1, tHUD.thornsDurationMs || 1)) * 100)
+                        : thornsOnCdHUD
+                          ? ((remThornsCd / Math.max(1, tHUD.thornsCooldownMs || 1)) * 100)
+                          : 0,
+                      0,
+                      100
+                    )}%`,
+                    background: showThorns ? 'rgba(0,255,160,0.85)' : 'rgba(255,120,120,0.75)',
+                  }}
+                />
+              </div>
             </div>
           )}
+
+          {ghostUnlockedHUD && (
+            <div
+              style={{
+                padding: '8px 10px',
+                fontSize: 12,
+                borderRadius: 12,
+                border: `1px solid ${ghostOnCdHUD ? 'rgba(255,0,122,0.55)' : 'rgba(0,242,255,0.55)'}`,
+                color: ghostOnCdHUD ? 'rgba(255,170,205,0.95)' : 'rgba(0,242,255,0.95)',
+                background: 'rgba(0,0,0,0.40)',
+                boxShadow: ghostOnCdHUD ? '0 0 12px rgba(255,0,122,0.10)' : '0 0 16px rgba(0,242,255,0.16)',
+                minWidth: 220,
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, letterSpacing: 2, textTransform: 'uppercase' }}>
+                <span>👻 Ghost</span>
+                <span>{ghostOnCdHUD ? `CD ${fmtS(remGhostCd)}` : 'READY (AUTO)'}</span>
+              </div>
+              <div style={{ marginTop: 6, height: 6, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                <div
+                  style={{
+                    height: '100%',
+                    width: `${clamp(
+                      ghostOnCdHUD ? ((remGhostCd / Math.max(1, tHUD.ghostCooldownMs || 1)) * 100) : 0,
+                      0,
+                      100
+                    )}%`,
+                    background: 'rgba(255,0,122,0.75)',
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
           {showAdrenalMove && (
-            <div className="boss-warning" style={{ padding: '6px 10px', fontSize: 12 }}>
-              💉 ADRENAL {fmtS(remAdrenal)}
+            <div
+              style={{
+                padding: '6px 10px',
+                fontSize: 12,
+                borderRadius: 12,
+                border: '1px solid rgba(255,218,107,0.45)',
+                color: 'rgba(255,218,107,0.95)',
+                background: 'rgba(0,0,0,0.35)',
+                letterSpacing: 2,
+                textTransform: 'uppercase',
+              }}
+            >
+              💉 Adrenal {fmtS(remAdrenal)}
             </div>
           )}
 
           {showMagnet && (
-            <div className="boss-warning" style={{ padding: '6px 10px', fontSize: 12 }}>
-              🧲 MAGNET {fmtS(remMagnet)}
+            <div style={{ padding: '6px 10px', fontSize: 12, borderRadius: 12, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(0,0,0,0.35)', letterSpacing: 2, textTransform: 'uppercase' }}>
+              🧲 Magnet {fmtS(remMagnet)}
             </div>
           )}
           {showFreeze && (
-            <div className="boss-warning" style={{ padding: '6px 10px', fontSize: 12 }}>
-              ❄ FREEZE {fmtS(remFreeze)}
+            <div style={{ padding: '6px 10px', fontSize: 12, borderRadius: 12, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(0,0,0,0.35)', letterSpacing: 2, textTransform: 'uppercase' }}>
+              ❄ Freeze {fmtS(remFreeze)}
             </div>
           )}
           {showOverdrive && (
-            <div className="boss-warning" style={{ padding: '6px 10px', fontSize: 12 }}>
-              ⚡ OVERDRIVE {fmtS(remOverdrive)}
+            <div style={{ padding: '6px 10px', fontSize: 12, borderRadius: 12, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(0,0,0,0.35)', letterSpacing: 2, textTransform: 'uppercase' }}>
+              ⚡ Overdrive {fmtS(remOverdrive)}
             </div>
           )}
           {showShield && (
-            <div className="boss-warning" style={{ padding: '6px 10px', fontSize: 12 }}>
-              🛡 SHIELD {fmtS(remShield)}
+            <div style={{ padding: '6px 10px', fontSize: 12, borderRadius: 12, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(0,0,0,0.35)', letterSpacing: 2, textTransform: 'uppercase' }}>
+              🛡 Shield {fmtS(remShield)}
             </div>
           )}
         </div>
