@@ -120,9 +120,8 @@ const MIL_NODES = [
     tags: ["auto perk"],
     desc:
       "PASSIVE - lesser knife module.\n" +
-      "Every 1.55s: quick knife cut toward the nearest enemy.\n" +
-      "Damage: 10.5 before bonuses.\n" +
-      "Range: 96px. Arc: 34 degrees.\n" +
+      "Every 15s: six quick sword slices, then a straight sword throw.\n" +
+      "Slices: 9.2 damage each before bonuses. Throw: low damage, pierces all enemies, inflicts long bleed, flies off-map.\n" +
       "This is not the Katana weapon, has no upgrades, and never unlocks Katana levels.",
   },
 
@@ -152,7 +151,7 @@ const MIL_NODES = [
     desc:
       "PASSIVE EMERGENCY\nWhen damage gets through: freeze time for 2.0s and explode around you.\n" +
       "Radius: 220/230/240/250/260px. Damage: 48/62/76/90/104.\n" +
-      "Cooldown: 60/52/44/36/28s.",
+      "Cooldown: 42/36.4/30.8/25.2/19.6s.",
   },
 
   // Branch 2
@@ -179,7 +178,7 @@ const MIL_NODES = [
     maxRank: 5,
     icon: 12,
     prereqAny: ["MIL_FIELD_ARMOR", "MIL_GHOST_PROTOCOL"],
-    desc: "PASSIVE STAT\n+4% damage reduction per rank. Max rank 5 = 20% damage reduction.",
+    desc: "PASSIVE STAT\n+7% damage reduction per rank. Max rank 5 = 35% damage reduction.",
   },
 
   // Merge: Adrenal
@@ -194,7 +193,7 @@ const MIL_NODES = [
     icon: 7,
     prereqAny: ["MIL_QUICK_REARM", "MIL_PLATE_CARRIER"],
     desc:
-      "PASSIVE CLUTCH\nAfter taking damage or getting a kill: 4.0s Overdrive, 4.0s +22% move speed, heal 8% missing HP. Cooldown: 30s.",
+      "PASSIVE CLUTCH\nAfter taking damage or getting a kill: 6.0s Overdrive. Cooldown: 30s. No heal, no move speed.",
   },
 
   // Pick either left or right, then bottom
@@ -209,7 +208,7 @@ const MIL_NODES = [
     icon: 20,
     prereqAll: ["MIL_THORNS", "MIL_ADRENAL"],
     desc:
-      "THORNS FINISHER\nWhen Thorns expires: 340px shockwave, 220ms stun, and pushback on normal enemies. Bosses and minibosses resist control.",
+      "THORNS FINISHER\nWhen Thorns expires: 520px detonation, big damage, huge knockback on normal enemies, and a clear vulnerable-again boom.",
   },
   {
     id: "MIL_TITANIUM_PLATES",
@@ -278,7 +277,7 @@ const RES_NODES = [
     maxRank: 1,
     icon: 20,
     prereqAny: ["RES_ONBOARD_PROD", "RES_DECOY_HOLO"],
-    desc: "PASSIVE CHAIN REACTION\nEvery 10th kill explodes. Radius: 125px. Damage: 90 + 10 per map difficulty at center, falling to 40% at edge.",
+    desc: "PASSIVE CHAIN REACTION\nEvery 30s, your next kill triggers a bomb chain: 10 lightning hops, each causing a large explosion at the target.",
   },
   {
     id: "RES_DRONE_ORBIT",
@@ -291,7 +290,7 @@ const RES_NODES = [
     icon: 9,
     prereqAny: ["RES_ONBOARD_PROD", "RES_DECOY_HOLO"],
     desc:
-      "PASSIVE HELPER DRONE\nRemoved old fleet clone. This unlocks Cover Bird: a small orbiting helper that fires every 0.42s. Damage: 4.8 before bonuses.",
+      "PASSIVE HELPER DRONE\nEvery 45s, an untargetable combat drone arrives for 7s and fires twin SMGs at different targets. Damage: 6.2 per shot before bonuses.",
   },
 
   // Row 3: big ability

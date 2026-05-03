@@ -1,6 +1,39 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import thornsIcon from './components/t1.PNG';
 import decoyIcon from './components/t3.PNG';
+import spriteAttackSpeed from './gunsprite/attackspeedupgrade.png';
+import spriteAxe from './gunsprite/axe.png';
+import spriteDamage from './gunsprite/damageupgrade.png';
+import spriteHealthRegen from './gunsprite/healthregenupgrade.png';
+import spriteHealth from './gunsprite/healthupgrade.png';
+import spriteKatana from './gunsprite/katana.png';
+import spriteLaser from './gunsprite/laser.png';
+import spriteRifle from './gunsprite/rifle.png';
+import spriteRocket from './gunsprite/rocketlauncher.png';
+import spriteShotgun from './gunsprite/shotgun.png';
+import spriteSmg from './gunsprite/smg.png';
+import spriteSniper from './gunsprite/sniper.png';
+import spriteTesla from './gunsprite/tesla.png';
+import spriteTimegun from './gunsprite/timegun.png';
+import spriteVoid from './gunsprite/voidorb.png';
+
+const SPRITES = {
+  RIFLE: spriteRifle,
+  KATANA: spriteKatana,
+  AXES: spriteAxe,
+  SMG: spriteSmg,
+  SHOTGUN: spriteShotgun,
+  LASER: spriteLaser,
+  SNIPER: spriteSniper,
+  TESLA: spriteTesla,
+  ROCKET: spriteRocket,
+  VOID: spriteVoid,
+  TIME: spriteTimegun,
+  REGEN: spriteHealthRegen,
+  MAX_HP: spriteHealth,
+  DAMAGE: spriteDamage,
+  ATTACK_SPEED: spriteAttackSpeed
+};
 
 const ARENA_SIZE = 2800; // +40%
 const BOSS_TIME = 65000; // shorter maps: faster boss timing, more punch per run
@@ -9,7 +42,7 @@ const BOSS_TIME = 65000; // shorter maps: faster boss timing, more punch per run
 const TRASH_HP_MULT = 0.95;           // trash HP slightly up (less one-shot mid/late)
 const ELITE_HP_MULT = 1.05;           // elites keep their identity late
 const MINI_HP_MULT = 1.15;            // mini-bosses a bit sturdier
-const BOSS_HP_MULT = 1.65;            // boss much sturdier (was dying too fast)
+const BOSS_HP_MULT = 2.05;            // boss stays epic through late-game burst builds
 // Slightly softer early-game spawn density (prevents guaranteed wall encroach / early overwhelm)
 const SPAWN_INTERVAL_MULT = 0.90;
 
@@ -81,7 +114,8 @@ const applyEnemySeparation = (list) => {
     if (!a || a.despawn) continue;
     if (a.type === 'wall') continue;
 
-    for (let j = i + 1; j < n; j += 1) {
+    const jLimit = n > 170 ? Math.min(n, i + 32) : n;
+    for (let j = i + 1; j < jLimit; j += 1) {
       const b = enemies[j];
       if (!b || b.despawn) continue;
       if (b.type === 'wall') continue;
@@ -125,7 +159,15 @@ const isEliteType = (type) => {
 
 const isControlImmune = (type) => {
   const t = String(type || '');
-  return t === 'boss' || t === 'boss_split' || t === 'juggernaut' || t.startsWith('mini_');
+  return (
+    t === 'boss' ||
+    t === 'boss_split' ||
+    t === 'juggernaut' ||
+    t === 'wall' ||
+    t === 'turret' ||
+    t === 'splitter_boss' ||
+    t.startsWith('mini_')
+  );
 };
 
 const isKnockbackImmune = (type) => {
@@ -256,11 +298,11 @@ const WEAPONS = [
     targeting: 'closest',
     color: '#ff3f2f',
     levels: [
-      { title: 'Axes I', description: 'Left cleave, right cleave, then alternating bladestorm and axe toss. All hits bleed.', stats: { cooldown: 980, damage: 13, range: 168, bleed: 5200, stormMult: 0.72, stormRangeMult: 0.94, throwMult: 1.55, throwBounces: 7 } },
-      { title: 'Axes II', description: 'Harder cleaves, longer bleed, sharper finishers.', stats: { cooldown: 950, damage: 15, range: 178, bleed: 6200, stormMult: 0.76, stormRangeMult: 0.98, throwMult: 1.68, throwBounces: 8 } },
-      { title: 'Axes III', description: 'Blood axes: kills can burst while the rhythm keeps carving.', stats: { cooldown: 920, damage: 17, range: 188, bleed: 7400, stormMult: 0.80, stormRangeMult: 1.02, throwMult: 1.82, throwBounces: 9, deathBurstRadius: 60, deathBurstMult: 0.24 } },
-      { title: 'Axes IV', description: 'Execution rhythm: bigger cleaves and stronger blood bursts.', stats: { cooldown: 890, damage: 19, range: 198, bleed: 8600, stormMult: 0.84, stormRangeMult: 1.06, throwMult: 1.96, throwBounces: 10, deathBurstRadius: 76, deathBurstMult: 0.30 } },
-      { title: 'Axes V', description: 'Twinfall: brutal finishers with heavy bleed and death bursts.', stats: { cooldown: 860, damage: 22, range: 210, bleed: 10000, stormMult: 0.88, stormRangeMult: 1.10, throwMult: 2.12, throwBounces: 11, deathBurstRadius: 92, deathBurstMult: 0.36 } }
+      { title: 'Axes I', description: 'Left cleave, right cleave, then alternating bladestorm and axe toss. All hits bleed.', stats: { cooldown: 980, damage: 13, range: 168, bleed: 7200, stormMult: 0.72, stormRangeMult: 0.94, throwMult: 1.55, throwBounces: 7, throwCount: 1 } },
+      { title: 'Axes II', description: 'Harder cleaves, longer bleed, sharper finishers.', stats: { cooldown: 950, damage: 15, range: 178, bleed: 8600, stormMult: 0.76, stormRangeMult: 0.98, throwMult: 1.68, throwBounces: 8, throwCount: 1 } },
+      { title: 'Axes III', description: 'Blood axes: kills can burst while the rhythm keeps carving.', stats: { cooldown: 920, damage: 17, range: 188, bleed: 10200, stormMult: 0.80, stormRangeMult: 1.02, throwMult: 1.82, throwBounces: 9, throwCount: 2, deathBurstRadius: 60, deathBurstMult: 0.24 } },
+      { title: 'Axes IV', description: 'Execution rhythm: bigger cleaves and stronger blood bursts.', stats: { cooldown: 890, damage: 19, range: 198, bleed: 11800, stormMult: 0.84, stormRangeMult: 1.06, throwMult: 1.96, throwBounces: 10, throwCount: 2, deathBurstRadius: 76, deathBurstMult: 0.30 } },
+      { title: 'Axes V', description: 'Twinfall: brutal finishers with heavy bleed and death bursts.', stats: { cooldown: 860, damage: 22, range: 210, bleed: 14000, stormMult: 0.88, stormRangeMult: 1.10, throwMult: 2.12, throwBounces: 11, throwCount: 3, deathBurstRadius: 92, deathBurstMult: 0.36 } }
     ]
   },
 
@@ -544,10 +586,12 @@ const spawnMiniBoss = (player, difficulty, kind = 'charger', pos = null) => {
   };
 
   if (kind === 'charger') {
+    const stagger = Math.random() * 1000;
     return {
       ...base,
-      dashCd: 1800, dashWindup: 700, dashMs: 1200, dashSpd: 15.0,
+      dashCd: 1900 + Math.random() * 900, dashWindup: 620 + Math.random() * 520, dashMs: 1120, dashSpd: 15.0,
       dashUntil: 0, windupUntil: 0, dashDir: 0,
+      nextDashAt: Date.now() + 450 + stagger,
       damageReductionUntil: Date.now() + 1700, damageReductionMult: 0.40
     };
   }
@@ -818,7 +862,7 @@ const rollUpgradeOptions = (ownedWeapons, weaponLevels, stats) => {
   });
 };
 
-export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, selectedHero, runBuild }) {
+export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, selectedHero, runBuild, runTimeMs }) {
 
 
   const progElapsedRef = useRef(0); // progression clock (pauses during events)
@@ -939,8 +983,10 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   const droneNextAtRef = useRef(Date.now() + 60000);
   const droneUntilRef = useRef(0);
   const droneLastFireRef = useRef(0);
+  const droneBurstToastRef = useRef(0);
   const slowPulseNextAtRef = useRef(Date.now() + 20000);
   const bossReturnPendingRef = useRef(null);
+  const combustionNextAtRef = useRef(0);
 
   useEffect(() => {
     const p = (runBuild && runBuild.purchased) ? runBuild.purchased : {};
@@ -950,10 +996,10 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
 
     const fieldArmorRank = Number(p.MIL_FIELD_ARMOR || 0);
     const plateCarrierRank = Number(p.MIL_PLATE_CARRIER || 0);
-    const damageReduction = clamp(plateCarrierRank * 0.04, 0, 0.30); // 4% per rank, up to 30%
+    const damageReduction = clamp(plateCarrierRank * 0.07, 0, 0.35); // 7% per rank, max 35%
 
     const ghostRank = Number(p.MIL_GHOST_PROTOCOL || 0);
-    const ghostCooldownMs = ghostRank > 0 ? Math.max(25000, 60000 - (ghostRank - 1) * 8000) : 999999999;
+    const ghostCooldownMs = ghostRank > 0 ? Math.max(18000, Math.round((60000 - (ghostRank - 1) * 8000) * 0.70)) : 999999999;
     const ghostRadius = 210 + ghostRank * 10;
     const ghostDamage = 34 + ghostRank * 14;
 
@@ -1008,19 +1054,21 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     platesLastGenAtRef.current = Date.now();
     axeComboRef.current = 0;
     killCountRef.current = 0;
+    combustionNextAtRef.current = 0;
     decoyRef.current = null;
     decoyCooldownUntilRef.current = 0;
     fleetNextAtRef.current = 9999999999999;
     fleetUntilRef.current = 0;
-    droneNextAtRef.current = 0;
-    droneUntilRef.current = 9999999999999;
+    droneNextAtRef.current = Date.now() + 4500;
+    droneUntilRef.current = 0;
     droneLastFireRef.current = 0;
+    droneBurstToastRef.current = 0;
     slowPulseNextAtRef.current = Date.now() + 20000;
     bossReturnPendingRef.current = null;
   }, [runBuild, tileDifficulty]);
 
   // per-run duration (random 25–100% longer)
-    const runTimeRef = useRef(BOSS_TIME * (0.90 + Math.random() * 0.25));
+    const runTimeRef = useRef(runTimeMs || (BOSS_TIME * (0.50 + Math.random() * 0.35)));
 
   // BEAT PLAN: randomized sequence each run (matches desired arc)
   const beatPlanRef = useRef({ ready: false, idx: 0, beats: [] });
@@ -1051,7 +1099,8 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   const doubleDamageUntil = useRef(0);
 
   const selectingWeapon = selectedWeapons.length === 0;
-  const paused = selectingWeapon || upgradeOptions.length > 0 || victory || defeat;
+  const liveUpgradeSelect = upgradeOptions.length > 0 && selectedWeapons.length >= 3;
+  const paused = selectingWeapon || (upgradeOptions.length > 0 && !liveUpgradeSelect) || victory || defeat;
 
   const pausedRef = useRef(paused);
   const pauseStartedAtRef = useRef(0);
@@ -1187,18 +1236,12 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
 
     milAdrenalCdUntilRef.current = now + 30000; // 30s cooldown
 
-    // reuse existing OVERDRIVE pickup mechanics for firing speed
-    overdriveUntil.current = Math.max(overdriveUntil.current, now + 4000);
-    milAdrenalMoveUntilRef.current = Math.max(milAdrenalMoveUntilRef.current, now + 4000);
-
-    // heal 8% missing HP
-    const s = statsRef.current;
-    const missing = Math.max(0, (s.maxHp || 0) - (s.hp || 0));
-    const heal = missing * 0.08;
-    if (heal > 0) s.hp = Math.min(s.maxHp, s.hp + heal);
+    // Adrenal is pure Overdrive now: 6 seconds, 30 second cooldown.
+    overdriveUntil.current = Math.max(overdriveUntil.current, now + 6000);
+    milAdrenalMoveUntilRef.current = Math.max(milAdrenalMoveUntilRef.current, now + 6000);
 
     // VFX pulse
-    explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: playerRef.current.x, y: playerRef.current.y, r: 120, t: now, life: 220 }];
+    explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: playerRef.current.x, y: playerRef.current.y, r: 150, t: now, life: 280, color: 'rgba(255,218,107,1)', glow: 26, fill: true, alpha: 0.28 }];
     juicePunch(0.55, 0.65);
     return true;
   };
@@ -1302,18 +1345,63 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     tryProcAdrenal(now, 'kill');
 
     const t = talentsRef.current;
-    if (t.combustion) {
-      killCountRef.current += 1;
-      if (killCountRef.current % 10 === 0) {
-        const radius = 125;
-        explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: enemy.x, y: enemy.y, r: radius, t: now, life: 360, color: 'rgba(255,92,0,1)', glow: 26, fill: true, alpha: 0.45 }];
-        enemiesRef.current = (enemiesRef.current || []).map((en) => {
-          const d = Math.hypot(en.x - enemy.x, en.y - enemy.y);
-          if (d > radius || en.hp <= 0) return en;
-          const fall = 1 - d / radius;
-          return { ...en, hp: en.hp - (90 + tileDifficulty * 10) * Math.max(0.40, fall) };
-        });
+    if (t.combustion && now >= combustionNextAtRef.current) {
+      combustionNextAtRef.current = now + 30000;
+      const radius = 165;
+      const damage = 240 + tileDifficulty * 24;
+      let origin = { x: enemy.x, y: enemy.y, id: enemy.id };
+      const hit = new Set([enemy.id]);
+      const blasts = [{ x: enemy.x, y: enemy.y }];
+
+      for (let hop = 0; hop < 10; hop += 1) {
+        const candidates = (enemiesRef.current || [])
+          .filter((en) => en.hp > 0 && !hit.has(en.id))
+          .map((en) => ({ en, d: Math.hypot(en.x - origin.x, en.y - origin.y) }))
+          .filter((x) => x.d < 620)
+          .sort((a, b) => a.d - b.d);
+        const next = candidates[0]?.en;
+        if (!next) break;
+        arcsRef.current = [...(arcsRef.current || []), {
+          id: Math.random(),
+          x1: origin.x,
+          y1: origin.y,
+          x2: next.x,
+          y2: next.y,
+          t: now + hop * 30,
+          life: 420,
+          color: 'rgba(255,218,107,0.95)'
+        }];
+        blasts.push({ x: next.x, y: next.y });
+        hit.add(next.id);
+        origin = next;
       }
+
+      explosionsRef.current = [
+        ...(explosionsRef.current || []),
+        ...blasts.map((b, i) => ({
+          id: Math.random(),
+          x: b.x,
+          y: b.y,
+          r: radius + i * 4,
+          t: now + i * 35,
+          life: 520,
+          color: i % 2 ? 'rgba(255,218,107,1)' : 'rgba(255,84,18,1)',
+          glow: 34,
+          fill: true,
+          alpha: 0.40
+        }))
+      ];
+
+      enemiesRef.current = (enemiesRef.current || []).map((en) => {
+        let total = 0;
+        for (const b of blasts) {
+          const d = Math.hypot(en.x - b.x, en.y - b.y);
+          if (d <= radius) total += damage * Math.max(0.38, 1 - d / radius);
+        }
+        return total > 0 ? { ...en, hp: en.hp - total } : en;
+      });
+      juicePunch(1.0, 0.95);
+      pushToast('COMBUSTION CHAIN');
     }
   };
 
@@ -1864,28 +1952,34 @@ const beat = plan.beats[plan.idx];
         const thornsActive = now < thornsActiveUntilRef.current;
         if (thornsWasActiveRef.current && !thornsActive && t.discharge) {
           const p = playerRef.current;
-          const radius = 340;
-          explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: p.x, y: p.y, r: radius, t: now, life: 280 }];
+          const radius = 520;
+          const damage = 180 + tileDifficulty * 22;
+          explosionsRef.current = [
+            ...(explosionsRef.current || []),
+            { id: Math.random(), x: p.x, y: p.y, r: radius, t: now, life: 520, color: 'rgba(0,255,160,1)', glow: 52, fill: true, alpha: 0.34, lineWidth: 9 },
+            { id: Math.random(), x: p.x, y: p.y, r: radius * 0.55, t: now, life: 360, color: 'rgba(255,255,255,1)', glow: 30, fill: true, alpha: 0.22 }
+          ];
 
           enemiesRef.current = (enemiesRef.current || []).map((en) => {
             if (en.hp <= 0) return en;
             const d = Math.hypot(en.x - p.x, en.y - p.y);
-            if (d <= radius && !isControlImmune(en.type)) {
+            if (d <= radius) {
               const fall = 1 - d / radius;
               const ang = Math.atan2(en.y - p.y, en.x - p.x);
-              const push = 36 * Math.max(0.25, fall);
+              const push = isKnockbackImmune(en.type) ? 0 : 120 * Math.max(0.22, fall);
               return {
                 ...en,
+                hp: en.hp - damage * Math.max(0.28, fall),
                 x: clamp(en.x + Math.cos(ang) * push, 0, ARENA_SIZE),
                 y: clamp(en.y + Math.sin(ang) * push, 0, ARENA_SIZE),
-                stunnedUntil: Math.max(en.stunnedUntil || 0, now + 220),
+                stunnedUntil: isControlImmune(en.type) ? en.stunnedUntil : Math.max(en.stunnedUntil || 0, now + 380),
               };
             }
             return en;
           });
 
-          juicePunch(0.95, 0.9);
-          pushToast('🌵 THORNS expired');
+          juicePunch(1.45, 1.0);
+          pushToast('THORNS DISCHARGE');
         }
         thornsWasActiveRef.current = thornsActive;
 
@@ -1897,8 +1991,12 @@ const beat = plan.beats[plan.idx];
           juicePunch(0.45, 0.65);
         }
 
-        if (t.droneOrbit) {
-          droneUntilRef.current = now + 60000;
+        if (t.droneOrbit && now >= droneNextAtRef.current && now >= droneUntilRef.current) {
+          droneUntilRef.current = now + 7000;
+          droneNextAtRef.current = now + 45000;
+          droneBurstToastRef.current = now;
+          pushToast('DRONE SUPPORT INBOUND');
+          juicePunch(0.45, 0.65);
         }
 
         if (t.slowPulse && now >= slowPulseNextAtRef.current) {
@@ -1974,7 +2072,8 @@ const beat = plan.beats[plan.idx];
         bulletsRef.current.forEach(b => {
           if (b.x < viewL || b.x > viewR || b.y < viewT || b.y > viewB) return;
 
-          // Void Orbs: render as circles (enemies are squares) for readability.
+        // Void Orbs: render as circles (enemies are squares) for readability.
+          if (b.delay && (b.age || 0) < b.delay) return;
           const isVoid = !!(b.pullRadius || b.vortexDps || b.singularity || b.anchorOnMaxRange);
           if (isVoid) {
             const r = Math.max(10, (b.width || 20) * 0.5);
@@ -2067,6 +2166,38 @@ const beat = plan.beats[plan.idx];
             return;
           }
 
+          if (b.swordThrow) {
+            const ang = Number.isFinite(b.angle) ? b.angle : Math.atan2(b.vy || 0, b.vx || 0);
+            ctx.save();
+            ctx.translate(b.x - cam.x, b.y - cam.y);
+            ctx.rotate(ang);
+            ctx.globalAlpha = 0.92;
+            ctx.shadowColor = 'rgba(120,230,255,0.95)';
+            ctx.shadowBlur = 18;
+            ctx.strokeStyle = 'rgba(190,250,255,0.98)';
+            ctx.lineWidth = 5;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(-30, 0);
+            ctx.lineTo(30, 0);
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(120,230,255,0.95)';
+            ctx.beginPath();
+            ctx.moveTo(34, 0);
+            ctx.lineTo(18, -8);
+            ctx.lineTo(20, 8);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255,255,255,0.80)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(-18, -8);
+            ctx.lineTo(-18, 8);
+            ctx.stroke();
+            ctx.restore();
+            return;
+          }
+
           ctx.fillStyle = b.color || '#fff';
           ctx.save();
           ctx.translate(b.x - cam.x, b.y - cam.y);
@@ -2113,17 +2244,19 @@ const beat = plan.beats[plan.idx];
           const sy = e.y - cam.y;
 
           ctx.fillStyle = e.color || '#ff007a';
-          if (e.type === 'boss') {
+          if (e.type === 'boss' || e.type === 'boss_split') {
             const a = (Date.now() / 900) % (Math.PI * 2);
             ctx.save();
             ctx.translate(sx, sy);
-            ctx.rotate(a * 0.16);
-            ctx.shadowColor = 'rgba(255,218,107,0.8)';
+            ctx.rotate(a * (e.type === 'boss_split' ? 0.42 : 0.16));
+            ctx.shadowColor = e.type === 'boss_split' ? 'rgba(166,255,72,0.92)' : 'rgba(255,218,107,0.8)';
             ctx.shadowBlur = 26;
+            ctx.fillStyle = e.type === 'boss_split' ? (e.color || '#a7ff48') : (e.color || '#ffda6b');
             ctx.beginPath();
-            for (let i = 0; i < 10; i += 1) {
-              const rr = (e.size * (i % 2 ? 0.42 : 0.62));
-              const aa = -Math.PI / 2 + (Math.PI * 2 * i) / 10;
+            const points = e.type === 'boss_split' ? 12 : 10;
+            for (let i = 0; i < points; i += 1) {
+              const rr = (e.size * (i % 2 ? (e.type === 'boss_split' ? 0.30 : 0.42) : 0.62));
+              const aa = -Math.PI / 2 + (Math.PI * 2 * i) / points;
               const x = Math.cos(aa) * rr;
               const y = Math.sin(aa) * rr;
               if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
@@ -2148,7 +2281,7 @@ const beat = plan.beats[plan.idx];
             ctx.save();
             ctx.globalAlpha = 0.55;
 
-            ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+            ctx.strokeStyle = e.secondDashTelegraph ? 'rgba(255,70,70,0.82)' : 'rgba(255,255,255,0.55)';
             ctx.lineWidth = 10;
             ctx.beginPath();
             ctx.moveTo(sx, sy);
@@ -2156,7 +2289,7 @@ const beat = plan.beats[plan.idx];
             ctx.stroke();
 
             ctx.globalAlpha = 0.35;
-            ctx.strokeStyle = 'rgba(255,220,107,0.9)';
+            ctx.strokeStyle = e.secondDashTelegraph ? 'rgba(255,40,40,0.95)' : 'rgba(255,220,107,0.9)';
             ctx.lineWidth = 18;
             ctx.beginPath();
             ctx.moveTo(sx, sy);
@@ -2164,7 +2297,7 @@ const beat = plan.beats[plan.idx];
             ctx.stroke();
 
             ctx.globalAlpha = 0.8;
-            ctx.fillStyle = 'rgba(255,220,107,0.95)';
+            ctx.fillStyle = e.secondDashTelegraph ? 'rgba(255,70,70,0.98)' : 'rgba(255,220,107,0.95)';
             ctx.beginPath();
             ctx.arc(sx + Math.cos(ang) * len, sy + Math.sin(ang) * len, 9, 0, Math.PI * 2);
             ctx.fill();
@@ -2511,6 +2644,42 @@ const beat = plan.beats[plan.idx];
           ctx.restore();
         }
 
+        if (talentsRef.current.droneOrbit && nowV < droneUntilRef.current) {
+          const p = playerRef.current;
+          const left = nowV / 185;
+          const entry = clamp((nowV - (droneBurstToastRef.current || nowV)) / 700, 0, 1);
+          [-1, 1].forEach((side) => {
+            const a = left + side * Math.PI * 0.88;
+            const r = 92 + Math.sin(nowV / 140 + side) * 10;
+            const x = p.x + Math.cos(a) * r;
+            const y = p.y + Math.sin(a) * r;
+            ctx.save();
+            ctx.translate(x - cam.x, y - cam.y);
+            ctx.rotate(a + Math.PI / 2);
+            ctx.globalAlpha = 0.72 + entry * 0.28;
+            ctx.shadowColor = 'rgba(255,218,107,0.90)';
+            ctx.shadowBlur = 20;
+            ctx.fillStyle = 'rgba(35,42,48,0.98)';
+            ctx.strokeStyle = 'rgba(255,218,107,0.95)';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.roundRect(-18, -12, 36, 24, 8);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(0,242,255,0.95)';
+            ctx.fillRect(-7, -6, 14, 12);
+            ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(-26, -8);
+            ctx.lineTo(-40, -8);
+            ctx.moveTo(26, -8);
+            ctx.lineTo(40, -8);
+            ctx.stroke();
+            ctx.restore();
+          });
+        }
+
         (arcsRef.current || []).forEach((aObj) => {
           const a = clamp(1 - (nowV - aObj.t) / (aObj.life || 150), 0, 1);
           if (a <= 0) return;
@@ -2685,8 +2854,7 @@ const beat = plan.beats[plan.idx];
         const baseSpeed = 5.8;
         const speedMult = Math.min(crewSpeedMult, 1.45);
         const nowMv = Date.now();
-        const adrenalMove = nowMv < milAdrenalMoveUntilRef.current;
-        const finalSpeed = baseSpeed * speedMult * (statsRef.current.moveSpeed || 1) * (adrenalMove ? 1.22 : 1.0);
+        const finalSpeed = baseSpeed * speedMult * (statsRef.current.moveSpeed || 1);
 
         if (keys.current.w) ny -= finalSpeed;
         if (keys.current.s) ny += finalSpeed;
@@ -2967,7 +3135,9 @@ const beat = plan.beats[plan.idx];
               dashDir: angToPlayer,
               dashLen,
               dashTicks,
-              nextDashAt: now2 + (en.dashCd || 1800)
+              doubleDashQueued: Math.random() < 0.72,
+              didDoubleDash: false,
+              nextDashAt: now2 + (en.dashCd || 1800) + Math.random() * 1000
             };
           }
 
@@ -2988,6 +3158,24 @@ const beat = plan.beats[plan.idx];
           }
 
           if (en.dashUntil && now2 >= en.dashUntil) {
+            if (en.doubleDashQueued && !en.didDoubleDash) {
+              const dx2 = targetPoint.x - en.x;
+              const dy2 = targetPoint.y - en.y;
+              const dashMs = en.dashMs || 360;
+              const dashSpd = en.dashSpd || 11.2;
+              const dashTicks = Math.ceil(dashMs / 16);
+              const dashLen = Math.min(dashSpd * dashTicks * 1.2, 600);
+              return {
+                ...en,
+                dashUntil: 0,
+                windupUntil: now2 + 620 + Math.random() * 420,
+                dashDir: Math.atan2(dy2, dx2),
+                dashLen,
+                dashTicks,
+                didDoubleDash: true,
+                secondDashTelegraph: true
+              };
+            }
             return { ...en, dashUntil: 0 };
           }
         }
@@ -3065,6 +3253,10 @@ const beat = plan.beats[plan.idx];
           let vy = b.vy;
           let x = b.x;
           let y = b.y;
+
+          if (b.delay && (b.age || 0) < b.delay) {
+            return { ...b, age: (b.age || 0) + 16, life: b.life - 16 };
+          }
 
           if (b.accel) {
             const sp = Math.hypot(vx, vy) || 1;
@@ -3146,7 +3338,7 @@ const beat = plan.beats[plan.idx];
             return { ...b, didSplit: true };
           }
 
-          return { ...b, x: nx, y: ny, vx, vy, life: b.life - 16 };
+          return { ...b, x: nx, y: ny, vx, vy, age: (b.age || 0) + 16, life: b.life - 16 };
         })
         .filter((b) => b.x > -140 && b.x < ARENA_SIZE + 140 && b.y > -140 && b.y < ARENA_SIZE + 140 && b.life > 0);
 
@@ -3214,13 +3406,14 @@ const beat = plan.beats[plan.idx];
       };
 
       nextBullets.forEach((b) => {
-          if (b.hit) return;
+        if (b.hit) return;
+        if (b.delay && (b.age || 0) < b.delay) return;
 
           for (const en of movedEnemies) {
             if (b.hit) break;
 
             const d = Math.hypot(b.x - en.x, b.y - en.y);
-            const hitRadius = en.size * 0.7 + (b.axeThrow ? 34 : 0);
+            const hitRadius = en.size * 0.7 + (b.axeThrow ? 34 : b.swordThrow ? 16 : 0);
           if (d < hitRadius) {
             const eliteMult = isEliteType(en.type) ? (b.eliteDmgMult ?? 1) : 1;
             const dmgHit = (b.damage || 0) * eliteMult;
@@ -3410,16 +3603,19 @@ const beat = plan.beats[plan.idx];
           arcsRef.current = [...(arcsRef.current || []), { id: Math.random(), x1: pp.x, y1: pp.y, x2: origin.x, y2: origin.y, t: now3, life: 120, color: '#9bffef' }];
         }
 
-        if (tNow.droneOrbit && now3 < droneUntilRef.current && now3 - droneLastFireRef.current > 420) {
+        if (tNow.droneOrbit && now3 < droneUntilRef.current && now3 - droneLastFireRef.current > 145) {
           droneLastFireRef.current = now3;
-          const a = (now3 / 260) % (Math.PI * 2);
-          const origin = { x: pp.x + Math.cos(a) * 82, y: pp.y + Math.sin(a) * 82 };
-          const target = currentEnemies.reduce((closest, en) => {
-            const d = Math.hypot(en.x - origin.x, en.y - origin.y);
-            if (!closest) return en;
-            return d < Math.hypot(closest.x - origin.x, closest.y - origin.y) ? en : closest;
-          }, null);
-          fireSupportShot(origin, target, 4.8, '#ffd36b', 17, 9, 4);
+          const sortedByAngle = [...currentEnemies].sort((a, b) => Math.atan2(a.y - pp.y, a.x - pp.x) - Math.atan2(b.y - pp.y, b.x - pp.x));
+          const a = (now3 / 185) % (Math.PI * 2);
+          const targetA = sortedByAngle[0] || currentEnemies[0];
+          const targetB = sortedByAngle[Math.floor(sortedByAngle.length * 0.55)] || currentEnemies[currentEnemies.length - 1] || targetA;
+          [
+            { side: -1, target: targetA, color: '#ffd36b' },
+            { side: 1, target: targetB, color: '#9bffef' }
+          ].forEach((shot) => {
+            const origin = { x: pp.x + Math.cos(a + shot.side * Math.PI * 0.88) * 92, y: pp.y + Math.sin(a + shot.side * Math.PI * 0.88) * 92 };
+            fireSupportShot(origin, shot.target, 6.2, shot.color, 22, 10, 4);
+          });
         }
 
         if (tNow.onboardProduction && now3 - (lastFire.current.__talentPistol || 0) > 980) {
@@ -3432,8 +3628,8 @@ const beat = plan.beats[plan.idx];
           fireSupportShot(pp, target, 8.5, '#fff2a6', 13.5, 12, 4);
         }
 
-        if (tNow.katanaBackup && now3 - (lastFire.current.__talentKatana || 0) > 1550) {
-          lastFire.current.__talentKatana = now3;
+        if (tNow.katanaBackup && now3 - (lastFire.current.__talentKnife || 0) > 15000) {
+          lastFire.current.__talentKnife = now3;
           const target = currentEnemies.reduce((closest, en) => {
             const d = Math.hypot(en.x - pp.x, en.y - pp.y);
             if (!closest) return en;
@@ -3441,27 +3637,64 @@ const beat = plan.beats[plan.idx];
           }, null);
           if (target) {
             const angle = Math.atan2(target.y - pp.y, target.x - pp.x);
-            spawnedSlashes.push({
+            const combo = [
+              { delay: 0, off: -0.34, color: 'rgba(120,230,255,1)' },
+              { delay: 110, off: 0.34, color: 'rgba(0,255,180,1)' },
+              { delay: 230, off: -0.18, color: 'rgba(120,230,255,1)' },
+              { delay: 360, off: 0.18, color: 'rgba(0,255,180,1)' },
+              { delay: 500, off: -0.06, color: 'rgba(255,255,255,1)' },
+              { delay: 650, off: 0.06, color: 'rgba(120,230,255,1)' }
+            ];
+            combo.forEach((cut) => {
+              spawnedSlashes.push({
+                id: Math.random(),
+                x: pp.x,
+                y: pp.y,
+                range: 122,
+                damage: 9.2 * crewDamageMult * (doubleDamage ? 2 : 1),
+                angle: angle + cut.off,
+                arc: Math.PI * 0.24,
+                delay: cut.delay,
+                activeMs: 110,
+                age: 0,
+                life: cut.delay + 180,
+                kind: 'crescent',
+                color: cut.color,
+                glowColor: 'rgba(0,242,255,0.60)',
+                glowBlur: 18,
+                lineWidth: 9,
+                side: 1,
+                knockback: 0.18,
+                burn: 2600
+              });
+            });
+            const speed = 20;
+            spawnedBullets.push({
               id: Math.random(),
               x: pp.x,
               y: pp.y,
-              range: 96,
-              damage: 10.5 * crewDamageMult * (doubleDamage ? 2 : 1),
+              originX: pp.x,
+              originY: pp.y,
+              vx: Math.cos(angle) * speed,
+              vy: Math.sin(angle) * speed,
               angle,
-              arc: Math.PI * 0.19,
-              delay: 0,
-              activeMs: 115,
+              damage: 6.5 * crewDamageMult * (doubleDamage ? 2 : 1),
+              color: '#8efaff',
+              life: 2400,
+              lifeStart: 2400,
+              delay: 830,
               age: 0,
-              life: 220,
-              kind: 'crescent',
-              color: 'rgba(255,245,210,1)',
-              glowColor: 'rgba(255,255,255,0.42)',
-              glowBlur: 10,
-              lineWidth: 5,
-              side: 1,
-              knockback: 0.28
+              width: 58,
+              height: 10,
+              pierce: 999,
+              ricochets: 0,
+              burn: 5200,
+              knockback: 0.22,
+              eliteDmgMult: 0.65,
+              swordThrow: true
             });
-            juicePunch(0.14, 0.18);
+            arcsRef.current = [...(arcsRef.current || []), { id: Math.random(), x1: pp.x, y1: pp.y, x2: pp.x + Math.cos(angle) * 190, y2: pp.y + Math.sin(angle) * 190, t: now3 + 830, life: 360, color: 'rgba(120,230,255,0.95)' }];
+            juicePunch(0.55, 0.50);
           }
         }
 
@@ -3656,29 +3889,34 @@ const beat = plan.beats[plan.idx];
 
               if (step === 3 && cycle % 2 === 1) {
                 const speed = 18.5;
-                spawnedBullets.push({
-                  id: Math.random(),
-                  x: pp.x,
-                  y: pp.y,
-                  originX: pp.x,
-                  originY: pp.y,
-                  vx: Math.cos(baseAngle) * speed,
-                  vy: Math.sin(baseAngle) * speed,
-                  angle: baseAngle,
-                  damage: baseDamage * (wStats.throwMult || 1.15),
-                  color: weapon.color,
-                  life: 2100,
-                  lifeStart: 2100,
-                  width: 66,
-                  height: 32,
-                  pierce: 0,
-                  ricochets: wStats.throwBounces || 5,
-                  burn: bleed,
-                  knockback: 1.20,
-                  eliteDmgMult: 0.92,
-                  axeThrow: true,
-                  spinDir: Math.random() < 0.5 ? -1 : 1
-                });
+                const throwCount = wStats.throwCount || 1;
+                for (let ti = 0; ti < throwCount; ti += 1) {
+                  const off = throwCount === 1 ? 0 : (ti - (throwCount - 1) / 2) * 0.20;
+                  const aThrow = baseAngle + off;
+                  spawnedBullets.push({
+                    id: Math.random(),
+                    x: pp.x,
+                    y: pp.y,
+                    originX: pp.x,
+                    originY: pp.y,
+                    vx: Math.cos(aThrow) * speed,
+                    vy: Math.sin(aThrow) * speed,
+                    angle: aThrow,
+                    damage: baseDamage * (wStats.throwMult || 1.15),
+                    color: weapon.color,
+                    life: 2100,
+                    lifeStart: 2100,
+                    width: 66,
+                    height: 32,
+                    pierce: 0,
+                    ricochets: wStats.throwBounces || 5,
+                    burn: bleed,
+                    knockback: 1.20,
+                    eliteDmgMult: 0.92,
+                    axeThrow: true,
+                    spinDir: ti % 2 === 0 ? 1 : -1
+                  });
+                }
                 arcsRef.current = [...(arcsRef.current || []), {
                   id: Math.random(),
                   x1: pp.x,
@@ -3767,7 +4005,7 @@ const beat = plan.beats[plan.idx];
 
             const pattern =
               wStats.slashPattern && wStats.slashPattern.length
-                ? [wStats.slashPattern[axeComboRef.current % 2 === 1 ? 0 : 1]]
+                ? wStats.slashPattern
                 : [{ delay: 0, offset: 0, arc: Math.PI * 0.34, kind: 'crescent', dmgMult: 1 }];
 
             const baseDamage = (wStats.damage || 10) * (statsRef.current.damageMult || 1) * crewDamageMult * (doubleDamage ? 2 : 1);
@@ -4047,10 +4285,10 @@ const beat = plan.beats[plan.idx];
           out.y += Math.sin(ang) * push;
         }
 
-        if (st.burn) {
-          out.burnUntil = Math.max(out.burnUntil || 0, Date.now() + st.burn);
-          out.burnDps = Math.max(out.burnDps || 0, 4.2);
-        }
+          if (st.burn) {
+            out.burnUntil = Math.max(out.burnUntil || 0, Date.now() + st.burn);
+          out.burnDps = Math.max(out.burnDps || 0, 8.5);
+          }
 
         if (st.deathBurstRadius) {
           out.deathBurstRadius = Math.max(out.deathBurstRadius || 0, st.deathBurstRadius);
@@ -4634,6 +4872,16 @@ const beat = plan.beats[plan.idx];
   const ghostOnCdHUD = ghostUnlockedHUD && remGhostCd > 0;
   const decoyReadyHUD = decoyUnlockedHUD && !showDecoy && remDecoyCd <= 0;
   const decoyOnCdHUD = decoyUnlockedHUD && !showDecoy && remDecoyCd > 0;
+  const matchPassiveHud = [
+    stats.regenRank > 0 ? { id: 'REGEN', name: 'Regen', value: `${stats.regenRank}/4` } : null,
+  ].filter(Boolean);
+  const loadoutHud = [
+    ...selectedWeapons.map((id) => {
+      const w = WEAPONS.find((x) => x.id === id);
+      return { id, name: w?.name || id, value: `LV ${weaponLevels[id] || 1}`, icon: SPRITES[id] };
+    }),
+    ...matchPassiveHud.map((item) => ({ ...item, icon: SPRITES[item.id] }))
+  ];
   const renderPlayerPos = playerRef.current || player;
   const renderViewportW = typeof window !== 'undefined' ? window.innerWidth : 0;
   const renderViewportH = typeof window !== 'undefined' ? window.innerHeight : 0;
@@ -4655,6 +4903,7 @@ const beat = plan.beats[plan.idx];
           <div className="weapon-grid">
             {weaponChoices.map((w) => (
               <button key={w.id} className="weapon-card" onClick={() => selectWeapon(w.id)}>
+                {SPRITES[w.id] && <img className="weapon-card-icon" src={SPRITES[w.id]} alt="" draggable={false} />}
                 <span>{w.name}</span>
                 <small>
                   {w.id === 'KATANA'
@@ -4670,6 +4919,19 @@ const beat = plan.beats[plan.idx];
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {loadoutHud.length > 0 && (
+        <div className="loadout-hud">
+          <div className="loadout-title">LOADOUT</div>
+          {loadoutHud.map((item) => (
+            <div key={item.id} className="loadout-item">
+              {item.icon && <img src={item.icon} alt="" draggable={false} />}
+              <span>{item.name}</span>
+              <b>{item.value}</b>
+            </div>
+          ))}
         </div>
       )}
 
@@ -4946,6 +5208,22 @@ const beat = plan.beats[plan.idx];
   }}
 />
 
+        {Array.from({ length: Math.min(3, platesStacks) }).map((_, i) => (
+          <div
+            key={`plate-ring-${i}`}
+            className="plate-ring"
+            style={{
+              left: renderPlayerPos.x,
+              top: renderPlayerPos.y,
+              width: 66 + i * 18,
+              height: 66 + i * 18,
+              marginLeft: -(66 + i * 18) / 2,
+              marginTop: -(66 + i * 18) / 2,
+              opacity: 0.92 - i * 0.14
+            }}
+          />
+        ))}
+
         {pickups.map((pk) => (
           (() => {
             const nowP = Date.now();
@@ -4993,11 +5271,14 @@ const beat = plan.beats[plan.idx];
       />
 
       {upgradeOptions.length > 0 && (
-        <div className="ui-layer" style={{ background: 'rgba(1,2,6,0.92)' }}>
+        <div className={liveUpgradeSelect ? 'live-upgrade-panel' : 'ui-layer'} style={liveUpgradeSelect ? undefined : { background: 'rgba(1,2,6,0.92)' }}>
           <h1>CHOOSE UPGRADE</h1>
           <div className="upgrade-grid">
             {upgradeOptions.map((option) => (
               <button key={option.id} className="upgrade-card" onClick={() => chooseUpgrade(option)}>
+                {(SPRITES[option.weaponId] || SPRITES[option.id]) && (
+                  <img className="weapon-card-icon" src={SPRITES[option.weaponId] || SPRITES[option.id]} alt="" draggable={false} />
+                )}
                 <strong>{option.title}</strong>
                 <span>{option.description}</span>
               </button>

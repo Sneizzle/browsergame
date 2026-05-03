@@ -42,6 +42,16 @@ import hero25 from "./assets/hero/hero25.png";
 import hero26 from "./assets/hero/hero26.png";
 
 const API_URL = "https://69787eb6cd4fe130e3d91a96.mockapi.io/sessions";
+const LEADERBOARD_URL = "https://69787eb6cd4fe130e3d91a96.mockapi.io/Leaderboard";
+const BASE_MATCH_MS = 65000;
+
+const rollMatchLengthMs = () => Math.round(BASE_MATCH_MS * (0.50 + Math.random() * 0.35));
+const matchLengthLabel = (ms = BASE_MATCH_MS) => {
+  const s = Math.round(ms / 1000);
+  if (s <= 40) return `SHORT - ${s}s`;
+  if (s <= 50) return `STANDARD - ${s}s`;
+  return `LONG - ${s}s`;
+};
 
 const PLANETS = [
   { id: 1, name: "Zog-Jungle", color: "#00ff88", x: -400, y: -150, difficulty: 1 }, // tutorial target
@@ -117,11 +127,19 @@ export default function App() {
   const [crewXp, setCrewXp] = useState(0);
   const [resources, setResources] = useState(0);
   const [talentPills, setTalentPills] = useState(0); // 1 per mission (roguelite talent currency)
+  const [leaderboardPoints, setLeaderboardPoints] = useState(0);
+  const [leaderboardOpen, setLeaderboardOpen] = useState(false);
+  const [leaderboardRows, setLeaderboardRows] = useState([]);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const [leaderboardDeaths, setLeaderboardDeaths] = useState(0);
+  const [leaderboardTilesCleared, setLeaderboardTilesCleared] = useState(0);
+  const [leaderboardRecordId, setLeaderboardRecordId] = useState(null);
   const [combatCtx, setCombatCtx] = useState(null);
 
   // hero selection
   const [heroOptions, setHeroOptions] = useState(() => genUniqueHeroOptions(5));
   const [selectedHero, setSelectedHero] = useState(null);
+  const [playerName, setPlayerName] = useState("");
 
   // Perks/talents persist for the session (until browser restart) per character.
   const shopStorageKey = selectedHero?.id ? `hero:${selectedHero.id}` : null;
@@ -232,7 +250,119 @@ export default function App() {
 
   const gameOver = lives <= 0;
 
+  const cleanPlayerName = () => playerName.trim().slice(0, 24) || selectedHero?.name || "UNKNOWN";
+
+  const normalizeName = (name) => String(name || "").trim().toLowerCase();
+
+  const mergeLeaderboardRows = async (rows) => {
+    const groups = new Map();
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+      const key = normalizeName(row.name);
+      if (!key) return;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(row);
+    });
+
+    const merged = [];
+    for (const group of groups.values()) {
+      const [primary, ...dupes] = group.sort((a, b) => Number(a.id || 0) - Number(b.id || 0));
+      const combined = {
+        ...primary,
+        points: Math.max(...group.map((r) => Number(r.points || 0))),
+        tilesCleared: Math.max(...group.map((r) => Number(r.tilesCleared || r.tiles || 0))),
+        deaths: Math.max(...group.map((r) => Number(r.deaths || 0))),
+      };
+      merged.push(combined);
+      if (dupes.length && primary?.id) {
+        try {
+          await fetch(`${LEADERBOARD_URL}/${primary.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(combined),
+          });
+          await Promise.all(dupes.map((d) => d?.id ? fetch(`${LEADERBOARD_URL}/${d.id}`, { method: "DELETE" }).catch(() => {}) : null));
+        } catch {}
+      }
+    }
+    return merged;
+  };
+
+  const submitLeaderboard = async (snapshot = {}) => {
+    const name = String(snapshot.name || cleanPlayerName()).trim().slice(0, 24);
+    const score = Math.max(0, Math.round(snapshot.points ?? leaderboardPoints ?? 0));
+    const tilesCleared = Math.max(0, Math.round(snapshot.tilesCleared ?? leaderboardTilesCleared ?? 0));
+    const deaths = Math.max(0, Math.round(snapshot.deaths ?? leaderboardDeaths ?? 0));
+    if (!name) return;
+    try {
+      const res = await fetch(LEADERBOARD_URL);
+      const rows = res.ok ? await res.json() : [];
+      const mergedRows = await mergeLeaderboardRows(rows);
+      const existing = mergedRows.find((r) => normalizeName(r.name) === normalizeName(name)) || null;
+      const payload = {
+        name,
+        points: Math.max(score, Number(existing?.points || 0)),
+        tilesCleared: Math.max(tilesCleared, Number(existing?.tilesCleared || existing?.tiles || 0)),
+        deaths: Math.max(deaths, Number(existing?.deaths || 0)),
+        lastRunPoints: score,
+        updatedAt: new Date().toISOString()
+      };
+      if (existing?.id) {
+        setLeaderboardRecordId(existing.id);
+        await fetch(`${LEADERBOARD_URL}/${existing.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      } else {
+        const created = await fetch(LEADERBOARD_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (created.ok) {
+          const row = await created.json().catch(() => null);
+          if (row?.id) setLeaderboardRecordId(row.id);
+        }
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    const raw = localStorage.getItem("browsergame_pending_leaderboard");
+    if (!raw) return;
+    try {
+      const pending = JSON.parse(raw);
+      if (pending?.name) {
+        const prevName = playerName;
+        if (!prevName && pending.name) setPlayerName(pending.name);
+        submitLeaderboard(pending);
+      }
+      localStorage.removeItem("browsergame_pending_leaderboard");
+    } catch {
+      localStorage.removeItem("browsergame_pending_leaderboard");
+    }
+  }, []);
+
+  const loadLeaderboard = async () => {
+    setLeaderboardLoading(true);
+    try {
+      const res = await fetch(LEADERBOARD_URL);
+      const rows = res.ok ? await res.json() : [];
+      const mergedRows = await mergeLeaderboardRows(rows);
+      setLeaderboardRows(
+        mergedRows
+          .sort((a, b) => Number(b.points || 0) - Number(a.points || 0))
+          .slice(0, 50)
+      );
+    } catch {
+      setLeaderboardRows([]);
+    } finally {
+      setLeaderboardLoading(false);
+    }
+  };
+
   const startWithoutTutorial = () => {
+    submitLeaderboard({ points: leaderboardPoints, tilesCleared: leaderboardTilesCleared, deaths: leaderboardDeaths });
     setTutorialShownThisSession(true);
     setTutorialVisible(false);
     setTutorialStep(0);
@@ -242,6 +372,7 @@ export default function App() {
   };
 
   const startTutorial = () => {
+    submitLeaderboard({ points: leaderboardPoints, tilesCleared: leaderboardTilesCleared, deaths: leaderboardDeaths });
     setShopUnlocked(false);
     setTalentPills(0);
     setTutorialShownThisSession(false);
@@ -253,11 +384,36 @@ export default function App() {
   // Roguelite hard reset after 5 deaths (auto-refresh)
   useEffect(() => {
     if (!gameOver) return;
+    submitLeaderboard({ points: leaderboardPoints, tilesCleared: leaderboardTilesCleared, deaths: leaderboardDeaths });
     const t = setTimeout(() => {
       window.location.reload();
     }, 1400);
     return () => clearTimeout(t);
   }, [gameOver]);
+
+  useEffect(() => {
+    const onUnload = () => {
+      const name = cleanPlayerName();
+      if (!name) return;
+      const payload = JSON.stringify({
+        name,
+        points: Math.max(0, Math.round(leaderboardPoints || 0)),
+        tilesCleared: Math.max(0, Math.round(leaderboardTilesCleared || 0)),
+        deaths: Math.max(0, Math.round(leaderboardDeaths || 0)),
+        lastRunPoints: Math.max(0, Math.round(leaderboardPoints || 0)),
+        updatedAt: new Date().toISOString(),
+      });
+      try {
+        if (leaderboardRecordId) {
+          fetch(`${LEADERBOARD_URL}/${leaderboardRecordId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: payload, keepalive: true });
+        } else {
+          localStorage.setItem("browsergame_pending_leaderboard", payload);
+        }
+      } catch {}
+    };
+    window.addEventListener("beforeunload", onUnload);
+    return () => window.removeEventListener("beforeunload", onUnload);
+  }, [leaderboardPoints, leaderboardTilesCleared, leaderboardDeaths, leaderboardRecordId, playerName, selectedHero?.name]);
 
   const hexGrid = focusPlanet
     ? (() => {
@@ -306,6 +462,7 @@ export default function App() {
       hexId: selectedHex,
       reward: selectedHexInfo?.reward || 0,
       difficulty: selectedHexInfo?.difficulty || 1,
+      runTimeMs: selectedHexInfo?.runTimeMs || rollMatchLengthMs(),
     });
 
     try {
@@ -337,6 +494,15 @@ export default function App() {
             setCrewXp((xp) => xp + reward);
             setResources((r) => r + reward);
           }
+
+          const earnedScore = 5 + (combatCtx.difficulty || 1);
+          setLeaderboardPoints((pts) => {
+            const next = pts + earnedScore;
+            const nextTiles = leaderboardTilesCleared + 1;
+            setLeaderboardTilesCleared(nextTiles);
+            submitLeaderboard({ points: next, tilesCleared: nextTiles, deaths: leaderboardDeaths });
+            return next;
+          });
 
           // ✅ unlock shop after first win of run
           setShopUnlocked(true);
@@ -389,6 +555,7 @@ export default function App() {
           onStart={() => {
             setHeroOptions(genUniqueHeroOptions(5));
             setSelectedHero(null);
+            setPlayerName("");
             setView("hero_select");
           }}
         />
@@ -399,6 +566,24 @@ export default function App() {
         <div className="ui-layer" style={{ background: "rgba(0,0,0,0.85)", padding: 24 }}>
           <h1 style={{ marginTop: 0, letterSpacing: 6 }}>CHOOSE YOUR OPERATIVE</h1>
           <p style={{ opacity: 0.85, marginTop: 6 }}>Pick one. Traits are placeholder only.</p>
+
+          <input
+            value={playerName}
+            onChange={(e) => setPlayerName(e.target.value.slice(0, 24))}
+            placeholder="ENTER LEADERBOARD NAME"
+            style={{
+              width: "min(420px, calc(100vw - 48px))",
+              marginTop: 12,
+              padding: "14px 16px",
+              border: "1px solid rgba(0,242,255,0.45)",
+              background: "rgba(0,0,0,0.55)",
+              color: "white",
+              fontFamily: "inherit",
+              letterSpacing: 2,
+              textAlign: "center",
+              outline: "none",
+            }}
+          />
 
           <div
             style={{
@@ -496,7 +681,7 @@ export default function App() {
 
             <button
               className="scifi-btn"
-              disabled={!selectedHero}
+              disabled={!selectedHero || !playerName.trim()}
               onClick={() => {
                 // NEW RUN RESET
                 setRunId((n) => n + 1);
@@ -504,7 +689,11 @@ export default function App() {
                 setLives(5);
                 setCrewXp(0);
                 setResources(0);
-    setTalentPills(0);
+                setTalentPills(0);
+                setLeaderboardPoints(0);
+                setLeaderboardDeaths(0);
+                setLeaderboardTilesCleared(0);
+                setLeaderboardRecordId(null);
                 setClearedHexes({});
                 setFocusPlanet(null);
                 setSelectedHex(null);
@@ -580,9 +769,10 @@ export default function App() {
 
           {/* HUD */}
           <div className="hud" onClick={(e) => e.stopPropagation()}>
-            <div>NAME: {selectedHero?.name || "UNKNOWN"}</div>
+            <div>NAME: {cleanPlayerName()}</div>
             <div>XP: {crewXp}</div>
             <div>RES: {resources}</div>
+            <div>PTS: {leaderboardPoints}</div>
             <div>HP: {Math.max(0, lives)}</div>
           </div>
 
@@ -610,6 +800,65 @@ export default function App() {
             >
               {shopOpen ? "CLOSE ARMORY" : "OPEN ARMORY"}
             </button>
+          )}
+
+          {view === "galaxy" && (
+            <button
+              className="scifi-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                const next = !leaderboardOpen;
+                setLeaderboardOpen(next);
+                if (next) loadLeaderboard();
+              }}
+              style={{
+                position: "fixed",
+                right: 245,
+                top: 24,
+                zIndex: 9200,
+                padding: "14px 18px",
+                letterSpacing: 3,
+                borderRadius: 14,
+                border: "2px solid rgba(0,242,255,0.50)",
+                boxShadow: "0 0 18px rgba(0,242,255,0.18)",
+                background: "rgba(0,242,255,0.10)",
+                fontWeight: 900,
+              }}
+            >
+              LEADERBOARD
+            </button>
+          )}
+
+          {leaderboardOpen && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: "fixed",
+                right: 24,
+                top: 92,
+                zIndex: 9300,
+                width: 360,
+                maxHeight: "70vh",
+                overflow: "auto",
+                padding: 16,
+                border: "1px solid rgba(0,242,255,0.35)",
+                background: "rgba(0,0,0,0.78)",
+                boxShadow: "0 0 28px rgba(0,242,255,0.12)",
+              }}
+            >
+              <h3 style={{ margin: "0 0 12px", letterSpacing: 3 }}>LEADERBOARD</h3>
+              {leaderboardLoading && <div style={{ opacity: 0.75 }}>LOADING...</div>}
+              {!leaderboardLoading && leaderboardRows.length === 0 && <div style={{ opacity: 0.75 }}>NO SCORES YET</div>}
+              {!leaderboardLoading && leaderboardRows.map((row, i) => (
+                <div key={row.id || `${row.name}-${i}`} style={{ display: "grid", gridTemplateColumns: "32px 1fr 54px 54px 62px", gap: 8, padding: "8px 0", borderTop: "1px solid rgba(255,255,255,0.10)", alignItems: "center", fontSize: 12 }}>
+                  <b>{i + 1}</b>
+                  <span>{row.name || "UNKNOWN"}</span>
+                  <span style={{ opacity: 0.78, textAlign: "right" }}>D {Number(row.deaths || 0)}</span>
+                  <span style={{ opacity: 0.78, textAlign: "right" }}>T {Number(row.tilesCleared || row.tiles || 0)}</span>
+                  <strong style={{ color: "#ffe16b", textAlign: "right" }}>{Number(row.points || 0)}</strong>
+                </div>
+              ))}
+            </div>
           )}
 
           {/* SHOP PANEL */}
@@ -852,6 +1101,7 @@ export default function App() {
                         setSelectedHexInfo({
                           difficulty: h.difficulty + (p.difficulty - 1),
                           reward: (h.difficulty + (p.difficulty - 1)) * 20,
+                          runTimeMs: rollMatchLengthMs(),
                         });
 
                         // ✅ DO NOT end tutorial here — ends on DEPLOY
@@ -915,8 +1165,8 @@ export default function App() {
               </div>
 
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
-                <span style={{ opacity: 0.8 }}>Resources</span>
-                <strong>{resources}</strong>
+                <span style={{ opacity: 0.8 }}>Match Length</span>
+                <strong>{matchLengthLabel(selectedHexInfo.runTimeMs)}</strong>
               </div>
 
               <div style={{ height: 1, background: "rgba(0,242,255,0.18)", margin: "14px 0" }} />
@@ -983,7 +1233,13 @@ export default function App() {
     tileDifficulty={selectedHexInfo?.difficulty || 1}
     selectedHero={selectedHero}   // ✅ add this
     runBuild={runBuild}
+    runTimeMs={combatCtx?.runTimeMs}
     onExit={() => {
+      setLeaderboardDeaths((d) => {
+        const nextDeaths = d + 1;
+        submitLeaderboard({ points: leaderboardPoints, tilesCleared: leaderboardTilesCleared, deaths: nextDeaths });
+        return nextDeaths;
+      });
       setLives((l) => l - 1);
       setShopOpen(false);
       setView("galaxy");
