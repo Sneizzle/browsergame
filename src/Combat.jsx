@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import thornsIcon from './components/t1.PNG';
+import decoyIcon from './components/t3.PNG';
 
 const ARENA_SIZE = 2800; // +40%
-const BOSS_TIME = 80000; // shorter run (~80s to boss)
+const BOSS_TIME = 65000; // shorter maps: faster boss timing, more punch per run
 
 // -------------------- DIFFICULTY TUNING (BASE) --------------------
 const TRASH_HP_MULT = 0.95;           // trash HP slightly up (less one-shot mid/late)
@@ -24,13 +26,13 @@ const LATE_XP_MAX_MULT = 1.85;  // at 100%
 const LATE_SPAWN_INTERVAL_BOOST = 0.78; // late game: faster spawns (was slower)
 const LATE_SPAWN_COUNT_REDUCE = -0.35;   // late game: MORE spawns (+35% at end)
 
-const BOSS_ADD_INTERVAL_MULT = 1.6;     // fewer adds during boss, but not empty
-const BOSS_ADD_COUNT_MULT = 0.85;       // keep pressure during boss
+const BOSS_ADD_INTERVAL_MULT = 1.25;    // boss fight should stay populated
+const BOSS_ADD_COUNT_MULT = 1.0;        // keep pressure during boss
 // -------------------- PLAYER FEEDBACK TWEAKS --------------------
 const AFTER40_ENEMY_MULT = 1.50;     // +50% enemies after 40% progress
-const WALL_HP_MULT = 0.70;           // -30% wall unit HP
+const WALL_HP_MULT = 1.25;           // wall units are a real danger, not an XP circle
 const RAM_HP_MULT = 0.60;            // ~15% faster RAM kill (was 0.70)
-const RELIEF_SPAWN_INTERVAL_MULT = 1.15; // relief slows spawns slightly
+const RELIEF_SPAWN_INTERVAL_MULT = 1.00; // keep pressure; avoid dead-air breaks
 
 
 // -------------------- helpers --------------------
@@ -113,11 +115,22 @@ const isEliteType = (type) => {
   const t = String(type || '');
   return (
     t === 'boss' ||
+    t === 'boss_split' ||
     t === 'brute' ||
     t === 'juggernaut' ||
     t === 'wall' ||
     t.startsWith('mini_')
   );
+};
+
+const isControlImmune = (type) => {
+  const t = String(type || '');
+  return t === 'boss' || t === 'boss_split' || t === 'juggernaut' || t.startsWith('mini_');
+};
+
+const isKnockbackImmune = (type) => {
+  const t = String(type || '');
+  return isControlImmune(t) || t === 'splitter' || t === 'splitter_boss';
 };
 
 // -------------------- WEAPONS (RANK 3-5: MORE CC + EXPLOSIVITY + EFFECTS) --------------------
@@ -131,9 +144,9 @@ const WEAPONS = [
       { title: 'Rifle I', description: 'Precision shot with guaranteed ricochet.', stats: { cooldown: 520, bulletSpeed: 15.5, damage: 11, pellets: 1, spread: 0.06, width: 12, height: 4, pierce: 2, ricochets: 1 } },
       { title: 'Rifle II', description: 'Tighter cadence.', stats: { cooldown: 475, damage: 13 } },
       // Rank 3+: crowd control + mild splash to help late swarms
-      { title: 'Rifle III', description: 'Two-round burst + suppression slow.', stats: { pellets: 2, spread: 0.10, damage: 12, pierce: 3, slow: 0.14, slowDuration: 720 } },
-      { title: 'Rifle IV', description: 'Smarter bounces + micro-stun on hit.', stats: { ricochets: 2, damage: 13, pierce: 3, microFreeze: 160, chain: 1 } },
-      { title: 'Rifle V', description: 'Triple fan burst + shrapnel pop.', stats: { pellets: 3, spread: 0.18, damage: 13, pierce: 4, ricochets: 2, explodeRadius: 34, explodeMult: 0.28, slow: 0.16, slowDuration: 860 } }
+      { title: 'Rifle III', description: 'Two-round burst + suppression slow.', stats: { pellets: 2, spread: 0.10, damage: 14, pierce: 3, ricochets: 1, slow: 0.18, slowDuration: 820 } },
+      { title: 'Rifle IV', description: 'Smart bounces + micro-stun shock.', stats: { ricochets: 3, damage: 16, pierce: 4, microFreeze: 180, chain: 1, explodeRadius: 28, explodeMult: 0.22 } },
+      { title: 'Rifle V', description: 'Triple fan burst + shrapnel pop.', stats: { pellets: 3, spread: 0.18, damage: 16, pierce: 5, ricochets: 3, chain: 2, explodeRadius: 48, explodeMult: 0.36, slow: 0.20, slowDuration: 960 } }
     ]
   },
   {
@@ -238,6 +251,20 @@ const WEAPONS = [
   },
 
   {
+    id: 'AXES',
+    name: 'Axes',
+    targeting: 'closest',
+    color: '#ff3f2f',
+    levels: [
+      { title: 'Axes I', description: 'Left cleave, right cleave, then alternating bladestorm and axe toss. All hits bleed.', stats: { cooldown: 980, damage: 13, range: 168, bleed: 5200, stormMult: 0.72, stormRangeMult: 0.94, throwMult: 1.55, throwBounces: 7 } },
+      { title: 'Axes II', description: 'Harder cleaves, longer bleed, sharper finishers.', stats: { cooldown: 950, damage: 15, range: 178, bleed: 6200, stormMult: 0.76, stormRangeMult: 0.98, throwMult: 1.68, throwBounces: 8 } },
+      { title: 'Axes III', description: 'Blood axes: kills can burst while the rhythm keeps carving.', stats: { cooldown: 920, damage: 17, range: 188, bleed: 7400, stormMult: 0.80, stormRangeMult: 1.02, throwMult: 1.82, throwBounces: 9, deathBurstRadius: 60, deathBurstMult: 0.24 } },
+      { title: 'Axes IV', description: 'Execution rhythm: bigger cleaves and stronger blood bursts.', stats: { cooldown: 890, damage: 19, range: 198, bleed: 8600, stormMult: 0.84, stormRangeMult: 1.06, throwMult: 1.96, throwBounces: 10, deathBurstRadius: 76, deathBurstMult: 0.30 } },
+      { title: 'Axes V', description: 'Twinfall: brutal finishers with heavy bleed and death bursts.', stats: { cooldown: 860, damage: 22, range: 210, bleed: 10000, stormMult: 0.88, stormRangeMult: 1.10, throwMult: 2.12, throwBounces: 11, deathBurstRadius: 92, deathBurstMult: 0.36 } }
+    ]
+  },
+
+  {
     id: 'SMG',
     name: 'SMG',
     targeting: 'closest',
@@ -332,12 +359,12 @@ const WEAPONS = [
     targeting: 'closest',
     color: '#c08bff',
     levels: [
-      { title: 'Void I', description: 'Gravity shot that anchors and becomes a vortex.', stats: { cooldown: 820, bulletSpeed: 5.6, damage: 14, pellets: 1, spread: 0.04, width: 24, height: 24, pierce: 8, pull: 1.35, pullRadius: 190, vortexDps: 12, maxRange: 440, anchorOnMaxRange: true, lifeMs: 1900, singularity: false } },
-      { title: 'Void II', description: 'Bigger vortex + stronger pull.', stats: { pull: 1.65, pullRadius: 215, width: 30, height: 30, damage: 15, vortexDps: 14, maxRange: 470 } },
+      { title: 'Void I', description: 'Shoots out, stops, then grows into a pulling maelstrom.', stats: { cooldown: 860, bulletSpeed: 5.8, damage: 13, pellets: 1, spread: 0.04, width: 24, height: 24, pierce: 8, pull: 1.05, pullRadius: 185, vortexDps: 10, maxRange: 305, anchorOnMaxRange: true, lifeMs: 2400, singularity: false } },
+      { title: 'Void II', description: 'Bigger maelstrom + stronger pull.', stats: { pull: 1.25, pullRadius: 215, width: 30, height: 30, damage: 14, vortexDps: 12, maxRange: 330 } },
       // Rank 3+: more vacuum + slow field
-      { title: 'Void III', description: 'Anchored vortex lasts longer (crowd vacuum) + slow field.', stats: { lifeMs: 2300, pull: 1.95, pullRadius: 240, vortexDps: 16, damage: 15, slow: 0.16, slowDuration: 650 } },
-      { title: 'Void IV', description: 'Vortex slows harder + secondary orb.', stats: { pierce: 14, slow: 0.24, slowDuration: 900, pull: 2.15, split: 2 } },
-      { title: 'Void V', description: 'Singularity (anchored implosion + pop) + stun pulse.', stats: { singularity: true, explodeRadius: 150, explodeMult: 1.0, pull: 2.55, pullRadius: 270, vortexDps: 22, maxRange: 510, lifeMs: 2450, stun: 120 } }
+      { title: 'Void III', description: 'Anchored maelstrom lasts longer + slow field.', stats: { lifeMs: 2800, pull: 1.45, pullRadius: 245, vortexDps: 15, damage: 15, slow: 0.16, slowDuration: 650, maxRange: 350 } },
+      { title: 'Void IV', description: 'Vortex slows harder + secondary orb.', stats: { pierce: 14, slow: 0.24, slowDuration: 900, pull: 1.65, split: 2 } },
+      { title: 'Void V', description: 'Singularity maelstrom with implosion pop.', stats: { singularity: true, explodeRadius: 150, explodeMult: 1.0, pull: 1.95, pullRadius: 285, vortexDps: 20, maxRange: 385, lifeMs: 3000, stun: 120 } }
     ]
   },
 
@@ -347,19 +374,19 @@ const WEAPONS = [
     targeting: 'closest',
     color: '#7ff2d7',
     levels: [
-      { title: 'Time I', description: 'Stutter-freeze + heavy slow.', stats: { cooldown: 560, bulletSpeed: 12, damage: 16, pellets: 1, spread: 0.05, width: 16, height: 7, pierce: 1, slow: 0.40, microFreeze: 200 } },
-      { title: 'Time II', description: 'More slow + pierce.', stats: { slow: 0.46, pierce: 2, damage: 17 } },
+      { title: 'Time I', description: 'Stutter-freeze + heavy slow.', stats: { cooldown: 500, bulletSpeed: 13.5, damage: 20, pellets: 1, spread: 0.05, width: 18, height: 8, pierce: 2, slow: 0.44, microFreeze: 220 } },
+      { title: 'Time II', description: 'More slow + pierce.', stats: { slow: 0.50, pierce: 3, damage: 22, ricochets: 1 } },
       // Rank 3+: more split + small pop for waveclear
-      { title: 'Time III', description: 'Temporal split + ripple pop.', stats: { split: 2, damage: 16, explodeRadius: 28, explodeMult: 0.20 } },
-      { title: 'Time IV', description: 'Stasis (stun on hit) + bigger ripple.', stats: { stun: 380, damage: 18, explodeRadius: 44, explodeMult: 0.30 } },
-      { title: 'Time V', description: 'Chrono fracture (freeze wave) + huge ripple.', stats: { stun: 520, explodeRadius: 86, explodeMult: 0.60 } }
+      { title: 'Time III', description: 'Temporal split + ripple pop.', stats: { split: 2, pellets: 2, spread: 0.14, damage: 20, explodeRadius: 42, explodeMult: 0.30 } },
+      { title: 'Time IV', description: 'Stasis (stun on hit) + bigger ripple.', stats: { stun: 420, damage: 23, explodeRadius: 64, explodeMult: 0.42, chain: 1 } },
+      { title: 'Time V', description: 'Chrono fracture (freeze wave) + huge ripple.', stats: { stun: 560, damage: 26, explodeRadius: 104, explodeMult: 0.70, chain: 2 } }
     ]
   }
 ];
 
 // -------------------- UPGRADES --------------------
 const UPGRADES = [
-  { id: 'REGEN', title: 'Nanite Regen', description: '+0.35 HP/sec', apply: (s) => ({ ...s, regen: s.regen + 0.35 }) },
+  { id: 'REGEN', title: 'Nanite Regen', description: '+0.90 HP/sec (max 4)', apply: (s) => ({ ...s, regen: s.regen + 0.90, regenRank: Math.min(4, (s.regenRank || 0) + 1) }) },
   { id: 'MAX_HP', title: 'Reinforced Plating', description: '+30 Max HP', apply: (s) => ({ ...s, maxHp: s.maxHp + 30, hp: s.hp + 30 }) },
   { id: 'DAMAGE', title: 'Damage Boost', description: '+10% damage', apply: (s) => ({ ...s, damageMult: s.damageMult * 1.1 }) },
   { id: 'ATTACK_SPEED', title: 'Attack Speed', description: '+10% rate', apply: (s) => ({ ...s, attackSpeed: s.attackSpeed * 1.1 }) },
@@ -369,7 +396,9 @@ const UPGRADES = [
 // -------------------- EVENTS / PICKUPS --------------------
 const EVENT_DEFS = {
   SWARM: { id: 'SWARM', duration: 16000 },
-  WALL: { id: 'WALL', duration: 14000 },
+  WALL: { id: 'WALL', duration: 26000 },
+  TURRET: { id: 'TURRET', duration: 17000 },
+  SPLITTER: { id: 'SPLITTER', duration: 14500 },
   RELIEF: { id: 'RELIEF', duration: 5200 }
 };
 
@@ -377,7 +406,8 @@ const PICKUP_DEFS = {
   MAGNET: { id: 'MAGNET', title: 'XP Magnet', life: 9200 },
   FREEZE: { id: 'FREEZE', title: 'Time Freeze', life: 3200 },
   OVERDRIVE: { id: 'OVERDRIVE', title: 'Overdrive', life: 5200 },
-  SHIELD: { id: 'SHIELD', title: 'Emergency Shield', life: 5200 }
+  SHIELD: { id: 'SHIELD', title: 'Emergency Shield', life: 5200 },
+  DOUBLE_DAMAGE: { id: 'DOUBLE_DAMAGE', title: 'Double Damage', life: 6000 }
 };
 
 // ---------- spawners ----------
@@ -398,8 +428,15 @@ const spawnEnemyBase = (difficulty, t = 0) => {
   const baseScale = (0.9 + difficulty * 0.004);
   const trashHpMult = baseScale * TRASH_HP_MULT * lateAddHpMultFromT(t);
   const eliteHpMult = baseScale * ELITE_HP_MULT;
+  const hpRoll = (amount = 0.18) => 1 + (Math.random() * 2 - 1) * amount;
 
   const roll = Math.random();
+
+  if (t > 0.18 && roll > 0.955 && roll < 0.978) {
+    const tier = t > 0.55 ? 3 : 2;
+    const hp = Math.round((105 + difficulty * 16) * TRASH_HP_MULT * lateAddHpMultFromT(t) * hpRoll(0.16));
+    return { id: Math.random(), type: 'splitter', x, y, splitTier: tier, hp, maxHp: hp, speed: 0.78 + difficulty * 0.020, size: 48, xp: 15, contactDamage: 10, color: '#b6ff4a' };
+  }
 
   // Late-game fairness: reduce elite frequency a bit after ~60% progress
   const eliteT = norm01(t, 0.60, 1.0);
@@ -419,11 +456,32 @@ const spawnEnemyBase = (difficulty, t = 0) => {
   }
   if (roll > 0.7) {
     const base = 30;
-   const hp = Math.round(base * trashHpMult);
+   const hp = Math.max(8, Math.round(base * trashHpMult * hpRoll(0.22)));
     return { id: Math.random(), type: 'sprinter', x, y, hp, maxHp: hp, speed: 3.1 + difficulty * 0.1, size: 22, xp: 13, contactDamage: 10, color: '#ff2fd2' };
   }
+  if (roll > 0.62) {
+    const base = 42;
+    const hp = Math.max(10, Math.round(base * trashHpMult * hpRoll(0.20)));
+    return {
+      id: Math.random(),
+      type: 'dancer',
+      x,
+      y,
+      hp,
+      maxHp: hp,
+      speed: 2.25 + difficulty * 0.05,
+      size: 24,
+      xp: 18,
+      contactDamage: 13,
+      color: '#ff774a',
+      circleDir: Math.random() < 0.5 ? -1 : 1,
+      circleUntil: Date.now() + 1400 + Math.random() * 850,
+      diveUntil: 0,
+      nextDiveAt: Date.now() + 1600 + Math.random() * 900
+    };
+  }
   const base = 55;
-  const hp = Math.round(base * trashHpMult);
+  const hp = Math.max(12, Math.round(base * trashHpMult * hpRoll(0.22)));
   return { id: Math.random(), type: 'grunt', x, y, hp, maxHp: hp, speed: 1.9 + difficulty * 0.06, size: 28, xp: 14, contactDamage: 12, color: '#ff007a' };
 };
 
@@ -441,7 +499,21 @@ const spawnEnemy = (difficulty, forcedType = null, t = 0) => {
     // WALL units are intentionally chunky; still respect late adds HP nerf
     const addHpMult = lateAddHpMultFromT(t);
     const hp = Math.round((((320 + difficulty * 26) * (1 + difficulty * 0.06)) * TRASH_HP_MULT * addHpMult) * WALL_HP_MULT);
-    return { ...base, type: 'wall', hp, maxHp: hp, speed: 0.70 + difficulty * 0.01, size: 46, xp: 26, contactDamage: 13, color: '#ff2a4b' };
+    return { ...base, type: 'wall', hp, maxHp: hp, speed: 0.70 + difficulty * 0.01, size: 46, xp: 9, contactDamage: 19, color: '#ff2a4b' };
+  }
+  if (forcedType === 'turret') {
+    const hp = Math.round((520 + difficulty * 80) * ELITE_HP_MULT);
+    return { ...base, type: 'turret', hp, maxHp: hp, speed: 0, size: 72, xp: 70, contactDamage: 10, color: '#ffb84a', nextShotAt: Date.now() + 950 + Math.random() * 900 };
+  }
+  if (forcedType === 'splitter') {
+    const tier = 3;
+    const hp = Math.round((145 + difficulty * 20) * TRASH_HP_MULT * lateAddHpMultFromT(t));
+    return { ...base, type: 'splitter', splitTier: tier, hp, maxHp: hp, speed: 0.82 + difficulty * 0.025, size: 56, xp: 18, contactDamage: 12, color: '#b6ff4a' };
+  }
+  if (forcedType === 'splitter_boss') {
+    const tier = 5;
+    const hp = Math.round((1450 + difficulty * 210) * ELITE_HP_MULT);
+    return { ...base, type: 'splitter_boss', splitTier: tier, hp, maxHp: hp, speed: 0.58 + difficulty * 0.012, size: 118, xp: 260, contactDamage: 24, color: '#7dff4a' };
   }
   return base;
 };
@@ -569,7 +641,14 @@ const spawnBoss = (player, difficulty) => {
     hp,
     maxHp: hp,
     speed: 1.6 + difficulty * 0.03,
-    nextRamPct: 0.9,
+    nextRamPct: 0.82,
+    chargesDone: 0,
+    split50Done: false,
+    split20Done: false,
+    bossPhase: 'main',
+    originalMaxHp: hp,
+    ramPhaseDone: false,
+    zergPhaseDone: false,
     size: 150,
     xp: 520,
     contactDamage: 34,
@@ -688,6 +767,7 @@ const rollUpgradeOptions = (ownedWeapons, weaponLevels, stats) => {
   });
 
   UPGRADES.forEach((u) => {
+    if (u.id === 'REGEN' && (stats.regenRank || 0) >= 4) return;
     push(
       { ...u, key: u.id },
       want3GunsFast ? 1 : 2
@@ -745,7 +825,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   const [player, setPlayer] = useState({ x: 1400, y: 1400 });
   const [stats, setStats] = useState(() => {
     // --- baseline stats, then apply Military talent start bonuses ---
-    const base = { hp: 120, maxHp: 120, regen: 0, damageMult: 1, attackSpeed: 1, moveSpeed: 1 };
+    const base = { hp: 120, maxHp: 120, regen: 0, regenRank: 0, damageMult: 1, attackSpeed: 1, moveSpeed: 1 };
     const p = (runBuild && runBuild.purchased) ? runBuild.purchased : {};
     const fieldArmorRank = Number(p.MIL_FIELD_ARMOR || 0);
     const maxHpBonus = fieldArmorRank * 25; // +25 max HP per rank (5 ranks = +60)
@@ -775,6 +855,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   const [explosions, setExplosions] = useState([]);
   const [orbs, setOrbs] = useState([]);
   const [pickups, setPickups] = useState([]);
+  const enemyProjectilesRef = useRef([]);
 
   // Lightweight "expired" popups for buffs/pickups (Danish clarity request)
   const [toasts, setToasts] = useState([]);
@@ -827,12 +908,21 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
 
     titaniumRank: 0,
     platesMax: 0,
+
+    activeSpaceAbility: null,
+    onboardProduction: false,
+    decoyUnlocked: false,
+    combustion: false,
+    gravPickup: false,
+    droneOrbit: false,
+    slowPulse: false,
   });
 
   const thornsActiveUntilRef = useRef(0);
   const thornsCooldownUntilRef = useRef(0);
   const thornsWasActiveRef = useRef(false);
   const spaceWasDownRef = useRef(false);
+  const abilityWasDownRef = useRef({ one: false, two: false });
 
   const milGhostCdUntilRef = useRef(0);
   const milAdrenalCdUntilRef = useRef(0);
@@ -840,6 +930,17 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
 
   const platesStacksRef = useRef(0);
   const platesLastGenAtRef = useRef(Date.now());
+  const axeComboRef = useRef(0);
+  const killCountRef = useRef(0);
+  const decoyRef = useRef(null);
+  const decoyCooldownUntilRef = useRef(0);
+  const fleetNextAtRef = useRef(Date.now() + 40000);
+  const fleetUntilRef = useRef(0);
+  const droneNextAtRef = useRef(Date.now() + 60000);
+  const droneUntilRef = useRef(0);
+  const droneLastFireRef = useRef(0);
+  const slowPulseNextAtRef = useRef(Date.now() + 20000);
+  const bossReturnPendingRef = useRef(null);
 
   useEffect(() => {
     const p = (runBuild && runBuild.purchased) ? runBuild.purchased : {};
@@ -862,13 +963,11 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
 
     const titaniumRank = Number(p.MIL_TITANIUM_PLATES || 0);
     const platesMax = clamp(titaniumRank, 0, 3);
-
     talentsRef.current = {
       thornsUnlocked,
-    // Danish feedback: thorns felt too short-lived; make it last ~2x.
-    thornsDurationMs: (2800 + quickRearmRank * 600) * 2,
+      thornsDurationMs: (2800 + quickRearmRank * 600) * 2,
       thornsCooldownMs: Math.max(10000, 25000 - quickRearmRank * 3500),
-      thornsRamDamage: 32 + tileDifficulty * 4,
+      thornsRamDamage: (36 + tileDifficulty * 4) * 1.20,
       quickRearmRank,
 
       fieldArmorRank,
@@ -886,6 +985,13 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
 
       titaniumRank,
       platesMax,
+
+      onboardProduction: Number(p.RES_ONBOARD_PROD || 0) > 0,
+      decoyUnlocked: Number(p.RES_DECOY_HOLO || 0) > 0,
+      combustion: Number(p.RES_COMBUSTION || 0) > 0,
+      gravPickup: Number(p.RES_GRAV_PICKUP || 0) > 0,
+      droneOrbit: Number(p.RES_DRONE_ORBIT || 0) > 0 || Number(p.RES_FLEET_ASSIST || 0) > 0,
+      slowPulse: Number(p.RES_SLOW_PULSE || 0) > 0,
     };
 
     // reset per-combat talent runtime state
@@ -900,10 +1006,21 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
 
     platesStacksRef.current = 0;
     platesLastGenAtRef.current = Date.now();
+    axeComboRef.current = 0;
+    killCountRef.current = 0;
+    decoyRef.current = null;
+    decoyCooldownUntilRef.current = 0;
+    fleetNextAtRef.current = 9999999999999;
+    fleetUntilRef.current = 0;
+    droneNextAtRef.current = 0;
+    droneUntilRef.current = 9999999999999;
+    droneLastFireRef.current = 0;
+    slowPulseNextAtRef.current = Date.now() + 20000;
+    bossReturnPendingRef.current = null;
   }, [runBuild, tileDifficulty]);
 
   // per-run duration (random 25–100% longer)
-    const runTimeRef = useRef(BOSS_TIME * (1.10 + Math.random() * 0.35));
+    const runTimeRef = useRef(BOSS_TIME * (0.90 + Math.random() * 0.25));
 
   // BEAT PLAN: randomized sequence each run (matches desired arc)
   const beatPlanRef = useRef({ ready: false, idx: 0, beats: [] });
@@ -931,11 +1048,13 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   const freezeUntil = useRef(0);
   const overdriveUntil = useRef(0);
   const shieldUntil = useRef(0);
+  const doubleDamageUntil = useRef(0);
 
   const selectingWeapon = selectedWeapons.length === 0;
   const paused = selectingWeapon || upgradeOptions.length > 0 || victory || defeat;
 
   const pausedRef = useRef(paused);
+  const pauseStartedAtRef = useRef(0);
   const playerRef = useRef(player);
   const statsRef = useRef(stats);
   const enemiesRef = useRef(enemies);
@@ -957,7 +1076,55 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   const levelRef = useRef(level);
   const uiLastSyncRef = useRef(0);
 
-  useEffect(() => { pausedRef.current = paused; }, [paused]);
+  useEffect(() => {
+    const now = Date.now();
+    if (paused && !pausedRef.current) {
+      pauseStartedAtRef.current = now;
+    } else if (!paused && pausedRef.current && pauseStartedAtRef.current) {
+      const delta = now - pauseStartedAtRef.current;
+      const bump = (ref) => { if (ref.current && ref.current > pauseStartedAtRef.current) ref.current += delta; };
+      [
+        thornsActiveUntilRef,
+        thornsCooldownUntilRef,
+        milGhostCdUntilRef,
+        milAdrenalCdUntilRef,
+        milAdrenalMoveUntilRef,
+        magnetUntil,
+        freezeUntil,
+        overdriveUntil,
+        shieldUntil,
+        doubleDamageUntil,
+        decoyCooldownUntilRef,
+        fleetNextAtRef,
+        fleetUntilRef,
+        droneNextAtRef,
+        droneUntilRef,
+        slowPulseNextAtRef,
+        eventCooldownUntilRef,
+        reliefUntilRef,
+      ].forEach(bump);
+      if (activeEventRef.current?.endsAt) activeEventRef.current.endsAt += delta;
+      enemiesRef.current = (enemiesRef.current || []).map((e) => ({
+        ...e,
+        stunnedUntil: e.stunnedUntil ? e.stunnedUntil + delta : e.stunnedUntil,
+        slowUntil: e.slowUntil ? e.slowUntil + delta : e.slowUntil,
+        burnUntil: e.burnUntil ? e.burnUntil + delta : e.burnUntil,
+        damageReductionUntil: e.damageReductionUntil ? e.damageReductionUntil + delta : e.damageReductionUntil,
+        windupUntil: e.windupUntil ? e.windupUntil + delta : e.windupUntil,
+        dashUntil: e.dashUntil ? e.dashUntil + delta : e.dashUntil,
+        nextDashAt: e.nextDashAt ? e.nextDashAt + delta : e.nextDashAt,
+        nextBlinkAt: e.nextBlinkAt ? e.nextBlinkAt + delta : e.nextBlinkAt,
+        nextShotAt: e.nextShotAt ? e.nextShotAt + delta : e.nextShotAt,
+        circleUntil: e.circleUntil ? e.circleUntil + delta : e.circleUntil,
+        diveUntil: e.diveUntil ? e.diveUntil + delta : e.diveUntil,
+        nextDiveAt: e.nextDiveAt ? e.nextDiveAt + delta : e.nextDiveAt,
+      }));
+      pickupsRef.current = (pickupsRef.current || []).map((p) => ({ ...p, t: p.t + delta }));
+      enemyProjectilesRef.current = (enemyProjectilesRef.current || []).map((p) => ({ ...p, t: p.t + delta }));
+      pauseStartedAtRef.current = 0;
+    }
+    pausedRef.current = paused;
+  }, [paused]);
   useEffect(() => { playerRef.current = player; }, [player]);
   useEffect(() => { statsRef.current = stats; }, [stats]);
   useEffect(() => { xpRef.current = xp; }, [xp]);
@@ -982,6 +1149,24 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   const weaponChoices = useMemo(() => WEAPONS, []);
   const crewDamageMult = useMemo(() => crew.reduce((acc, c) => acc * c.trait.dmg, 1), [crew]);
   const crewSpeedMult = useMemo(() => crew.reduce((acc, c) => acc * c.trait.spd, 1), [crew]);
+
+  const syncPlayerCameraDom = (pos = playerRef.current) => {
+    if (!pos) return;
+    const nc = { x: pos.x - window.innerWidth / 2, y: pos.y - window.innerHeight / 2 };
+    cameraRef.current = nc;
+
+    if (playerSpriteRef.current) {
+      playerSpriteRef.current.style.left = `${pos.x}px`;
+      playerSpriteRef.current.style.top = `${pos.y}px`;
+    }
+    if (playerTracerRef.current) {
+      playerTracerRef.current.style.left = `${pos.x - 60}px`;
+      playerTracerRef.current.style.top = `${pos.y - 60}px`;
+    }
+    if (worldRef.current) {
+      worldRef.current.style.transform = `translate(${-nc.x}px,${-nc.y}px)`;
+    }
+  };
 
   const juicePunch = (mag = 1, chroma = 1) => {
     const now = Date.now();
@@ -1043,7 +1228,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
 
     pushToast('👻 GHOST PROTOCOL');
 
-    // Deal AoE damage (boss is immune to knockback)
+    // Deal AoE damage; bosses/minibosses keep their control immunity.
     enemiesRef.current = (enemiesRef.current || []).map((en) => {
       if (en.hp <= 0) return en;
       const d = Math.hypot(en.x - p.x, en.y - p.y);
@@ -1051,13 +1236,13 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
         const fall = 1 - d / t.ghostRadius;
         const dmg = t.ghostDamage * Math.max(0.25, fall);
         const ang = Math.atan2(en.y - p.y, en.x - p.x);
-        const push = (en.type === 'boss') ? 0 : (12 * Math.max(0.3, fall));
+        const push = isKnockbackImmune(en.type) ? 0 : (12 * Math.max(0.3, fall));
         return {
           ...en,
           hp: en.hp - dmg,
           x: clamp(en.x + Math.cos(ang) * push, 0, ARENA_SIZE),
           y: clamp(en.y + Math.sin(ang) * push, 0, ARENA_SIZE),
-          stunnedUntil: Math.max(en.stunnedUntil || 0, now + 220),
+          stunnedUntil: isControlImmune(en.type) ? en.stunnedUntil : Math.max(en.stunnedUntil || 0, now + 220),
         };
       }
       return en;
@@ -1084,8 +1269,13 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     // Titanium Plates: block the entire next instance
     if (t.titaniumRank > 0 && platesStacksRef.current > 0) {
       platesStacksRef.current = Math.max(0, platesStacksRef.current - 1);
-      explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: playerRef.current.x, y: playerRef.current.y, r: 70, t: now, life: 180 }];
-      juicePunch(0.32, 0.55);
+      explosionsRef.current = [
+        ...(explosionsRef.current || []),
+        { id: Math.random(), x: playerRef.current.x, y: playerRef.current.y, r: 92, t: now, life: 260, color: 'rgba(0,242,255,1)', glow: 26, fill: true, alpha: 0.34 },
+        { id: Math.random(), x: playerRef.current.x, y: playerRef.current.y, r: 130, t: now, life: 340, color: 'rgba(255,255,255,1)', glow: 18 }
+      ];
+      addToast('PLATING BLOCKED');
+      juicePunch(0.52, 0.70);
       syncUI();
       return 0;
     }
@@ -1110,6 +1300,21 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     const now = Date.now();
     // Adrenal triggers on kill too
     tryProcAdrenal(now, 'kill');
+
+    const t = talentsRef.current;
+    if (t.combustion) {
+      killCountRef.current += 1;
+      if (killCountRef.current % 10 === 0) {
+        const radius = 125;
+        explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: enemy.x, y: enemy.y, r: radius, t: now, life: 360, color: 'rgba(255,92,0,1)', glow: 26, fill: true, alpha: 0.45 }];
+        enemiesRef.current = (enemiesRef.current || []).map((en) => {
+          const d = Math.hypot(en.x - enemy.x, en.y - enemy.y);
+          if (d > radius || en.hp <= 0) return en;
+          const fall = 1 - d / radius;
+          return { ...en, hp: en.hp - (90 + tileDifficulty * 10) * Math.max(0.40, fall) };
+        });
+      }
+    }
   };
 
   useEffect(() => {
@@ -1149,9 +1354,11 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
       const k = (e.key || '').toLowerCase();
       if (k) keys.current[k] = down;
 
-      // normalize spacebar so we can reliably read keys.current.space
+    // normalize spacebar so we can reliably read keys.current.space
       if (e.code === 'Space') keys.current.space = down;
       if (k === ' ') keys.current.space = down;
+      if (e.code === 'Digit1' || k === '1') keys.current.one = down;
+      if (e.code === 'Digit2' || k === '2') keys.current.two = down;
     };
     window.addEventListener('keydown', handleKey);
     window.addEventListener('keyup', handleKey);
@@ -1249,27 +1456,36 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     const thirdEventPct  = r(0.62, 0.74);
     const lateMiniPct    = r(0.70, 0.82);
     const fourthEventPct = r(0.80, 0.90);
+    const turretPct = r(0.28, 0.52);
+    const turretLatePct = r(0.70, 0.84);
+    const splitterPct = r(0.24, 0.42);
+    const splitterBossPct = r(0.50, 0.68);
+    const wallPct = r(0.54, 0.72);
 
     // Mostly swarms; walls are *late* and rare "shape change" beats.
     // Danish feedback: early WALL was happening too often / too punishing with fast early spawn ramp.
-    const pickLateEventId = (swarmBias = 0.85) => (Math.random() < swarmBias ? 'SWARM' : 'WALL');
+    const pickLateEventId = (swarmBias = 0.45) => (Math.random() < swarmBias ? 'SWARM' : 'WALL');
 
     // Force early beats to be swarms for readability + fairness.
     beats.push({ kind: 'EVENT', atPct: firstEventPct, id: 'SWARM' });
     beats.push({ kind: 'MINI', atPct: firstMiniPct, count: 1, mix: 'charger' });
 
     beats.push({ kind: 'EVENT', atPct: secondEventPct, id: 'SWARM' });
+    beats.push({ kind: 'EVENT', atPct: turretPct, id: 'TURRET' });
 
     // Midgame: multiple rams WHILE trash keeps coming.
     beats.push({ kind: 'MINI', atPct: midMiniPct, count: 2 + Math.floor(Math.random() * 2), mix: 'charger' });
 
     beats.push({ kind: 'EVENT', atPct: thirdEventPct, id: 'SWARM' });
+    beats.push({ kind: 'EVENT', atPct: splitterPct, id: 'SPLITTER' });
+    beats.push({ kind: 'EVENT', atPct: wallPct, id: 'WALL' });
+    beats.push({ kind: 'EVENT', atPct: splitterBossPct, id: 'SPLITTER_BOSS' });
 
     // Late: 3–5 RAMs at once
     beats.push({ kind: 'MINI', atPct: lateMiniPct, count: 3 + Math.floor(Math.random() * 3), mix: 'charger' });
 
-    // Only the final event can roll WALL, and it's still biased toward SWARM.
-    beats.push({ kind: 'EVENT', atPct: fourthEventPct, id: pickLateEventId(0.78) });
+    beats.push({ kind: 'EVENT', atPct: turretLatePct, id: 'TURRET' });
+    beats.push({ kind: 'EVENT', atPct: fourthEventPct, id: pickLateEventId(0.45) });
 
     beats.sort((a, b) => a.atPct - b.atPct);
 
@@ -1286,7 +1502,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     activeEventRef.current = { id, endsAt: now + dur, meta };
 
     // Small cooldown after the event ends
-    eventCooldownUntilRef.current = Math.max(eventCooldownUntilRef.current, activeEventRef.current.endsAt + 5500);
+    eventCooldownUntilRef.current = Math.max(eventCooldownUntilRef.current, activeEventRef.current.endsAt + 3200);
     return true;
   };
 
@@ -1300,6 +1516,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     for (const e of list) {
       if (
         e.type === 'boss' ||
+        e.type === 'boss_split' ||
         String(e.type).startsWith('mini_') ||
         e.type === 'wall'
       ) specials.push(e);
@@ -1339,7 +1556,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
 
     // TRUE EMPTY RELIEF: delete all non-specials
     const prev = enemiesRef.current || [];
-    enemiesRef.current = prev.filter((e) => e.type === 'boss' || String(e.type).startsWith('mini_') || e.type === 'wall');
+    enemiesRef.current = prev.filter((e) => e.type === 'boss' || e.type === 'boss_split' || String(e.type).startsWith('mini_') || e.type === 'wall');
   };
 
   const spawnMiniPack = (pp, difficulty, count) => {
@@ -1356,13 +1573,14 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     const now = Date.now();
 
     // Don't schedule beats during boss fight (keeps it readable and reduces spike chaos)
-    const bossAlive = (enemiesRef.current || []).some((x) => x.type === 'boss' && x.hp > 0);
+    const bossAlive = (enemiesRef.current || []).some((x) => (x.type === 'boss' || x.type === 'boss_split') && x.hp > 0);
     if (bossAlive) return;
 
     // End-of-event: auto-relief
     if (activeEventRef.current && now >= activeEventRef.current.endsAt) {
+      const endedId = activeEventRef.current.id;
       activeEventRef.current = null;
-      triggerReliefSoft(2100 + Math.floor(Math.random() * 900), 40); // short soft relief (keeps arena populated)
+      triggerReliefSoft(endedId === 'WALL' ? 650 : 900 + Math.floor(Math.random() * 500), endedId === 'WALL' ? 60 : 48);
     }
 
     if (activeEventRef.current && now < activeEventRef.current.endsAt) return;
@@ -1412,12 +1630,12 @@ const beat = plan.beats[plan.idx];
 
       if (id === 'WALL') {
         const meta = {
-          ringN: 26 + Math.floor(Math.random() * 10),
-          radiusStart: 1850 + Math.floor(Math.random() * 450),
-          encroachSpeed: 1.35 + Math.random() * 0.55,
-          minRadius: 12,
-          hpMult: 2.4 + Math.random() * 0.7,
-          size: 52,
+          ringN: 34 + Math.floor(Math.random() * 12),
+          radiusStart: 1920 + Math.floor(Math.random() * 360),
+          encroachSpeed: 1.75 + Math.random() * 0.65,
+          minRadius: 210,
+          hpMult: 4.8 + Math.random() * 1.2,
+          size: 58,
           spawned: true
         };
 
@@ -1427,6 +1645,56 @@ const beat = plan.beats[plan.idx];
             ...(enemiesRef.current || []),
             ...spawnWallRing(pp, difficulty, meta, t)
           ];
+          plan.idx += 1;
+          return;
+        }
+      }
+
+      if (id === 'TURRET') {
+        const meta = { duration: EVENT_DEFS.TURRET.duration };
+        if (startEvent('TURRET', meta)) {
+          const n = 2 + Math.floor(difficulty / 4);
+          const spawned = [];
+          for (let i = 0; i < n; i += 1) {
+            const a = Math.random() * Math.PI * 2;
+            const d = 520 + Math.random() * 430;
+            const turret = spawnEnemy(difficulty, 'turret', t);
+            spawned.push({ ...turret, x: clamp(pp.x + Math.cos(a) * d, 80, ARENA_SIZE - 80), y: clamp(pp.y + Math.sin(a) * d, 80, ARENA_SIZE - 80) });
+          }
+          enemiesRef.current = [...(enemiesRef.current || []), ...spawned];
+          juicePunch(0.85, 0.75);
+          plan.idx += 1;
+          return;
+        }
+      }
+
+      if (id === 'SPLITTER') {
+        const meta = { duration: EVENT_DEFS.SPLITTER.duration };
+        if (startEvent('SPLITTER', meta)) {
+          const n = 5 + Math.floor(difficulty / 2);
+          const spawned = [];
+          for (let i = 0; i < n; i += 1) {
+            const a = Math.random() * Math.PI * 2;
+            const d = 560 + Math.random() * 360;
+            const spl = spawnEnemy(difficulty, 'splitter', t);
+            spawned.push({ ...spl, x: clamp(pp.x + Math.cos(a) * d, 80, ARENA_SIZE - 80), y: clamp(pp.y + Math.sin(a) * d, 80, ARENA_SIZE - 80) });
+          }
+          enemiesRef.current = [...(enemiesRef.current || []), ...spawned];
+          juicePunch(0.75, 0.70);
+          plan.idx += 1;
+          return;
+        }
+      }
+
+      if (id === 'SPLITTER_BOSS') {
+        const meta = { duration: EVENT_DEFS.SPLITTER.duration + 8000 };
+        if (startEvent('SPLITTER', meta)) {
+          const spl = spawnEnemy(difficulty + 2, 'splitter_boss', t);
+          enemiesRef.current = [
+            ...(enemiesRef.current || []),
+            { ...spl, x: clamp(pp.x + 520, 120, ARENA_SIZE - 120), y: clamp(pp.y - 300, 120, ARENA_SIZE - 120) }
+          ];
+          juicePunch(1.0, 0.9);
           plan.idx += 1;
           return;
         }
@@ -1471,19 +1739,21 @@ const beat = plan.beats[plan.idx];
     if (Math.random() > chance) return;
 
     // Weighted roll (early: magnet/overdrive heavier; late: shield/freeze heavier)
-    const wMag = lerp(0.32, 0.22, late);
-    const wOvr = lerp(0.24, 0.20, late);
-    const wShd = lerp(0.22, 0.30, late);
-    const wFrz = lerp(0.22, 0.28, late);
+    const wMag = lerp(0.28, 0.20, late);
+    const wOvr = lerp(0.20, 0.18, late);
+    const wShd = lerp(0.20, 0.27, late);
+    const wFrz = lerp(0.20, 0.25, late);
+    const wDbl = 0.14;
 
-    const total = wMag + wOvr + wShd + wFrz;
+    const total = wMag + wOvr + wShd + wFrz + wDbl;
     let r = Math.random() * total;
 
     let type = 'MAGNET';
     if ((r -= wMag) <= 0) type = 'MAGNET';
     else if ((r -= wOvr) <= 0) type = 'OVERDRIVE';
     else if ((r -= wShd) <= 0) type = 'SHIELD';
-    else type = 'FREEZE';
+    else if ((r -= wFrz) <= 0) type = 'FREEZE';
+    else type = 'DOUBLE_DAMAGE';
 
     pickupsRef.current = [...(pickupsRef.current || []), { id: Math.random(), type, x, y, t: Date.now(), life: 24000 }];
   };
@@ -1494,6 +1764,7 @@ const beat = plan.beats[plan.idx];
     if (type === 'FREEZE') freezeUntil.current = Math.max(freezeUntil.current, now + PICKUP_DEFS.FREEZE.life);
     if (type === 'OVERDRIVE') overdriveUntil.current = Math.max(overdriveUntil.current, now + PICKUP_DEFS.OVERDRIVE.life);
     if (type === 'SHIELD') shieldUntil.current = Math.max(shieldUntil.current, now + PICKUP_DEFS.SHIELD.life);
+    if (type === 'DOUBLE_DAMAGE') doubleDamageUntil.current = Math.max(doubleDamageUntil.current, now + PICKUP_DEFS.DOUBLE_DAMAGE.life);
     juicePunch(0.95, 0.95);
   };
 
@@ -1521,6 +1792,7 @@ const beat = plan.beats[plan.idx];
       canvasRef.current.width = window.innerWidth;
       canvasRef.current.height = window.innerHeight;
     }
+    syncPlayerCameraDom(playerRef.current);
 
     const loop = setInterval(() => {
       if (pausedRef.current) return;
@@ -1542,23 +1814,49 @@ const beat = plan.beats[plan.idx];
             platesLastGenAtRef.current += 20000;
             if (platesStacksRef.current < maxStacks) {
               platesStacksRef.current += 1;
-              // tiny UI pulse
-              juicePunch(0.14, 0.22);
+              const p = playerRef.current;
+              explosionsRef.current = [
+                ...(explosionsRef.current || []),
+                { id: Math.random(), x: p.x, y: p.y, r: 78, t: now, life: 260, color: 'rgba(0,242,255,1)', glow: 22, fill: true, alpha: 0.28 },
+                { id: Math.random(), x: p.x, y: p.y, r: 118, t: now, life: 420, color: 'rgba(0,242,255,1)', glow: 18 }
+              ];
+              addToast('PLATING READY');
+              juicePunch(0.22, 0.35);
             }
           }
         }
 
-        // Thorns activation (SPACE)
-        const spaceDown = !!keys.current.space;
-        const pressed = spaceDown && !spaceWasDownRef.current;
-        spaceWasDownRef.current = spaceDown;
+        // Active abilities: 1 = Thorns, 2 = Decoy. Space still triggers Thorns as a fallback.
+        const oneDown = !!keys.current.one || !!keys.current.space;
+        const twoDown = !!keys.current.two;
+        const pressedOne = oneDown && !abilityWasDownRef.current.one;
+        const pressedTwo = twoDown && !abilityWasDownRef.current.two;
+        abilityWasDownRef.current.one = oneDown;
+        abilityWasDownRef.current.two = twoDown;
+        spaceWasDownRef.current = !!keys.current.space;
 
-        if (t.thornsUnlocked && pressed && now >= thornsCooldownUntilRef.current) {
+        if (t.decoyUnlocked && pressedTwo && now >= decoyCooldownUntilRef.current) {
+          const p = playerRef.current;
+          decoyRef.current = { x: p.x, y: p.y, until: now + 8000 };
+          decoyCooldownUntilRef.current = now + 18000;
+          explosionsRef.current = [
+            ...(explosionsRef.current || []),
+            { id: Math.random(), x: p.x, y: p.y, r: 140, t: now, life: 340, color: 'rgba(0,242,255,1)', glow: 22, fill: true, alpha: 0.45 },
+            { id: Math.random(), x: p.x, y: p.y, r: 64, t: now, life: 520, color: 'rgba(255,255,255,1)', glow: 18 }
+          ];
+          juicePunch(0.70, 0.85);
+        }
+
+        if (t.thornsUnlocked && pressedOne && now >= thornsCooldownUntilRef.current) {
           thornsActiveUntilRef.current = now + t.thornsDurationMs;
           thornsCooldownUntilRef.current = now + t.thornsCooldownMs;
 
           const p = playerRef.current;
-          explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: p.x, y: p.y, r: 160, t: now, life: 240 }];
+          explosionsRef.current = [
+            ...(explosionsRef.current || []),
+            { id: Math.random(), x: p.x, y: p.y, r: 185, t: now, life: 280, color: 'rgba(0,255,160,1)', glow: 30, fill: true, alpha: 0.45 },
+            { id: Math.random(), x: p.x, y: p.y, r: 92, t: now, life: 440, color: 'rgba(255,255,255,1)', glow: 18 }
+          ];
           juicePunch(0.75, 0.8);
         }
 
@@ -1572,7 +1870,7 @@ const beat = plan.beats[plan.idx];
           enemiesRef.current = (enemiesRef.current || []).map((en) => {
             if (en.hp <= 0) return en;
             const d = Math.hypot(en.x - p.x, en.y - p.y);
-            if (d <= radius && en.type !== 'juggernaut' && en.type !== 'boss') {
+            if (d <= radius && !isControlImmune(en.type)) {
               const fall = 1 - d / radius;
               const ang = Math.atan2(en.y - p.y, en.x - p.x);
               const push = 36 * Math.max(0.25, fall);
@@ -1590,8 +1888,31 @@ const beat = plan.beats[plan.idx];
           pushToast('🌵 THORNS expired');
         }
         thornsWasActiveRef.current = thornsActive;
-      }
 
+        if (decoyRef.current && now >= decoyRef.current.until) decoyRef.current = null;
+
+        if (t.fleetAssist && now >= fleetNextAtRef.current) {
+          fleetUntilRef.current = now + 10000;
+          fleetNextAtRef.current = now + 90000;
+          juicePunch(0.45, 0.65);
+        }
+
+        if (t.droneOrbit) {
+          droneUntilRef.current = now + 60000;
+        }
+
+        if (t.slowPulse && now >= slowPulseNextAtRef.current) {
+          slowPulseNextAtRef.current = now + 20000;
+          const p = playerRef.current;
+          explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: p.x, y: p.y, r: 520, t: now, life: 640, color: 'rgba(0,242,255,1)', glow: 26, lineWidth: 5, alpha: 0.55 }];
+          enemiesRef.current = (enemiesRef.current || []).map((en) => {
+            if (isControlImmune(en.type)) return en;
+            const d = Math.hypot(en.x - p.x, en.y - p.y);
+            if (d > 520) return en;
+            return { ...en, slowUntil: Math.max(en.slowUntil || 0, now + 5000), slowFactor: Math.min(en.slowFactor || 1, 0.55) };
+          });
+        }
+      }
 
       // --- CANVAS DRAWING START ---
       const ctx = ctxRef.current;
@@ -1658,13 +1979,16 @@ const beat = plan.beats[plan.idx];
           if (isVoid) {
             const r = Math.max(10, (b.width || 20) * 0.5);
             const col = b.color || '#c08bff';
+            const anchoredAge = b.anchored ? Math.max(0, Date.now() - (b.anchoredAt || Date.now())) : 0;
+            const grow = b.anchored ? clamp(anchoredAge / 760, 0, 1) : 0;
+            const fieldR = (b.pullRadius || 190) * grow;
 
             ctx.save();
             ctx.translate(b.x - cam.x, b.y - cam.y);
 
             ctx.globalAlpha = 0.85;
             ctx.shadowColor = col;
-            ctx.shadowBlur = b.singularity ? 22 : 14;
+            ctx.shadowBlur = b.singularity ? 28 : 18;
 
             ctx.fillStyle = col;
             ctx.beginPath();
@@ -1678,15 +2002,67 @@ const beat = plan.beats[plan.idx];
             ctx.arc(0, 0, r + 4, 0, Math.PI * 2);
             ctx.stroke();
 
-            if (b.singularity) {
-              ctx.globalAlpha = 0.65;
-              ctx.lineWidth = 2;
+            if (b.anchored) {
+              ctx.globalAlpha = 0.18 + grow * 0.22;
               ctx.strokeStyle = col;
+              ctx.lineWidth = 5;
               ctx.beginPath();
-              ctx.arc(0, 0, r + 10, 0, Math.PI * 2);
+              ctx.arc(0, 0, Math.max(14, fieldR), 0, Math.PI * 2);
               ctx.stroke();
+
+              ctx.globalAlpha = 0.50;
+              ctx.lineWidth = 3;
+              for (let i = 0; i < 4; i += 1) {
+                const rot = Date.now() / (420 + i * 70) + i * Math.PI * 0.5;
+                ctx.beginPath();
+                ctx.arc(0, 0, Math.max(18, fieldR * (0.30 + i * 0.17)), rot, rot + Math.PI * 1.15);
+                ctx.stroke();
+              }
             }
 
+            ctx.restore();
+            return;
+          }
+
+          if (b.axeThrow) {
+            const ang = Number.isFinite(b.angle) ? b.angle : Math.atan2(b.vy || 0, b.vx || 0);
+            const spin = (Date.now() / 70) * (b.spinDir || 1);
+            ctx.save();
+            ctx.translate(b.x - cam.x, b.y - cam.y);
+            ctx.rotate(ang + spin);
+            ctx.globalAlpha = 0.95;
+            ctx.shadowColor = 'rgba(255,28,0,0.90)';
+            ctx.shadowBlur = 22;
+
+            ctx.strokeStyle = 'rgba(92,42,26,1)';
+            ctx.lineWidth = 7;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(-26, 0);
+            ctx.lineTo(26, 0);
+            ctx.stroke();
+
+            ctx.fillStyle = 'rgba(255,54,24,0.98)';
+            ctx.strokeStyle = 'rgba(255,230,205,0.88)';
+            ctx.lineWidth = 2.5;
+            [-1, 1].forEach((side) => {
+              ctx.beginPath();
+              ctx.moveTo(side * 6, -16);
+              ctx.lineTo(side * 32, -30);
+              ctx.quadraticCurveTo(side * 46, 0, side * 32, 30);
+              ctx.lineTo(side * 6, 16);
+              ctx.quadraticCurveTo(side * 18, 0, side * 6, -16);
+              ctx.closePath();
+              ctx.fill();
+              ctx.stroke();
+            });
+
+            ctx.globalAlpha = 0.32;
+            ctx.strokeStyle = 'rgba(255,90,35,0.95)';
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.arc(0, 0, 38, spin, spin + Math.PI * 1.35);
+            ctx.stroke();
             ctx.restore();
             return;
           }
@@ -1702,6 +2078,33 @@ const beat = plan.beats[plan.idx];
           ctx.restore();
         });
 
+        (enemyProjectilesRef.current || []).forEach((p) => {
+          if (p.x < viewL || p.x > viewR || p.y < viewT || p.y > viewB) return;
+          const sx = p.x - cam.x;
+          const sy = p.y - cam.y;
+          ctx.save();
+          ctx.globalAlpha = 0.94;
+          ctx.shadowColor = 'rgba(255,82,28,1)';
+          ctx.shadowBlur = 24;
+          ctx.fillStyle = 'rgba(255,92,28,0.95)';
+          ctx.beginPath();
+          ctx.arc(sx, sy, p.r || 13, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(255,235,190,0.95)';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(sx, sy, (p.r || 13) + 5, 0, Math.PI * 2);
+          ctx.stroke();
+          const speed = Math.hypot(p.vx || 0, p.vy || 0) || 1;
+          ctx.strokeStyle = 'rgba(255,92,28,0.45)';
+          ctx.lineWidth = 7;
+          ctx.beginPath();
+          ctx.moveTo(sx, sy);
+          ctx.lineTo(sx - ((p.vx || 0) / speed) * 44, sy - ((p.vy || 0) / speed) * 44);
+          ctx.stroke();
+          ctx.restore();
+        });
+
         // Enemies
         enemiesRef.current.forEach(e => {
           if (e.x < viewL || e.x > viewR || e.y < viewT || e.y > viewB) return;
@@ -1710,7 +2113,30 @@ const beat = plan.beats[plan.idx];
           const sy = e.y - cam.y;
 
           ctx.fillStyle = e.color || '#ff007a';
-          ctx.fillRect(sx - e.size / 2, sy - e.size / 2, e.size, e.size);
+          if (e.type === 'boss') {
+            const a = (Date.now() / 900) % (Math.PI * 2);
+            ctx.save();
+            ctx.translate(sx, sy);
+            ctx.rotate(a * 0.16);
+            ctx.shadowColor = 'rgba(255,218,107,0.8)';
+            ctx.shadowBlur = 26;
+            ctx.beginPath();
+            for (let i = 0; i < 10; i += 1) {
+              const rr = (e.size * (i % 2 ? 0.42 : 0.62));
+              const aa = -Math.PI / 2 + (Math.PI * 2 * i) / 10;
+              const x = Math.cos(aa) * rr;
+              const y = Math.sin(aa) * rr;
+              if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+            ctx.lineWidth = 4;
+            ctx.stroke();
+            ctx.restore();
+          } else {
+            ctx.fillRect(sx - e.size / 2, sy - e.size / 2, e.size, e.size);
+          }
 
           const isMini = String(e.type || '').startsWith('mini_');
 
@@ -1775,6 +2201,53 @@ const beat = plan.beats[plan.idx];
             ctx.fillStyle = isMini ? '#ffe16b' : '#ff007a';
             ctx.fillRect(barX, barY, barW * (e.hp / e.maxHp), 5);
           }
+
+          if (e.burnUntil && Date.now() < e.burnUntil) {
+            const bleedSeed = Number(String(e.id).replace(/\D/g, '').slice(-3)) || 0;
+            const bleedT = Math.abs(Math.sin(Date.now() / 115 + bleedSeed));
+            ctx.save();
+            ctx.globalAlpha = 0.55 + bleedT * 0.35;
+            ctx.fillStyle = 'rgba(255,20,20,0.95)';
+            ctx.shadowColor = 'rgba(255,0,0,0.85)';
+            ctx.shadowBlur = 14;
+            for (let i = 0; i < 3; i += 1) {
+              const ox = ((i - 1) * 7) + Math.sin(Date.now() / (170 + i * 31)) * 4;
+              const oy = e.size * 0.24 + i * 5 + bleedT * 7;
+              ctx.beginPath();
+              ctx.arc(sx + ox, sy + oy, 3 + i * 0.8, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.restore();
+          }
+
+          if (e.type === 'boss' && e.bossWindupUntil && Date.now() < e.bossWindupUntil) {
+            const ang = e.bossRamDir || 0;
+            const len = e.bossDashLen ?? 760;
+            const pulse = 0.55 + Math.sin(Date.now() / 55) * 0.25;
+            ctx.save();
+            ctx.globalAlpha = 0.46 + pulse * 0.22;
+            ctx.strokeStyle = 'rgba(255,255,255,0.70)';
+            ctx.lineWidth = 14;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+            ctx.lineTo(sx + Math.cos(ang) * len, sy + Math.sin(ang) * len);
+            ctx.stroke();
+
+            ctx.globalAlpha = 0.32 + pulse * 0.18;
+            ctx.strokeStyle = 'rgba(255,40,20,0.95)';
+            ctx.lineWidth = 34;
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+            ctx.lineTo(sx + Math.cos(ang) * len, sy + Math.sin(ang) * len);
+            ctx.stroke();
+
+            ctx.fillStyle = 'rgba(255,70,30,0.96)';
+            ctx.beginPath();
+            ctx.arc(sx + Math.cos(ang) * len, sy + Math.sin(ang) * len, 14, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
         });
 
         // VFX
@@ -1836,6 +2309,208 @@ const beat = plan.beats[plan.idx];
           ctx.restore();
         });
 
+        const drawAxeCleave = (s) => {
+          const age = s.age || 0;
+          if (age < (s.delay || 0)) return;
+          const activeMs = s.activeMs || 180;
+          if (age > (s.delay || 0) + activeMs) return;
+          const pct = clamp((age - (s.delay || 0)) / activeMs, 0, 1);
+          const fade = 1 - pct;
+          const side = s.side || 1;
+          const swing = (side < 0 ? -0.18 : 0.18) * (1 - pct);
+          const ang = (s.angle || 0) + swing;
+          const r = s.range || 190;
+          const sx = s.x - cam.x;
+          const sy = s.y - cam.y;
+          const col = s.color || 'rgba(255,70,30,1)';
+
+          ctx.save();
+          ctx.translate(sx, sy);
+          ctx.rotate(ang);
+          ctx.globalAlpha = 0.25 + fade * 0.55;
+          ctx.shadowColor = s.glowColor || col;
+          ctx.shadowBlur = s.glowBlur || 28;
+
+          ctx.strokeStyle = 'rgba(85,28,20,0.96)';
+          ctx.lineWidth = 10;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(r * 0.10, side * 8);
+          ctx.lineTo(r * 0.70, side * 24);
+          ctx.stroke();
+
+          ctx.fillStyle = col;
+          ctx.strokeStyle = 'rgba(255,235,210,0.78)';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(r * 0.42, side * -18);
+          ctx.lineTo(r * 0.98, side * -74);
+          ctx.quadraticCurveTo(r * 1.10, side * 0, r * 0.98, side * 74);
+          ctx.lineTo(r * 0.42, side * 18);
+          ctx.quadraticCurveTo(r * 0.58, side * 0, r * 0.42, side * -18);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.globalAlpha = fade * 0.36;
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 10;
+          ctx.beginPath();
+          ctx.moveTo(r * 0.15, 0);
+          ctx.lineTo(r * 0.98, side * 86);
+          ctx.stroke();
+          ctx.restore();
+        };
+
+        const drawAxeSlam = (s) => {
+          const age = s.age || 0;
+          if (age < (s.delay || 0)) return;
+          const activeMs = s.activeMs || 220;
+          if (age > (s.delay || 0) + activeMs) return;
+          const pct = clamp((age - (s.delay || 0)) / activeMs, 0, 1);
+          const fade = 1 - pct;
+          const sx = s.x - cam.x;
+          const sy = s.y - cam.y;
+          const ang = s.angle || 0;
+          const r = s.range || 220;
+
+          ctx.save();
+          ctx.translate(sx, sy);
+          ctx.rotate(ang);
+          ctx.globalAlpha = 0.35 + fade * 0.50;
+          ctx.shadowColor = 'rgba(255,20,0,0.95)';
+          ctx.shadowBlur = 42;
+          ctx.fillStyle = 'rgba(255,42,18,0.95)';
+          ctx.strokeStyle = 'rgba(255,235,210,0.85)';
+          ctx.lineWidth = 4;
+
+          [-1, 1].forEach((side) => {
+            ctx.beginPath();
+            ctx.moveTo(r * 0.12, side * 14);
+            ctx.lineTo(r * 0.84, side * 84);
+            ctx.quadraticCurveTo(r * 1.18, side * 24, r * 0.94, side * -42);
+            ctx.lineTo(r * 0.22, side * -16);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+          });
+
+          ctx.globalAlpha = fade * 0.65;
+          ctx.strokeStyle = 'rgba(255,80,30,0.92)';
+          ctx.lineWidth = 8;
+          ctx.beginPath();
+          ctx.arc(0, 0, (s.shockwaveRadius || 180) * (0.65 + pct * 0.55), 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        };
+
+        const drawAxeStorm = (s) => {
+          const age = s.age || 0;
+          if (age < (s.delay || 0)) return;
+          const activeMs = s.activeMs || 520;
+          if (age > (s.delay || 0) + activeMs) return;
+          const pct = clamp((age - (s.delay || 0)) / activeMs, 0, 1);
+          const fade = 1 - pct;
+          const r = s.range || 190;
+          const sx = s.x - cam.x;
+          const sy = s.y - cam.y;
+          const rot = Date.now() / 95;
+
+          ctx.save();
+          ctx.translate(sx, sy);
+          ctx.globalAlpha = 0.24 + fade * 0.58;
+          ctx.shadowColor = 'rgba(255,28,0,0.92)';
+          ctx.shadowBlur = 34;
+
+          ctx.strokeStyle = 'rgba(255,48,18,0.95)';
+          ctx.lineWidth = 14;
+          ctx.lineCap = 'round';
+          for (let i = 0; i < 3; i += 1) {
+            const start = rot + i * Math.PI * 0.67;
+            ctx.beginPath();
+            ctx.arc(0, 0, r * (0.70 + i * 0.10), start, start + Math.PI * 0.92);
+            ctx.stroke();
+          }
+
+          ctx.globalAlpha = 0.86;
+          ctx.rotate(rot);
+          [-1, 1].forEach((side) => {
+            ctx.save();
+            ctx.rotate(side * Math.PI * 0.72);
+            ctx.strokeStyle = 'rgba(92,42,26,1)';
+            ctx.lineWidth = 8;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(-18, 0);
+            ctx.lineTo(r * 0.58, 0);
+            ctx.stroke();
+
+            ctx.fillStyle = side < 0 ? 'rgba(255,48,20,0.98)' : 'rgba(255,118,40,0.98)';
+            ctx.strokeStyle = 'rgba(255,230,205,0.82)';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(r * 0.42, -26);
+            ctx.lineTo(r * 0.76, -44);
+            ctx.quadraticCurveTo(r * 0.92, 0, r * 0.76, 44);
+            ctx.lineTo(r * 0.42, 26);
+            ctx.quadraticCurveTo(r * 0.56, 0, r * 0.42, -26);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+          });
+
+          ctx.globalAlpha = fade * 0.28;
+          ctx.strokeStyle = 'rgba(255,245,220,0.86)';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(0, 0, r * 0.98, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        };
+
+        if (nowV < thornsActiveUntilRef.current) {
+          const p = playerRef.current;
+          const pulse = 0.5 + Math.sin(nowV / 85) * 0.5;
+          ctx.save();
+          ctx.translate(p.x - cam.x, p.y - cam.y);
+          ctx.shadowColor = 'rgba(0,255,160,0.95)';
+          ctx.shadowBlur = 28 + pulse * 18;
+          ctx.strokeStyle = 'rgba(0,255,160,0.88)';
+          ctx.lineWidth = 5;
+          ctx.beginPath();
+          ctx.arc(0, 0, 48 + pulse * 10, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.strokeStyle = 'rgba(255,255,255,0.70)';
+          ctx.lineWidth = 2;
+          for (let i = 0; i < 16; i += 1) {
+            const a = (i / 16) * Math.PI * 2 + nowV / 170;
+            ctx.beginPath();
+            ctx.moveTo(Math.cos(a) * 54, Math.sin(a) * 54);
+            ctx.lineTo(Math.cos(a) * (78 + pulse * 12), Math.sin(a) * (78 + pulse * 12));
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+
+        if (decoyRef.current && nowV < decoyRef.current.until) {
+          const d = decoyRef.current;
+          const a = clamp((d.until - nowV) / 8000, 0, 1);
+          ctx.save();
+          ctx.globalAlpha = 0.35 + a * 0.35;
+          ctx.translate(d.x - cam.x, d.y - cam.y);
+          ctx.shadowColor = 'rgba(0,242,255,0.95)';
+          ctx.shadowBlur = 26;
+          ctx.strokeStyle = 'rgba(0,242,255,0.95)';
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.arc(0, 0, 36 + Math.sin(nowV / 120) * 5, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.fillStyle = 'rgba(255,255,255,0.78)';
+          ctx.fillRect(-12, -12, 24, 24);
+          ctx.restore();
+        }
+
         (arcsRef.current || []).forEach((aObj) => {
           const a = clamp(1 - (nowV - aObj.t) / (aObj.life || 150), 0, 1);
           if (a <= 0) return;
@@ -1879,6 +2554,18 @@ const beat = plan.beats[plan.idx];
         });
 
         (slashesRef.current || []).forEach((s) => {
+          if (s.kind === 'axeCleave') {
+            drawAxeCleave(s);
+            return;
+          }
+          if (s.kind === 'axeSlam') {
+            drawAxeSlam(s);
+            return;
+          }
+          if (s.kind === 'axeStorm') {
+            drawAxeStorm(s);
+            return;
+          }
           const age = s.age || 0;
           if (age < (s.delay || 0)) return;
           const activeMs = s.activeMs || 120;
@@ -1960,6 +2647,7 @@ const beat = plan.beats[plan.idx];
             magnet: nowV < magnetUntil.current,
             freeze: nowV < freezeUntil.current,
             overdrive: nowV < overdriveUntil.current,
+            doubleDamage: nowV < doubleDamageUntil.current,
             shield: nowV < shieldUntil.current,
             adrenal: nowV < milAdrenalMoveUntilRef.current,
           };
@@ -2012,20 +2700,10 @@ const beat = plan.beats[plan.idx];
         nx = clamp(nx, 0, ARENA_SIZE);
         ny = clamp(ny, 0, ARENA_SIZE);
 
-        const nc = { x: nx - window.innerWidth / 2, y: ny - window.innerHeight / 2 };
-        cameraRef.current = nc;
-
         const np = { x: nx, y: ny };
         playerRef.current = np;
 
-        if (playerSpriteRef.current) {
-          playerSpriteRef.current.style.left = `${nx}px`;
-          playerSpriteRef.current.style.top = `${ny}px`;
-        }
-        if (playerTracerRef.current) {
-          playerTracerRef.current.style.left = `${nx - 60}px`;
-          playerTracerRef.current.style.top = `${ny - 60}px`;
-        }
+        syncPlayerCameraDom(np);
 
         const worldEl = worldRef.current;
         if (worldEl) {
@@ -2035,7 +2713,6 @@ const beat = plan.beats[plan.idx];
           const t = until > nowFx ? (until - nowFx) / dur : 0;
           const chroma = (juice.current.maxChroma || 0) * t;
 
-          worldEl.style.transform = `translate(${-nc.x}px,${-nc.y}px)`;
           worldEl.style.filter = chroma > 0.02 ? `saturate(${1 + chroma * 0.10}) brightness(${1 + chroma * 0.05})` : '';
           if (t <= 0) {
             juice.current.maxPunch = 0;
@@ -2046,6 +2723,22 @@ const beat = plan.beats[plan.idx];
 
       const pPos = playerRef.current;
       const freezeWorld = Date.now() < freezeUntil.current;
+
+      if (!freezeWorld) {
+        const ppShot = playerRef.current;
+        enemyProjectilesRef.current = (enemyProjectilesRef.current || [])
+          .map((p) => ({ ...p, x: p.x + (p.vx || 0), y: p.y + (p.vy || 0), life: (p.life || 0) - 16 }))
+          .filter((p) => {
+            if (p.life <= 0 || p.x < -80 || p.x > ARENA_SIZE + 80 || p.y < -80 || p.y > ARENA_SIZE + 80) return false;
+            const d = Math.hypot(p.x - ppShot.x, p.y - ppShot.y);
+            if (d < (p.r || 12) + 18) {
+              applyPlayerDamage(p.damage || 12, 'turret');
+              explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: p.x, y: p.y, r: 54, t: Date.now(), life: 260, color: 'rgba(255,92,28,1)', glow: 18 }];
+              return false;
+            }
+            return true;
+          });
+      }
 
       // -------------------- SPAWNING --------------------
       const runT = getRunT();
@@ -2061,7 +2754,7 @@ const beat = plan.beats[plan.idx];
       const earlySlow = lerp(1.22, 1.0, clamp(progT / 0.25, 0, 1));
 
       const inRelief = Date.now() < reliefUntilRef.current;
-      const bossAlive = (enemiesRef.current || []).some((x) => x.type === 'boss' && x.hp > 0);
+      const bossAlive = (enemiesRef.current || []).some((x) => (x.type === 'boss' || x.type === 'boss_split') && x.hp > 0);
 
       // base: fewer enemies
       let spawnInterval = spawnIntervalBase * SPAWN_INTERVAL_MULT * earlySlow * (inRelief ? RELIEF_SPAWN_INTERVAL_MULT : 1.0);
@@ -2079,7 +2772,7 @@ const beat = plan.beats[plan.idx];
       let nextEnemies = [...enemiesRef.current];
 
       const nowSpawn = Date.now();
-      const reliefHard = (nowSpawn < reliefUntilRef.current) && (nowSpawn - (reliefStartedAtRef.current || 0) < 1800);
+      const reliefHard = (nowSpawn < reliefUntilRef.current) && (nowSpawn - (reliefStartedAtRef.current || 0) < 650);
 
       if (!freezeWorld && !reliefHard) {
         if (elapsed.current - lastSpawn.current > spawnInterval) {
@@ -2100,7 +2793,7 @@ const beat = plan.beats[plan.idx];
 
           // soft cap late-game trash so density can't spiral (keeps difficulty high but fair)
           if (!bossAlive && progT > 0.68 && !isEventActive('WALL') && !isEventActive('SWARM')) {
-            const isSpecial = (x) => x.type === 'boss' || String(x.type).startsWith('mini_') || x.type === 'wall';
+            const isSpecial = (x) => x.type === 'boss' || x.type === 'boss_split' || String(x.type).startsWith('mini_') || x.type === 'wall';
             const trashCount = nextEnemies.filter((e) => !isSpecial(e)).length;
             const maxTrash = Math.round(lerp(110, 90, norm01(progT, 0.68, 1.0)));
             const room = maxTrash - trashCount;
@@ -2123,7 +2816,7 @@ const beat = plan.beats[plan.idx];
 
             // cap swarm spawns if we're already at/over late trash budget
             if (!bossAlive && progT > 0.68) {
-              const isSpecial = (x) => x.type === 'boss' || String(x.type).startsWith('mini_') || x.type === 'wall';
+              const isSpecial = (x) => x.type === 'boss' || x.type === 'boss_split' || String(x.type).startsWith('mini_') || x.type === 'wall';
               const trashCount = nextEnemies.filter((e) => !isSpecial(e)).length;
               const maxTrash = Math.round(lerp(125, 105, norm01(progT, 0.68, 1.0)));
               const room = maxTrash - trashCount;
@@ -2184,14 +2877,81 @@ const beat = plan.beats[plan.idx];
 
       // -------------------- ENEMY MOVE / AI --------------------
       const movedEnemiesRaw = nextEnemies.map((en) => {
-        if (freezeWorld) return en;
+        if (freezeWorld && !isControlImmune(en.type)) return en;
         if (en.stunnedUntil && Date.now() < en.stunnedUntil) return en;
+        const decoy = decoyRef.current && Date.now() < decoyRef.current.until ? decoyRef.current : null;
+        const targetPoint = decoy ? decoy : pPos;
+
+        if (en.type === 'turret') {
+          const now2 = Date.now();
+          if (now2 >= (en.nextShotAt || 0)) {
+            const dx = targetPoint.x - en.x;
+            const dy = targetPoint.y - en.y;
+            const d = Math.hypot(dx, dy) || 1;
+            const shotX = en.x + (dx / d) * Math.min(d, 520);
+            const shotY = en.y + (dy / d) * Math.min(d, 520);
+            const spd = 3.2;
+            enemyProjectilesRef.current = [
+              ...(enemyProjectilesRef.current || []),
+              {
+                id: Math.random(),
+                x: en.x,
+                y: en.y,
+                vx: (dx / d) * spd,
+                vy: (dy / d) * spd,
+                r: 14,
+                damage: 13 + tileDifficulty * 1.5,
+                t: now2,
+                life: 4200
+              }
+            ];
+            return { ...en, nextShotAt: now2 + 1650 + Math.random() * 650 };
+          }
+          return en;
+        }
+
+        if (en.type === 'boss') {
+          const now2 = Date.now();
+          const hpPct = en.hp / Math.max(1, en.maxHp || en.hp);
+          if (hpPct <= (en.nextRamPct ?? 0.82) && (en.chargesDone || 0) < 2 && !en.bossWindupUntil && !en.bossRamUntil) {
+            return {
+              ...en,
+              bossWindupUntil: now2 + 850,
+              bossRamDir: Math.atan2(targetPoint.y - en.y, targetPoint.x - en.x),
+              bossDashLen: 860,
+              chargesDone: (en.chargesDone || 0) + 1,
+              nextRamPct: (en.chargesDone || 0) === 0 ? 0.62 : -1,
+              ramPhaseDone: true
+            };
+          }
+          if (en.bossWindupUntil && now2 < en.bossWindupUntil) return en;
+          if (en.bossWindupUntil && now2 >= en.bossWindupUntil && !en.bossRamUntil) {
+            return { ...en, bossWindupUntil: 0, bossRamUntil: now2 + 2100 };
+          }
+          if (en.bossRamUntil && now2 < en.bossRamUntil) {
+            const spd = 13.8;
+            return { ...en, x: clamp(en.x + Math.cos(en.bossRamDir || 0) * spd, 0, ARENA_SIZE), y: clamp(en.y + Math.sin(en.bossRamDir || 0) * spd, 0, ARENA_SIZE) };
+          }
+          if (en.bossRamUntil && now2 >= en.bossRamUntil) return { ...en, bossRamUntil: 0 };
+          if ((en.bossPhase || 'main') === 'main' && hpPct <= 0.40 && !en.zergPhaseDone) {
+            const burst = [];
+            for (let i = 0; i < 28; i += 1) {
+              const a = (Math.PI * 2 * i) / 28;
+              const z = spawnEnemy(tileDifficulty + 3, 'swarm', getProgressT());
+              burst.push({ ...z, x: clamp(en.x + Math.cos(a) * 72, 30, ARENA_SIZE - 30), y: clamp(en.y + Math.sin(a) * 72, 30, ARENA_SIZE - 30), speed: (z.speed || 2) * 1.18, color: '#b6ff4a' });
+            }
+            enemiesRef.current = [...(enemiesRef.current || []), ...burst];
+            explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: en.x, y: en.y, r: 280, t: now2, life: 520, color: 'rgba(182,255,74,1)', glow: 34, fill: true, alpha: 0.22 }];
+            juicePunch(1.05, 0.9);
+            return { ...en, zergPhaseDone: true };
+          }
+        }
 
         // mini-boss behaviors
         if (en.type === 'mini_charger') {
           const now2 = Date.now();
-          const dx = pPos.x - en.x;
-          const dy = pPos.y - en.y;
+          const dx = targetPoint.x - en.x;
+          const dy = targetPoint.y - en.y;
           const angToPlayer = Math.atan2(dy, dx);
 
           if (!en.dashUntil && now2 > (en.nextDashAt || 0) && !en.windupUntil) {
@@ -2252,22 +3012,41 @@ const beat = plan.beats[plan.idx];
           const minR = en.wallMinR ?? 180;
 
           const curR = en.wallR ?? 1300;
-          const nr = curR - spd;
-
-          if (nr <= minR + 1) return { ...en, despawn: true };
+          const nr = Math.max(minR, curR - spd);
 
           const cx = Number.isFinite(en.wallCx) ? en.wallCx : en.x;
           const cy = Number.isFinite(en.wallCy) ? en.wallCy : en.y;
 
-          const nx = clamp(cx + Math.cos(en.wallA) * nr, 40, ARENA_SIZE - 40);
-          const ny = clamp(cy + Math.sin(en.wallA) * nr, 40, ARENA_SIZE - 40);
+          const orbitA = nr <= minR + 1 ? en.wallA + 0.010 : en.wallA;
+          const nx = clamp(cx + Math.cos(orbitA) * nr, 40, ARENA_SIZE - 40);
+          const ny = clamp(cy + Math.sin(orbitA) * nr, 40, ARENA_SIZE - 40);
 
-          return { ...en, wallR: nr, x: nx, y: ny };
+          return { ...en, wallA: orbitA, wallR: nr, x: nx, y: ny };
+        }
+
+        if (en.type === 'dancer') {
+          const now2 = Date.now();
+          const dx0 = targetPoint.x - en.x;
+          const dy0 = targetPoint.y - en.y;
+          const d0 = Math.hypot(dx0, dy0) || 1;
+          if (now2 > (en.nextDiveAt || 0) && !en.diveUntil) {
+            return { ...en, diveUntil: now2 + 520, diveDir: Math.atan2(dy0, dx0), nextDiveAt: now2 + 2800 + Math.random() * 1200 };
+          }
+          if (en.diveUntil && now2 < en.diveUntil) {
+            const spd = (en.speed || 2.4) * 3.2;
+            return { ...en, x: clamp(en.x + Math.cos(en.diveDir || 0) * spd, 0, ARENA_SIZE), y: clamp(en.y + Math.sin(en.diveDir || 0) * spd, 0, ARENA_SIZE) };
+          }
+          if (en.diveUntil && now2 >= en.diveUntil) return { ...en, diveUntil: 0 };
+          const orbit = (en.circleDir || 1) * Math.PI / 2;
+          const desired = d0 > 260 ? 0.55 : 1.0;
+          const ang = Math.atan2(dy0, dx0) + orbit * desired;
+          const spd = (en.speed || 2.3) * (d0 > 300 ? 1.1 : 0.9);
+          return { ...en, x: en.x + Math.cos(ang) * spd, y: en.y + Math.sin(ang) * spd };
         }
 
         // default chase
-        const dx = pPos.x - en.x;
-        const dy = pPos.y - en.y;
+        const dx = targetPoint.x - en.x;
+        const dy = targetPoint.y - en.y;
         const d = Math.hypot(dx, dy) || 1;
 
         const slowMult = en.slowUntil && Date.now() < en.slowUntil ? (en.slowFactor ?? 0.75) : 1;
@@ -2336,7 +3115,7 @@ const beat = plan.beats[plan.idx];
               ny = b.originY + Math.sin(b.dirAngle || 0) * b.maxRange;
               vx = 0;
               vy = 0;
-              return { ...b, x: nx, y: ny, vx, vy, anchored: true, life: b.life - 16 };
+              return { ...b, x: nx, y: ny, vx, vy, anchored: true, anchoredAt: Date.now(), life: b.life - 16 };
             }
           }
 
@@ -2415,8 +3194,8 @@ const beat = plan.beats[plan.idx];
       const spawnedBullets = [];
       const spawnedSlashes = [];
 
-      const pickRicochetTarget = (fromEnemy, allEnemies) => {
-        const maxRange2 = 360 * 360;
+      const pickRicochetTarget = (fromEnemy, allEnemies, maxRange = 360) => {
+        const maxRange2 = maxRange * maxRange;
         let best = null;
         let bestD = Infinity;
         for (const e of allEnemies) {
@@ -2435,13 +3214,14 @@ const beat = plan.beats[plan.idx];
       };
 
       nextBullets.forEach((b) => {
-        if (b.hit) return;
+          if (b.hit) return;
 
-        for (const en of movedEnemies) {
-          if (b.hit) break;
+          for (const en of movedEnemies) {
+            if (b.hit) break;
 
-          const d = Math.hypot(b.x - en.x, b.y - en.y);
-          if (d < en.size * 0.7) {
+            const d = Math.hypot(b.x - en.x, b.y - en.y);
+            const hitRadius = en.size * 0.7 + (b.axeThrow ? 34 : 0);
+          if (d < hitRadius) {
             const eliteMult = isEliteType(en.type) ? (b.eliteDmgMult ?? 1) : 1;
             const dmgHit = (b.damage || 0) * eliteMult;
 
@@ -2497,7 +3277,7 @@ const beat = plan.beats[plan.idx];
 
             // ricochet
             if (b.ricochets && b.ricochets > 0) {
-              const nxt = pickRicochetTarget(en, movedEnemies);
+              const nxt = pickRicochetTarget(en, movedEnemies, b.axeThrow ? 780 : 360);
               if (nxt) {
                 const ang = Math.atan2(nxt.y - en.y, nxt.x - en.x);
                 const sp = Math.hypot(b.vx, b.vy) || (b.bulletSpeed || 12);
@@ -2505,6 +3285,7 @@ const beat = plan.beats[plan.idx];
                 b.y = en.y;
                 b.vx = Math.cos(ang) * sp;
                 b.vy = Math.sin(ang) * sp;
+                b.angle = ang;
                 b.ricochets -= 1;
 
                 if ((b.pierce ?? 0) > 0) b.pierce -= 1;
@@ -2585,7 +3366,104 @@ const beat = plan.beats[plan.idx];
 
       if (currentEnemies.length) {
         const overdrive = now3 < overdriveUntil.current;
+        const doubleDamage = now3 < doubleDamageUntil.current;
         const overdriveMult = overdrive ? 1.5 : 1.0;
+        const tNow = talentsRef.current;
+
+        const fireSupportShot = (origin, target, damage, color, speed = 18, width = 10, height = 4) => {
+          if (!target) return;
+          const a = Math.atan2(target.y - origin.y, target.x - origin.x);
+          spawnedBullets.push({
+            id: Math.random(),
+            x: origin.x,
+            y: origin.y,
+            originX: origin.x,
+            originY: origin.y,
+            vx: Math.cos(a) * speed,
+            vy: Math.sin(a) * speed,
+            damage: damage * (statsRef.current.damageMult || 1) * crewDamageMult * (doubleDamage ? 2 : 1),
+            color,
+            life: 780,
+            lifeStart: 780,
+            width,
+            height,
+            pierce: 1,
+            ricochets: 0,
+            chain: 0,
+            slow: 0,
+            slowDuration: 0,
+            stun: 0,
+            knockback: 0,
+            explodeRadius: 0,
+            explodeMult: 0,
+            burn: 0,
+            microFreeze: 0,
+            eliteDmgMult: 0.85
+          });
+        };
+
+        if (now3 < fleetUntilRef.current && now3 - (lastFire.current.__fleet || 0) > 190) {
+          lastFire.current.__fleet = now3;
+          const a = (now3 / 820) % (Math.PI * 2);
+          const origin = { x: pp.x + Math.cos(a) * 210, y: pp.y + Math.sin(a) * 210 };
+          fireSupportShot(origin, currentEnemies[Math.floor(Math.random() * currentEnemies.length)], 9.5, '#9bffef', 20, 11, 4);
+          arcsRef.current = [...(arcsRef.current || []), { id: Math.random(), x1: pp.x, y1: pp.y, x2: origin.x, y2: origin.y, t: now3, life: 120, color: '#9bffef' }];
+        }
+
+        if (tNow.droneOrbit && now3 < droneUntilRef.current && now3 - droneLastFireRef.current > 420) {
+          droneLastFireRef.current = now3;
+          const a = (now3 / 260) % (Math.PI * 2);
+          const origin = { x: pp.x + Math.cos(a) * 82, y: pp.y + Math.sin(a) * 82 };
+          const target = currentEnemies.reduce((closest, en) => {
+            const d = Math.hypot(en.x - origin.x, en.y - origin.y);
+            if (!closest) return en;
+            return d < Math.hypot(closest.x - origin.x, closest.y - origin.y) ? en : closest;
+          }, null);
+          fireSupportShot(origin, target, 4.8, '#ffd36b', 17, 9, 4);
+        }
+
+        if (tNow.onboardProduction && now3 - (lastFire.current.__talentPistol || 0) > 980) {
+          lastFire.current.__talentPistol = now3;
+          const target = currentEnemies.reduce((closest, en) => {
+            const d = Math.hypot(en.x - pp.x, en.y - pp.y);
+            if (!closest) return en;
+            return d < Math.hypot(closest.x - pp.x, closest.y - pp.y) ? en : closest;
+          }, null);
+          fireSupportShot(pp, target, 8.5, '#fff2a6', 13.5, 12, 4);
+        }
+
+        if (tNow.katanaBackup && now3 - (lastFire.current.__talentKatana || 0) > 1550) {
+          lastFire.current.__talentKatana = now3;
+          const target = currentEnemies.reduce((closest, en) => {
+            const d = Math.hypot(en.x - pp.x, en.y - pp.y);
+            if (!closest) return en;
+            return d < Math.hypot(closest.x - pp.x, closest.y - pp.y) ? en : closest;
+          }, null);
+          if (target) {
+            const angle = Math.atan2(target.y - pp.y, target.x - pp.x);
+            spawnedSlashes.push({
+              id: Math.random(),
+              x: pp.x,
+              y: pp.y,
+              range: 96,
+              damage: 10.5 * crewDamageMult * (doubleDamage ? 2 : 1),
+              angle,
+              arc: Math.PI * 0.19,
+              delay: 0,
+              activeMs: 115,
+              age: 0,
+              life: 220,
+              kind: 'crescent',
+              color: 'rgba(255,245,210,1)',
+              glowColor: 'rgba(255,255,255,0.42)',
+              glowBlur: 10,
+              lineWidth: 5,
+              side: 1,
+              knockback: 0.28
+            });
+            juicePunch(0.14, 0.18);
+          }
+        }
 
         selectedWeaponsRef.current.forEach((id) => {
           const weapon = WEAPONS.find((w) => w.id === id);
@@ -2628,7 +3506,12 @@ const beat = plan.beats[plan.idx];
           }
 
           const last = lastFire.current[id] || 0;
-          const fireCooldownBase = (wStats.cooldown || 600) / (statsRef.current.attackSpeed || 1);
+          let fireCooldownBase = (wStats.cooldown || 600) / (statsRef.current.attackSpeed || 1);
+          if (weapon.id === 'AXES') {
+            const nextAxeStep = (axeComboRef.current % 3) + 1;
+            const rhythmMult = nextAxeStep === 1 ? 0.86 : nextAxeStep === 2 ? 1.02 : 1.36;
+            fireCooldownBase *= rhythmMult;
+          }
           const fireCooldown = fireCooldownBase / overdriveMult;
 
           if (now3 - last < fireCooldown) return;
@@ -2670,7 +3553,7 @@ const beat = plan.beats[plan.idx];
 
           // TESLA
           if (weapon.id === 'TESLA') {
-            const baseDamage = (wStats.damage || 12) * (statsRef.current.damageMult || 1) * crewDamageMult;
+            const baseDamage = (wStats.damage || 12) * (statsRef.current.damageMult || 1) * crewDamageMult * (doubleDamage ? 2 : 1);
             const maxJumps = wStats.chain || 3;
             const arcRange = wStats.arcRange || 300;
             const leash = clamp(190 + (lvl - 1) * 45, 190, 420);
@@ -2760,14 +3643,134 @@ const beat = plan.beats[plan.idx];
             return;
           }
 
-          // KATANA
-          if (weapon.id === 'KATANA') {
+          // Directional melee weapons
+          if (weapon.id === 'KATANA' || weapon.id === 'AXES') {
+            if (weapon.id === 'AXES') {
+              axeComboRef.current += 1;
+              const combo = axeComboRef.current;
+              const step = ((combo - 1) % 3) + 1;
+              const cycle = Math.floor((combo - 1) / 3);
+              const baseDamage = (wStats.damage || 10) * (statsRef.current.damageMult || 1) * crewDamageMult * (doubleDamage ? 2 : 1);
+              const baseRange = wStats.range || 170;
+              const bleed = wStats.bleed || 0;
+
+              if (step === 3 && cycle % 2 === 1) {
+                const speed = 18.5;
+                spawnedBullets.push({
+                  id: Math.random(),
+                  x: pp.x,
+                  y: pp.y,
+                  originX: pp.x,
+                  originY: pp.y,
+                  vx: Math.cos(baseAngle) * speed,
+                  vy: Math.sin(baseAngle) * speed,
+                  angle: baseAngle,
+                  damage: baseDamage * (wStats.throwMult || 1.15),
+                  color: weapon.color,
+                  life: 2100,
+                  lifeStart: 2100,
+                  width: 66,
+                  height: 32,
+                  pierce: 0,
+                  ricochets: wStats.throwBounces || 5,
+                  burn: bleed,
+                  knockback: 1.20,
+                  eliteDmgMult: 0.92,
+                  axeThrow: true,
+                  spinDir: Math.random() < 0.5 ? -1 : 1
+                });
+                arcsRef.current = [...(arcsRef.current || []), {
+                  id: Math.random(),
+                  x1: pp.x,
+                  y1: pp.y,
+                  x2: pp.x + Math.cos(baseAngle) * 115,
+                  y2: pp.y + Math.sin(baseAngle) * 115,
+                  t: Date.now(),
+                  life: 140,
+                  color: 'rgba(255,64,24,0.95)'
+                }];
+                juicePunch(0.58, 0.75);
+                return;
+              }
+
+              const pattern = step === 3
+                ? [{
+                    delay: 0,
+                    offset: 0,
+                    arc: Math.PI * 2,
+                    kind: 'axeStorm',
+                    side: 1,
+                    dmgMult: wStats.stormMult || 0.75,
+                    color: 'rgba(255,54,20,1)',
+                    glowColor: 'rgba(255,0,0,0.90)',
+                    glowBlur: 34,
+                    lineWidth: 24,
+                    activeMs: 540,
+                    rangeMult: wStats.stormRangeMult || 1,
+                    knockback: 0.62
+                  }]
+                : [{
+                    delay: 0,
+                    offset: 0,
+                    arc: Math.PI * 0.48,
+                    kind: 'axeCleave',
+                    side: step === 1 ? -1 : 1,
+                    dmgMult: 1,
+                    color: step === 1 ? 'rgba(255,54,24,1)' : 'rgba(255,132,42,1)',
+                    glowColor: 'rgba(255,16,0,0.82)',
+                    glowBlur: 26,
+                    lineWidth: 24,
+                    activeMs: 250,
+                    rangeMult: 1,
+                    knockback: 1.02
+                  }];
+
+              const toAdd = pattern.map((pat) => {
+                const dmg = baseDamage * (pat.dmgMult || 1);
+                const delay = pat.delay || 0;
+                const activeMs = Number.isFinite(pat.activeMs) ? pat.activeMs : 160;
+                const rangeMult = Number.isFinite(pat.rangeMult) ? pat.rangeMult : 1;
+
+                return {
+                  id: Math.random(),
+                  x: pp.x,
+                  y: pp.y,
+                  range: baseRange * rangeMult,
+                  damage: dmg,
+                  angle: pat.kind === 'axeCleave' ? baseAngle + (pat.side || 1) * 0.44 : baseAngle,
+                  arc: pat.arc || Math.PI * 0.48,
+                  delay,
+                  activeMs,
+                  age: 0,
+                  life: delay + activeMs + 40,
+                  kind: pat.kind,
+                  color: pat.color,
+                  lineWidth: pat.lineWidth,
+                  glowColor: pat.glowColor,
+                  glowBlur: pat.glowBlur,
+                  side: pat.side || 1,
+                  slow: 0,
+                  slowDuration: 0,
+                  stun: 0,
+                  microFreeze: 0,
+                  knockback: pat.knockback || 0,
+                  burn: bleed,
+                  deathBurstRadius: wStats.deathBurstRadius || 0,
+                  deathBurstMult: wStats.deathBurstMult || 0
+                };
+              });
+
+              spawnedSlashes.push(...toAdd);
+              juicePunch(step === 3 ? 0.55 : 0.34, step === 3 ? 0.68 : 0.42);
+              return;
+            }
+
             const pattern =
               wStats.slashPattern && wStats.slashPattern.length
-                ? wStats.slashPattern
+                ? [wStats.slashPattern[axeComboRef.current % 2 === 1 ? 0 : 1]]
                 : [{ delay: 0, offset: 0, arc: Math.PI * 0.34, kind: 'crescent', dmgMult: 1 }];
 
-            const baseDamage = (wStats.damage || 10) * (statsRef.current.damageMult || 1) * crewDamageMult;
+            const baseDamage = (wStats.damage || 10) * (statsRef.current.damageMult || 1) * crewDamageMult * (doubleDamage ? 2 : 1);
             const baseRange = wStats.range || 165;
 
             const toAdd = pattern.map((pat) => {
@@ -2783,8 +3786,8 @@ const beat = plan.beats[plan.idx];
                 y: pp.y,
                 range: baseRange * rangeMult,
                 damage: dmg,
-                angle: baseAngle + (pat.offset || 0),
-                arc,
+                angle: weapon.id === 'AXES' && pat.kind === 'axeCleave' ? baseAngle + (pat.side || 1) * 0.46 : baseAngle + (pat.offset || 0),
+                arc: weapon.id === 'AXES' && pat.kind === 'axeCleave' ? Math.max(arc, Math.PI * 0.30) : arc,
                 delay,
                 activeMs,
                 age: 0,
@@ -2794,13 +3797,18 @@ const beat = plan.beats[plan.idx];
                 lineWidth: pat.lineWidth,
                 glowColor: pat.glowColor,
                 glowBlur: pat.glowBlur,
+                side: pat.side || 1,
+                shockwaveRadius: pat.shockwaveRadius || 0,
 
                 // NEW: rank 3-5 effects
                 slow: pat.slow || 0,
                 slowDuration: pat.slowDuration || 0,
                 stun: pat.stun || 0,
                 microFreeze: pat.microFreeze || 0,
-                knockback: pat.knockback || 0
+                knockback: pat.knockback || 0,
+                burn: Math.max(pat.burn || 0, wStats.bleed || 0),
+                deathBurstRadius: wStats.deathBurstRadius || 0,
+                deathBurstMult: wStats.deathBurstMult || 0
               };
             });
 
@@ -2829,7 +3837,7 @@ const beat = plan.beats[plan.idx];
                 x2: pp.x + Math.cos(ang) * beamLen,
                 y2: pp.y + Math.sin(ang) * beamLen,
                 width,
-                damage: (wStats.damage || 8) * (statsRef.current.damageMult || 1) * crewDamageMult,
+                damage: (wStats.damage || 8) * (statsRef.current.damageMult || 1) * crewDamageMult * (doubleDamage ? 2 : 1),
                 tickMs,
                 burn,
 
@@ -2888,7 +3896,7 @@ const beat = plan.beats[plan.idx];
               originY: pp.y,
               vx,
               vy,
-              damage: (wStats.damage || 1) * (statsRef.current.damageMult || 1) * crewDamageMult,
+              damage: (wStats.damage || 1) * (statsRef.current.damageMult || 1) * crewDamageMult * (doubleDamage ? 2 : 1),
               color: weapon.color,
               life: wStats.lifeMs || (isSniper ? 900 : 1000),
               lifeStart: wStats.lifeMs || (isSniper ? 900 : 1000),
@@ -2967,43 +3975,36 @@ const beat = plan.beats[plan.idx];
           if (sl.microFreeze) st.stun = Math.max(st.stun || 0, sl.microFreeze);
           if (sl.stun) st.stun = Math.max(st.stun || 0, sl.stun);
           if (sl.knockback) st.knockback = Math.max(st.knockback || 0, sl.knockback);
+          if (sl.burn) st.burn = Math.max(st.burn || 0, sl.burn);
+          if (sl.deathBurstRadius) {
+            st.deathBurstRadius = Math.max(st.deathBurstRadius || 0, sl.deathBurstRadius);
+            st.deathBurstDamage = Math.max(st.deathBurstDamage || 0, sl.damage * (sl.deathBurstMult || 0.45));
+          }
           statusHits.set(en.id, st);
         });
 
-        // VOID pull
-        const pulls = movedBullets.filter((b) => {
-          if (!b.pull) return false;
-          if (Math.hypot(b.x - en.x, b.y - en.y) >= (b.pullRadius || 190)) return false;
-          const dToPlayer = Math.hypot(b.x - pPos.x, b.y - pPos.y);
-          return dToPlayer > 140;
+        const voidFields = movedBullets.filter((b) => {
+          if (!b.vortexDps || !b.anchored) return false;
+          const grow = clamp((Date.now() - (b.anchoredAt || Date.now())) / 760, 0, 1);
+          const radius = Math.max(28, (b.pullRadius || 200) * grow);
+          return Math.hypot(b.x - en.x, b.y - en.y) < radius;
         });
-
-        const isBossy = en.type === 'boss' || String(en.type).startsWith('mini_');
-        if (
-          pulls.length &&
-          !freezeWorld &&
-          en.type !== 'juggernaut' &&
-          !isBossy &&
-          !(en.stunnedUntil && Date.now() < en.stunnedUntil)
-        ) {
-          const strongest = pulls.reduce((acc, b) => Math.max(acc, b.pull || 0), 0);
-          const cx = pulls.reduce((acc, b) => acc + b.x, 0) / pulls.length;
-          const cy = pulls.reduce((acc, b) => acc + b.y, 0) / pulls.length;
-          const dx = cx - en.x;
-          const dy = cy - en.y;
-          const d = Math.hypot(dx, dy) || 1;
-          en = { ...en, x: en.x + (dx / d) * strongest * 2.2, y: en.y + (dy / d) * strongest * 2.2 };
-        }
-
-        const voidFields = movedBullets.filter((b) => b.vortexDps && b.pull && Math.hypot(b.x - en.x, b.y - en.y) < (b.pullRadius || 200));
         if (voidFields.length) {
           const dps = voidFields.reduce((acc, b) => acc + (b.vortexDps || 0), 0);
           totalDamage += dps * 0.016;
 
+          if (!freezeWorld && !isControlImmune(en.type)) {
+            const strongest = voidFields.reduce((best, b) => (b.pull || 0) > (best.pull || 0) ? b : best, voidFields[0]);
+            const dx = strongest.x - en.x;
+            const dy = strongest.y - en.y;
+            const d = Math.hypot(dx, dy) || 1;
+            en = { ...en, x: en.x + (dx / d) * (strongest.pull || 1) * 1.65, y: en.y + (dy / d) * (strongest.pull || 1) * 1.65 };
+          }
+
           // Void slow field support
           const bestSlow = voidFields.reduce((acc, b) => Math.max(acc, b.slow || 0), 0);
           const bestSlowDur = voidFields.reduce((acc, b) => Math.max(acc, b.slowDuration || 0), 0);
-          if (bestSlow > 0 && en.type !== 'juggernaut' && !isBossy) {
+          if (bestSlow > 0 && !isControlImmune(en.type)) {
             const st = statusHits.get(en.id) || {};
             st.slow = Math.max(st.slow || 0, bestSlow);
             st.slowDuration = Math.max(st.slowDuration || 0, bestSlowDur || 650);
@@ -3029,17 +4030,17 @@ const beat = plan.beats[plan.idx];
         const isCharging = out.type === 'mini_charger' && ((out.windupUntil && Date.now() < out.windupUntil) || (out.dashUntil && Date.now() < out.dashUntil));
 
         // Don't let slow/knockback/stun trivialize RAM chargers while they're charging.
-        if (st.slow && out.type !== 'juggernaut' && !(out.type === 'mini_charger')) {
+        if (st.slow && !isControlImmune(out.type)) {
           out.slowUntil = Date.now() + (st.slowDuration || 520);
           out.slowFactor = clamp(1 - st.slow, 0.45, 0.95);
         }
 
-        if (st.stun && out.type !== 'juggernaut' && !isCharging) {
+        if (st.stun && !isControlImmune(out.type) && !isCharging) {
           const stunMs = isMini ? Math.min(st.stun, 180) : st.stun;
           out.stunnedUntil = Math.max(out.stunnedUntil || 0, Date.now() + stunMs);
         }
 
-        if (st.knockback && !freezeWorld && out.type !== 'juggernaut' && out.type !== 'boss' && !isMini) {
+        if (st.knockback && !freezeWorld && !isKnockbackImmune(out.type)) {
           const ang = Math.atan2(out.y - pPos.y, out.x - pPos.x);
           const push = 5.0 * st.knockback;
           out.x += Math.cos(ang) * push;
@@ -3049,6 +4050,11 @@ const beat = plan.beats[plan.idx];
         if (st.burn) {
           out.burnUntil = Math.max(out.burnUntil || 0, Date.now() + st.burn);
           out.burnDps = Math.max(out.burnDps || 0, 4.2);
+        }
+
+        if (st.deathBurstRadius) {
+          out.deathBurstRadius = Math.max(out.deathBurstRadius || 0, st.deathBurstRadius);
+          out.deathBurstDamage = Math.max(out.deathBurstDamage || 0, st.deathBurstDamage || 0);
         }
 
         return out;
@@ -3084,10 +4090,87 @@ const beat = plan.beats[plan.idx];
       }
 
       // -------------------- DEATHS -> ORBS + PICKUPS --------------------
-      const alive = [];
+      let alive = [];
       const newOrbs = [];
+      const deathBursts = [];
+      let twinBossDeath = null;
 
-      burned.forEach((en) => {
+      let deathInput = burned;
+      const phaseAdds = [];
+      deathInput = deathInput.flatMap((en) => {
+        if (en.type !== 'boss') return [en];
+        const originalMax = en.originalMaxHp || en.maxHp || en.hp || 1;
+        const hpPctOriginal = en.hp / Math.max(1, originalMax);
+
+        if ((en.bossPhase || 'main') === 'main' && !en.split50Done && hpPctOriginal <= 0.50) {
+          const twinMax = Math.round(originalMax * 0.32);
+          const baseA = Math.random() * Math.PI * 2;
+          for (let i = 0; i < 2; i += 1) {
+            const a = baseA + i * Math.PI;
+            phaseAdds.push({
+              ...en,
+              id: `boss_twin50_${i}_${Math.random()}`,
+              bossPhase: 'twin50',
+              split50Done: true,
+              hp: twinMax,
+              maxHp: twinMax,
+              originalMaxHp: originalMax,
+              x: clamp(en.x + Math.cos(a) * 150, 80, ARENA_SIZE - 80),
+              y: clamp(en.y + Math.sin(a) * 150, 80, ARENA_SIZE - 80),
+              size: 126,
+              speed: (en.speed || 1.5) * 1.10,
+              color: '#ff9f3a',
+              xp: 160,
+              nextRamPct: -1,
+              bossWindupUntil: 0,
+              bossRamUntil: 0
+            });
+          }
+          explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: en.x, y: en.y, r: 360, t: Date.now(), life: 620, color: 'rgba(255,170,50,1)', glow: 44, fill: true, alpha: 0.26 }];
+          juicePunch(1.25, 1.0);
+          return [];
+        }
+
+        if ((en.bossPhase || 'main') === 'main' && en.split50Done && !en.split20Done && hpPctOriginal <= 0.20) {
+          const firstMax = Math.round(originalMax * 0.13);
+          const baseA = Math.random() * Math.PI * 2;
+          bossReturnPendingRef.current = {
+            x: en.x,
+            y: en.y,
+            originalMaxHp: originalMax,
+            difficulty: tileDifficulty,
+            chargesDone: en.chargesDone || 2
+          };
+          for (let i = 0; i < 2; i += 1) {
+            const a = baseA + i * Math.PI;
+            phaseAdds.push({
+              ...en,
+              id: `boss_split_0_${i}_${Math.random()}`,
+              type: 'boss_split',
+              bossSplitStage: 0,
+              hp: firstMax,
+              maxHp: firstMax,
+              x: clamp(en.x + Math.cos(a) * 130, 60, ARENA_SIZE - 60),
+              y: clamp(en.y + Math.sin(a) * 130, 60, ARENA_SIZE - 60),
+              size: 96,
+              speed: 1.15,
+              xp: 0,
+              contactDamage: 20,
+              color: '#a7ff48',
+              bossWindupUntil: 0,
+              bossRamUntil: 0
+            });
+          }
+          explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: en.x, y: en.y, r: 420, t: Date.now(), life: 700, color: 'rgba(166,255,72,1)', glow: 46, fill: true, alpha: 0.28 }];
+          juicePunch(1.35, 1.0);
+          return [];
+        }
+
+        return [en];
+      });
+      deathInput = [...deathInput, ...phaseAdds];
+
+      deathInput.forEach((en) => {
         if (en.hp > 0) {
           alive.push(en);
           return;
@@ -3096,11 +4179,64 @@ const beat = plan.beats[plan.idx];
         deathFxRef.current = [...(deathFxRef.current || []), { id: Math.random(), x: en.x, y: en.y, t: Date.now(), size: en.size }];
         onPlayerKill(en);
 
+        if (en.deathBurstRadius && en.deathBurstDamage) {
+          const radius = en.deathBurstRadius;
+          explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: en.x, y: en.y, r: radius, t: Date.now(), life: 320, color: 'rgba(255,50,20,1)', glow: 24, fill: true, alpha: 0.42 }];
+          deathBursts.push({ x: en.x, y: en.y, radius, damage: en.deathBurstDamage });
+        }
 
-        const total = Math.max(2, Math.floor(en.xp * 0.80));
+        if (en.type === 'boss_split') {
+          const stage = en.bossSplitStage || 0;
+          const pieces = stage === 0 ? 4 : stage < 3 ? 2 : 0;
+          for (let i = 0; i < pieces; i += 1) {
+            const a = Math.random() * Math.PI * 2;
+            const nextStage = stage + 1;
+            const hp = Math.max(18, Math.round((en.maxHp || 80) * (nextStage === 1 ? 0.38 : 0.58)));
+            alive.push({
+              ...en,
+              id: `boss_split_${nextStage}_${i}_${Math.random()}`,
+              bossSplitStage: nextStage,
+              x: clamp(en.x + Math.cos(a) * (42 + nextStage * 8), 20, ARENA_SIZE - 20),
+              y: clamp(en.y + Math.sin(a) * (42 + nextStage * 8), 20, ARENA_SIZE - 20),
+              hp,
+              maxHp: hp,
+              size: Math.max(24, (en.size || 70) * (nextStage === 1 ? 0.62 : 0.72)),
+              speed: Math.min(1.65, (en.speed || 1.0) * 1.08),
+              contactDamage: Math.max(7, Math.round((en.contactDamage || 16) * 0.78)),
+              color: nextStage >= 3 ? '#eaff9b' : '#a7ff48',
+              xp: 0
+            });
+          }
+        }
+
+        if ((en.type === 'splitter' || en.type === 'splitter_boss') && (en.splitTier || 0) > 0) {
+          const pieces = en.type === 'splitter_boss' ? 4 : 2;
+          for (let i = 0; i < pieces; i += 1) {
+            const a = Math.random() * Math.PI * 2;
+            const tier = (en.splitTier || 0) - 1;
+            const hp = Math.max(10, Math.round((en.maxHp || 60) * (en.type === 'splitter_boss' ? 0.30 : 0.48)));
+            alive.push({
+              ...en,
+              id: `splitter_${tier}_${Math.random()}`,
+              type: 'splitter',
+              splitTier: tier,
+              x: clamp(en.x + Math.cos(a) * 38, 20, ARENA_SIZE - 20),
+              y: clamp(en.y + Math.sin(a) * 38, 20, ARENA_SIZE - 20),
+              hp,
+              maxHp: hp,
+              size: Math.max(18, (en.size || 42) * (en.type === 'splitter_boss' ? 0.58 : 0.72)),
+              speed: Math.max(0.55, (en.speed || 0.9) * 0.96),
+              xp: Math.max(2, Math.round((en.xp || 8) * 0.55)),
+              contactDamage: Math.max(4, Math.round((en.contactDamage || 8) * 0.72)),
+              color: tier === 0 ? '#eaff9b' : '#b6ff4a'
+            });
+          }
+        }
+
+        const total = en.type === 'boss_split' ? 0 : Math.max(2, Math.floor(en.xp * 0.80));
         const pack = Math.max(1, Math.round(total / 14));
 
-        for (let i = 0; i < pack; i += 1) {
+        for (let i = 0; i < (total > 0 ? pack : 0); i += 1) {
           const skew = pack >= 2 && Math.random() < 0.35 ? 1.25 : 1.0;
           const v = Math.round((total / pack) * (0.85 + Math.random() * 0.35) * skew);
           const vis = orbVisualFromValue(v);
@@ -3125,7 +4261,9 @@ const beat = plan.beats[plan.idx];
           });
         }
 
-        if (en.type === 'boss') {
+        if (en.type === 'boss' && en.bossPhase === 'twin50') {
+          twinBossDeath = en;
+        } else if (en.type === 'boss') {
           maybeDropPickup(en.x, en.y, 'boss');
           setVictory(true);
         } else if (String(en.type).startsWith('mini_')) {
@@ -3137,6 +4275,78 @@ const beat = plan.beats[plan.idx];
         juicePunch(en.type === 'boss' ? 1.2 : 0.44, en.type === 'boss' ? 0.9 : 0.5);
       });
 
+      if (twinBossDeath) {
+        const originalMax = twinBossDeath.originalMaxHp || Math.round((twinBossDeath.maxHp || 1) / 0.32);
+        const otherTwin = alive.find((en) => en.type === 'boss' && en.bossPhase === 'twin50');
+        if (otherTwin) {
+          alive = alive.map((en) => en.id === otherTwin.id ? {
+            ...en,
+            id: 'boss',
+            bossPhase: 'main',
+            split50Done: true,
+            split20Done: false,
+            hp: Math.round(originalMax * 0.49),
+            maxHp: originalMax,
+            originalMaxHp: originalMax,
+            size: 150,
+            speed: 1.55 + tileDifficulty * 0.03,
+            color: '#ffda6b',
+            xp: 520,
+            nextRamPct: 0.32,
+            chargesDone: Math.max(1, en.chargesDone || 1)
+          } : en);
+        } else {
+          alive.push({
+            ...spawnBoss({ x: twinBossDeath.x - 380, y: twinBossDeath.y + 320 }, tileDifficulty),
+            id: 'boss',
+            x: twinBossDeath.x,
+            y: twinBossDeath.y,
+            split50Done: true,
+            split20Done: false,
+            hp: Math.round(originalMax * 0.49),
+            maxHp: originalMax,
+            originalMaxHp: originalMax,
+            nextRamPct: 0.32,
+            chargesDone: 1
+          });
+        }
+        explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: twinBossDeath.x, y: twinBossDeath.y, r: 330, t: Date.now(), life: 620, color: 'rgba(255,218,107,1)', glow: 42, fill: true, alpha: 0.25 }];
+        juicePunch(1.2, 1.0);
+      }
+
+      if (bossReturnPendingRef.current && !alive.some((en) => en.type === 'boss_split')) {
+        const pending = bossReturnPendingRef.current;
+        const originalMax = pending.originalMaxHp || Math.round((5400 + tileDifficulty * 220) * BOSS_HP_MULT);
+        alive.push({
+          ...spawnBoss({ x: pending.x - 380, y: pending.y + 320 }, pending.difficulty || tileDifficulty),
+          id: 'boss',
+          x: pending.x,
+          y: pending.y,
+          hp: Math.round(originalMax * 0.19),
+          maxHp: originalMax,
+          originalMaxHp: originalMax,
+          split50Done: true,
+          split20Done: true,
+          chargesDone: Math.max(2, pending.chargesDone || 2),
+          nextRamPct: -1,
+          zergPhaseDone: true
+        });
+        bossReturnPendingRef.current = null;
+        explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: pending.x, y: pending.y, r: 520, t: Date.now(), life: 760, color: 'rgba(255,218,107,1)', glow: 52, fill: true, alpha: 0.30 }];
+        juicePunch(1.45, 1.0);
+      }
+
+      if (deathBursts.length) {
+        alive = alive.map((en) => {
+          let dmg = 0;
+          for (const burst of deathBursts) {
+            const d = Math.hypot(en.x - burst.x, en.y - burst.y);
+            if (d <= burst.radius) dmg += burst.damage * Math.max(0.30, 1 - d / burst.radius);
+          }
+          return dmg > 0 ? { ...en, hp: en.hp - dmg } : en;
+        }).filter((en) => en.hp > 0);
+      }
+
       enemiesRef.current = alive;
       bulletsRef.current = [...nextBullets.filter((b) => !b.hit), ...spawnedBullets];
       slashesRef.current = allSlashes;
@@ -3147,6 +4357,7 @@ const beat = plan.beats[plan.idx];
         const prev = orbsRef.current || [];
         const pp2 = playerRef.current;
         const magnet = Date.now() < magnetUntil.current;
+        const gravPickup = !!talentsRef.current.gravPickup;
 
         const clustered = prev.map((o) => {
           let ax = 0;
@@ -3172,10 +4383,10 @@ const beat = plan.beats[plan.idx];
           const dx = pp2.x - o.x;
           const dy = pp2.y - o.y;
           const d = Math.hypot(dx, dy);
-          const range = magnet ? 1250 : 170;
+          const range = magnet ? 1500 : gravPickup ? 360 : 240;
           if (d > 0 && d < range) {
-            const basePull = magnet ? 12.0 : 3.6;
-            const rankPull = 1 + (o.rank || 0) * 0.15;
+            const basePull = magnet ? 18.0 : gravPickup ? 10.5 : 6.2;
+            const rankPull = 1 + (o.rank || 0) * 0.18;
             return { ...o, x: o.x + (dx / d) * basePull * rankPull, y: o.y + (dy / d) * basePull * rankPull };
           }
           return o;
@@ -3253,15 +4464,17 @@ const beat = plan.beats[plan.idx];
               if (now2 - last < 120) return en;
 
               const ang = Math.atan2(en.y - pp2.y, en.x - pp2.x);
-              // Boss should not be knockbackable
-              const push = en.type === 'boss' ? 0 : 10.0;
+              const immune = isControlImmune(en.type);
+              const blockDist = en.size * 0.55 + 34;
+              const push = immune ? 4.5 : 12.0;
               return {
                 ...en,
                 _ramHitAt: now2,
                 hp: en.hp - ramDmg,
-                x: clamp(en.x + Math.cos(ang) * push, 0, ARENA_SIZE),
-                y: clamp(en.y + Math.sin(ang) * push, 0, ARENA_SIZE),
-                stunnedUntil: Math.max(en.stunnedUntil || 0, now2 + 120),
+                x: clamp(pp2.x + Math.cos(ang) * blockDist + Math.cos(ang) * push, 0, ARENA_SIZE),
+                y: clamp(pp2.y + Math.sin(ang) * blockDist + Math.sin(ang) * push, 0, ARENA_SIZE),
+                dashUntil: en.type === 'mini_charger' ? 0 : en.dashUntil,
+                stunnedUntil: immune ? en.stunnedUntil : Math.max(en.stunnedUntil || 0, now2 + 120),
               };
             }
             return en;
@@ -3329,6 +4542,8 @@ const beat = plan.beats[plan.idx];
       }
     }
     setUpgradeOptions([]);
+    pausedRef.current = false;
+    pauseStartedAtRef.current = 0;
     juicePunch(0.40, 0.60);
   };
 
@@ -3342,6 +4557,7 @@ const beat = plan.beats[plan.idx];
     eventCooldownUntilRef.current = 0;
     reliefUntilRef.current = 0;
     reliefStartedAtRef.current = 0;
+    bossReturnPendingRef.current = null;
 
     beatPlanRef.current = { ready: false, idx: 0, beats: [] };
 
@@ -3354,12 +4570,15 @@ const beat = plan.beats[plan.idx];
     explosionsRef.current = [];
     orbsRef.current = [];
     pickupsRef.current = [];
+    enemyProjectilesRef.current = [];
 
     bossSpawnedRef.current = false;
     setBossSpawned(false);
     setVictory(false);
     setDefeat(false);
     setProgress(0);
+    pausedRef.current = false;
+    pauseStartedAtRef.current = 0;
 
     xpRef.current = 0;
     xpTargetRef.current = 140;
@@ -3368,11 +4587,8 @@ const beat = plan.beats[plan.idx];
     setXpTarget(140);
     setLevel(1);
 
-    const p = (runBuild && runBuild.purchased) ? runBuild.purchased : {};
-    const hasKatanaBackup = Number(p.MIL_KATANA_BACKUP || 0) > 0;
-
-    const initialWeapons = hasKatanaBackup && weaponId !== 'KATANA' ? [weaponId, 'KATANA'] : [weaponId];
-    const initialLevels = hasKatanaBackup && weaponId !== 'KATANA' ? { [weaponId]: 1, KATANA: 1 } : { [weaponId]: 1 };
+    const initialWeapons = [weaponId];
+    const initialLevels = initialWeapons.reduce((acc, id) => ({ ...acc, [id]: 1 }), {});
 
     setSelectedWeapons(initialWeapons);
     setWeaponLevels(initialLevels);
@@ -3384,29 +4600,45 @@ const beat = plan.beats[plan.idx];
   const tHUD = talentsRef.current;
   const showShield = nowHUD < shieldUntil.current;
   const showOverdrive = nowHUD < overdriveUntil.current;
+  const showDoubleDamage = nowHUD < doubleDamageUntil.current;
   const showMagnet = nowHUD < magnetUntil.current;
   const showFreeze = nowHUD < freezeUntil.current;
   const showThorns = nowHUD < thornsActiveUntilRef.current;
+  const showDecoy = !!(decoyRef.current && nowHUD < decoyRef.current.until);
   const showAdrenalMove = nowHUD < milAdrenalMoveUntilRef.current;
 
   const fmtS = (ms) => `${Math.max(0, ms) / 1000 < 10 ? (Math.max(0, ms) / 1000).toFixed(1) : Math.ceil(Math.max(0, ms) / 1000)}s`;
   const remThorns = thornsActiveUntilRef.current - nowHUD;
+  const remDecoy = decoyRef.current ? decoyRef.current.until - nowHUD : 0;
+  const remDecoyCd = decoyCooldownUntilRef.current - nowHUD;
   const remThornsCd = thornsCooldownUntilRef.current - nowHUD;
   const remGhostCd = milGhostCdUntilRef.current - nowHUD;
   const remMagnet = magnetUntil.current - nowHUD;
   const remFreeze = freezeUntil.current - nowHUD;
   const remOverdrive = overdriveUntil.current - nowHUD;
+  const remDoubleDamage = doubleDamageUntil.current - nowHUD;
   const remShield = shieldUntil.current - nowHUD;
   const remAdrenal = milAdrenalMoveUntilRef.current - nowHUD;
   const platesStacks = platesStacksRef.current || 0;
   const platesMax = tHUD.platesMax || 0;
+  const remPlateCharge = platesMax > 0 && platesStacks < platesMax
+    ? Math.max(0, 20000 - (nowHUD - (platesLastGenAtRef.current || nowHUD)))
+    : 0;
 
   const thornsUnlockedHUD = !!tHUD.thornsUnlocked;
+  const decoyUnlockedHUD = !!tHUD.decoyUnlocked;
   const ghostUnlockedHUD = Number(tHUD.ghostRank || 0) > 0;
   const thornsReadyHUD = thornsUnlockedHUD && !showThorns && remThornsCd <= 0;
   const thornsOnCdHUD = thornsUnlockedHUD && !showThorns && remThornsCd > 0;
   const ghostReadyHUD = ghostUnlockedHUD && remGhostCd <= 0;
   const ghostOnCdHUD = ghostUnlockedHUD && remGhostCd > 0;
+  const decoyReadyHUD = decoyUnlockedHUD && !showDecoy && remDecoyCd <= 0;
+  const decoyOnCdHUD = decoyUnlockedHUD && !showDecoy && remDecoyCd > 0;
+  const renderPlayerPos = playerRef.current || player;
+  const renderViewportW = typeof window !== 'undefined' ? window.innerWidth : 0;
+  const renderViewportH = typeof window !== 'undefined' ? window.innerHeight : 0;
+  const renderCamX = renderPlayerPos.x - renderViewportW / 2;
+  const renderCamY = renderPlayerPos.y - renderViewportH / 2;
 
   return (
     <div
@@ -3442,22 +4674,45 @@ const beat = plan.beats[plan.idx];
       )}
 
       <div className="combat-hud">
-        <div className="xp-bar">
-          <div className="xp-bar-fill" style={{ width: `${Math.min(100, (xp / xpTarget) * 100)}%` }} />
-          <span>LVL {level}</span>
+        <div className="ability-row">
+          {thornsUnlockedHUD && (
+            <div className={`ability-slot ${showThorns ? 'active' : thornsOnCdHUD ? 'cooldown' : 'ready'}`}>
+              <b>1</b>
+              <img src={thornsIcon} alt="" draggable={false} />
+              <small>{showThorns ? fmtS(remThorns) : thornsOnCdHUD ? fmtS(remThornsCd) : 'READY'}</small>
+            </div>
+          )}
+          {decoyUnlockedHUD && (
+            <div className={`ability-slot ${showDecoy ? 'active' : decoyOnCdHUD ? 'cooldown' : 'ready'}`}>
+              <b>2</b>
+              <img src={decoyIcon} alt="" draggable={false} />
+              <small>{showDecoy ? fmtS(remDecoy) : decoyOnCdHUD ? fmtS(remDecoyCd) : 'READY'}</small>
+            </div>
+          )}
         </div>
-        <div className="hp-bar">
-          <div className="hp-bar-fill" style={{ width: `${clamp((stats.hp / stats.maxHp) * 100, 0, 100)}%` }} />
-          <span>HP {Math.max(0, Math.round((stats.hp / stats.maxHp) * 100))}%</span>
-        </div>
-        <div className="progress-bar">
-          <div className="progress-bar-fill" style={{ width: `${progress * 100}%` }} />
-          <span>Boss {Math.floor(progress * 100)}%</span>
+
+        <div className="hud-main">
+          <div className="side-bars">
+            <div className="progress-bar">
+              <div className="progress-bar-fill" style={{ width: `${progress * 100}%` }} />
+              <span>PROGRESSION {Math.floor(progress * 100)}%</span>
+            </div>
+            <div className="xp-bar">
+              <div className="xp-bar-fill" style={{ width: `${Math.min(100, (xp / xpTarget) * 100)}%` }} />
+              <span>XP LVL {level} - {xp}/{xpTarget}</span>
+            </div>
+          </div>
+          <div className="core-bars">
+            <div className="hp-bar">
+              <div className="hp-bar-fill" style={{ width: `${clamp((stats.hp / stats.maxHp) * 100, 0, 100)}%` }} />
+              <span>HP {Math.ceil(stats.hp)}/{stats.maxHp}</span>
+            </div>
+          </div>
         </div>
 
         {bossSpawned && !victory && <div className="boss-warning">BOSS ENGAGED</div>}
 
-        <div style={{ display: 'flex', gap: 10, marginTop: 10, opacity: 0.98, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div className="status-row" style={{ display: 'flex', gap: 10, marginTop: 10, opacity: 0.98, flexWrap: 'wrap', alignItems: 'center' }}>
           {/* Buff/ability chips (DO NOT use .boss-warning here; it has margin-left:auto and was causing the bottom-right jump) */}
           {platesMax > 0 && (
             <div
@@ -3473,7 +4728,7 @@ const beat = plan.beats[plan.idx];
                 textTransform: 'uppercase',
               }}
             >
-              🧱 Plates {platesStacks}/{platesMax}
+              PLATING {platesStacks}/{platesMax} {platesStacks >= platesMax ? 'READY' : `CHARGE ${fmtS(remPlateCharge)}`}
             </div>
           )}
 
@@ -3493,7 +4748,7 @@ const beat = plan.beats[plan.idx];
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, letterSpacing: 2, textTransform: 'uppercase' }}>
                 <span>🌵 Thorns</span>
                 <span>
-                  {showThorns ? `ACTIVE ${fmtS(remThorns)}` : thornsOnCdHUD ? `CD ${fmtS(remThornsCd)}` : 'READY (SPACE)'}
+                  {showThorns ? `ACTIVE ${fmtS(remThorns)}` : thornsOnCdHUD ? `CD ${fmtS(remThornsCd)}` : 'READY (1)'}
                 </span>
               </div>
               <div style={{ marginTop: 6, height: 6, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
@@ -3510,6 +4765,35 @@ const beat = plan.beats[plan.idx];
                       100
                     )}%`,
                     background: showThorns ? 'rgba(0,255,160,0.85)' : 'rgba(255,120,120,0.75)',
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {decoyUnlockedHUD && (
+            <div
+              style={{
+                padding: '8px 10px',
+                fontSize: 12,
+                borderRadius: 12,
+                border: `1px solid ${showDecoy ? 'rgba(0,242,255,0.65)' : decoyOnCdHUD ? 'rgba(255,120,120,0.55)' : 'rgba(0,242,255,0.35)'}`,
+                color: showDecoy ? 'rgba(0,242,255,0.95)' : decoyOnCdHUD ? 'rgba(255,170,170,0.95)' : 'rgba(220,250,255,0.95)',
+                background: 'rgba(0,0,0,0.40)',
+                boxShadow: showDecoy ? '0 0 18px rgba(0,242,255,0.22)' : undefined,
+                minWidth: 220,
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, letterSpacing: 2, textTransform: 'uppercase' }}>
+                <span>Decoy</span>
+                <span>{showDecoy ? `ACTIVE ${fmtS(remDecoy)}` : decoyOnCdHUD ? `CD ${fmtS(remDecoyCd)}` : 'READY (2)'}</span>
+              </div>
+              <div style={{ marginTop: 6, height: 6, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                <div
+                  style={{
+                    height: '100%',
+                    width: `${clamp(showDecoy ? (remDecoy / 8000) * 100 : decoyOnCdHUD ? (remDecoyCd / 18000) * 100 : 0, 0, 100)}%`,
+                    background: showDecoy ? 'rgba(0,242,255,0.85)' : 'rgba(255,120,120,0.75)',
                   }}
                 />
               </div>
@@ -3581,6 +4865,11 @@ const beat = plan.beats[plan.idx];
               ⚡ Overdrive {fmtS(remOverdrive)}
             </div>
           )}
+          {showDoubleDamage && (
+            <div style={{ padding: '8px 12px', fontSize: 14, borderRadius: 12, border: '1px solid rgba(255,70,70,0.48)', background: 'rgba(55,0,0,0.48)', color: 'rgba(255,220,220,0.98)', boxShadow: '0 0 18px rgba(255,0,0,0.22)', letterSpacing: 2, textTransform: 'uppercase' }}>
+              x2 Damage {fmtS(remDoubleDamage)}
+            </div>
+          )}
           {showShield && (
             <div style={{ padding: '6px 10px', fontSize: 12, borderRadius: 12, border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(0,0,0,0.35)', letterSpacing: 2, textTransform: 'uppercase' }}>
               🛡 Shield {fmtS(remShield)}
@@ -3632,13 +4921,15 @@ const beat = plan.beats[plan.idx];
         </div>
       )}
 
-      <div className="world-container" ref={worldRef} style={{ willChange: 'transform' }}>
+      <div className="world-container" ref={worldRef} style={{ willChange: 'transform', transform: `translate(${-renderCamX}px,${-renderCamY}px)` }}>
         <div className="world-border" />
         <div className="player-tracer" ref={playerTracerRef} />
         <div
   className="player-sprite"
   ref={playerSpriteRef}
   style={{
+    left: renderPlayerPos.x,
+    top: renderPlayerPos.y,
     // ✅ show selected hero portrait instead of the blue square
     backgroundImage: selectedHero?.portrait ? `url(${selectedHero.portrait})` : undefined,
     backgroundSize: selectedHero?.portrait ? "cover" : undefined,

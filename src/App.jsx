@@ -232,6 +232,24 @@ export default function App() {
 
   const gameOver = lives <= 0;
 
+  const startWithoutTutorial = () => {
+    setTutorialShownThisSession(true);
+    setTutorialVisible(false);
+    setTutorialStep(0);
+    setShopUnlocked(true);
+    setTalentPills(1);
+    setView("galaxy");
+  };
+
+  const startTutorial = () => {
+    setShopUnlocked(false);
+    setTalentPills(0);
+    setTutorialShownThisSession(false);
+    setTutorialVisible(false);
+    setTutorialStep(0);
+    setView("galaxy");
+  };
+
   // Roguelite hard reset after 5 deaths (auto-refresh)
   useEffect(() => {
     if (!gameOver) return;
@@ -287,6 +305,7 @@ export default function App() {
       planetId: focusPlanet?.id,
       hexId: selectedHex,
       reward: selectedHexInfo?.reward || 0,
+      difficulty: selectedHexInfo?.difficulty || 1,
     });
 
     try {
@@ -309,8 +328,9 @@ export default function App() {
         if (!already) {
           current.add(combatCtx.hexId);
 
-          // Roguelite talent point: +1 pill per cleared mission (always).
-          setTalentPills((p) => p + 1);
+          // Roguelite talent points: up to 3 based on cleared map difficulty.
+          const earnedPills = Math.min(3, Math.max(1, Math.ceil((combatCtx.difficulty || 1) / 2)));
+          setTalentPills((p) => p + earnedPills);
 
           const reward = combatCtx.reward || 0;
           if (reward > 0) {
@@ -503,7 +523,7 @@ export default function App() {
                 setTutorialVisible(false);
                 setTutorialStep(0);
 
-                setView("galaxy");
+                setView("start_choice");
               }}
             >
               CONFIRM
@@ -512,6 +532,34 @@ export default function App() {
 
           <div style={{ marginTop: 10, opacity: 0.8, fontSize: 12, textAlign: "center" }}>
             Lives remain {lives}. (No changes)
+          </div>
+        </div>
+      )}
+
+      {view === "start_choice" && (
+        <div className="ui-layer" style={{ background: "rgba(0,0,0,0.90)", padding: 24 }}>
+          <div
+            style={{
+              width: "min(560px, calc(100vw - 40px))",
+              border: "1px solid rgba(0,242,255,0.35)",
+              background: "rgba(3,8,18,0.94)",
+              boxShadow: "0 0 34px rgba(0,242,255,0.16), inset 0 0 24px rgba(255,0,122,0.08)",
+              padding: 24,
+              textAlign: "center",
+            }}
+          >
+            <h1 style={{ margin: 0, letterSpacing: 5 }}>MISSION START</h1>
+            <p style={{ opacity: 0.82, margin: "12px 0 20px", lineHeight: 1.45 }}>
+              Choose how this operative enters the campaign.
+            </p>
+            <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+              <button className="scifi-btn" onClick={startWithoutTutorial}>
+                Lets kill some Zenos
+              </button>
+              <button className="scifi-btn" onClick={startTutorial}>
+                Tutorial
+              </button>
+            </div>
           </div>
         </div>
       )}
