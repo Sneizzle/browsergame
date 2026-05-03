@@ -184,35 +184,150 @@ body {
 
 .combat-hud {
   position: fixed;
-  left: 20px;
-  right: 20px;
-  bottom: 20px;
+  left: 50%;
+  right: auto;
+  bottom: 10px;
   top: auto;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 20px;
+  justify-content: center;
+  gap: 7px;
+  font-size: 1.08rem;
   z-index: 200;
+  transform: translateX(-50%);
+  width: min(760px, calc(100vw - 28px));
+  pointer-events: none;
 }
+
+.hud-main {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 220px minmax(340px, 560px);
+  align-items: end;
+  justify-content: center;
+  gap: 12px;
+}
+
+.side-bars {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  padding-bottom: 4px;
+}
+
+.core-bars {
+  width: 100%;
+  display: block;
+  padding: 8px 10px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: linear-gradient(180deg, rgba(5,8,16,0.62), rgba(0,0,0,0.38));
+  box-shadow: 0 0 22px rgba(0,0,0,0.34), inset 0 0 14px rgba(0,242,255,0.04);
+}
+
+.ability-row {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  min-height: 58px;
+}
+
+.ability-slot {
+  position: relative;
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border: 2px solid rgba(150,170,210,0.45);
+  background: radial-gradient(circle at 50% 28%, rgba(255,255,255,0.16), rgba(10,12,22,0.92) 62%);
+  box-shadow: inset 0 0 18px rgba(0,0,0,0.7), 0 0 18px rgba(0,242,255,0.10);
+  color: white;
+  pointer-events: none;
+}
+
+.ability-slot b {
+  position: absolute;
+  left: -5px;
+  top: -5px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  background: rgba(0,0,0,0.96);
+  border: 2px solid rgba(255,255,255,0.86);
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 950;
+  line-height: 1;
+  color: #ffffff;
+  text-shadow: 0 0 6px rgba(0,242,255,0.75);
+  box-shadow: 0 0 12px rgba(0,0,0,0.8), 0 0 10px rgba(0,242,255,0.35);
+  z-index: 3;
+}
+
+.ability-slot img {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 7px;
+  filter: saturate(1.1) contrast(1.05);
+}
+
+.ability-slot small {
+  position: absolute;
+  bottom: 4px;
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+
+.ability-slot.ready { border-color: rgba(0,255,160,0.70); box-shadow: 0 0 18px rgba(0,255,160,0.18); }
+.ability-slot.active { border-color: rgba(255,218,107,0.85); box-shadow: 0 0 24px rgba(255,218,107,0.28); }
+.ability-slot.cooldown { border-color: rgba(255,80,120,0.55); filter: saturate(0.7) brightness(0.8); }
 
 
 .xp-bar,
 .hp-bar {
   position: relative;
-  width: 240px;
-  height: 16px;
+  width: 100%;
+  height: 22px;
   border-radius: 999px;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(0, 242, 255, 0.4);
 }
 
+.xp-bar,
+.progress-bar {
+  position: relative;
+  left: auto;
+  bottom: auto;
+  width: 220px;
+  height: 12px;
+  border-radius: 999px;
+  opacity: 0.92;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .xp-bar span,
 .hp-bar span {
   position: absolute;
   left: 10px;
-  top: -18px;
-  font-size: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.9rem;
   letter-spacing: 2px;
+  z-index: 2;
+  color: rgba(255,255,255,0.94);
+  text-shadow: 0 1px 6px rgba(0,0,0,0.9);
+  pointer-events: none;
+}
+
+.xp-bar span,
+.progress-bar span {
+  font-size: 0.62rem;
+  letter-spacing: 1px;
+  left: 8px;
 }
 
 .xp-bar-fill {
@@ -222,6 +337,8 @@ body {
 
 .hp-bar {
   border-color: rgba(255, 0, 122, 0.4);
+  height: 32px;
+  width: 100%;
 }
 
 .hp-bar-fill {
@@ -239,12 +356,6 @@ body {
   background: rgba(255, 218, 107, 0.1);
 }
 .progress-bar {
-  position: relative;
-  width: 240px;
-  height: 12px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 218, 107, 0.4);
 }
 .progress-bar-fill {
@@ -253,10 +364,22 @@ body {
 }
 .progress-bar span {
   position: absolute;
-  left: 10px;
-  top: -18px;
-  font-size: 0.7rem;
-  letter-spacing: 2px;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.62rem;
+  letter-spacing: 1px;
+  z-index: 2;
+  color: rgba(255,255,255,0.94);
+  text-shadow: 0 1px 6px rgba(0,0,0,0.9);
+  pointer-events: none;
+}
+
+.status-row {
+  transform: scale(0.78);
+  transform-origin: center bottom;
+  max-width: 720px;
+  justify-content: center;
 }
 
 .weapon-grid,
@@ -497,11 +620,14 @@ body {
 /* --- FORCE HUD BOTTOM (wins over any old rules) --- */
 .combat-hud{
   position: fixed !important;
-  left: 20px !important;
-  right: 20px !important;
-  bottom: 20px !important;
+  left: 50% !important;
+  right: auto !important;
+  bottom: 10px !important;
   top: auto !important;
   z-index: 9999 !important;
+  gap: 7px !important;
+  flex-wrap: nowrap !important;
+  transform: translateX(-50%) !important;
 }
 
 /* --- Katana arcs (uses CSS variables from Combat.jsx) --- */

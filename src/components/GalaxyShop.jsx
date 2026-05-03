@@ -1,5 +1,5 @@
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import t1 from "./t1.PNG";
 import t2 from "./t2.PNG";
 import t3 from "./t3.PNG";
@@ -11,29 +11,37 @@ import t8 from "./t8.PNG";
 import t9 from "./t9.PNG";
 
 /**
- * GalaxyShop (MILITARY DOCTRINE) — WoW-classic style talent tree (left tree)
+ * fix.jsx — Galaxy Shop v2 (Talents)
  *
- * - 1 "Doctrine Pill" per mission (App grants it).
- * - Spend 1 pill per rank.
- * - You can only pick ONE talent per row (row-exclusive).
- * - Tier gate: to unlock row N (N>=2), you must have spent (N-1)*5 points in this tree.
- *   (Row 0 and 1 are available after prerequisites.)
+ * What changed vs old shop:
+ * - NO “spend 10/15 points to unlock rows” gates. Unlocking is by arrows/prereqs.
+ * - You can buy multiple talents per row (unless a talent is maxed).
+ * - Pills are a roguelite currency (App should award pills = mission difficulty).
+ * - SPACEBAR ability is exclusive at runtime: choose either Thorns OR Decoy.
+ *   (You may buy both nodes, but you must pick ONE as the active SPACE ability.)
+ * - Added a second tree: Research Vessel (middle tree).
+ * - Added a RESET button that refunds spent pills and clears both trees (lets you respend).
  *
- * This component intentionally does NOT persist to localStorage to match roguelite "refresh wipes run".
+ * Notes for integration:
+ * - This component pushes build data to `onBuildChange({ purchased, meta })`.
+ *   `meta.activeSpaceAbility` is either "THORNS" or "DECOY" (or null if none).
+ * - Combat should use `meta.activeSpaceAbility` to decide what SPACE does.
  */
 
 const ICON_BASE =
   "https://raw.githubusercontent.com/itsrealfarhan/xenowarfare-assets/main/talent-icons/";
+
+/** Reuse your existing 9 local images first, fallback to remote icons if needed. */
 const LOCAL_ICON_MAP = {
-  25: t1, // THORNS
-  15: t2, // FIELD ARMOR
-  21: t3, // GHOST PROTOCOL
-  3:  t4, // QUICK REARM
-  12: t5, // PLATE CARRIER
-  7:  t6, // ADRENAL
-  2:  t7, // KATANA
-  20: t8, // THORNS: DISCHARGE
-  9:  t9, // TITANIUM PLATES
+  25: t1, // Thorns
+  15: t2, // Field Armor
+  21: t3, // Ghost Protocol
+  3: t4,  // Quick Rearm
+  12: t5, // Plate Carrier
+  7: t6,  // Adrenal
+  2: t7,  // Katana
+  20: t8, // Thorns Discharge
+  9: t9,  // Titanium Plates
 };
 
 function iconUrl(n) {
@@ -41,30 +49,84 @@ function iconUrl(n) {
 }
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const sumRanks = (purchased) =>
+  Object.values(purchased || {}).reduce((a, b) => a + (Number(b) || 0), 0);
 
-const NODES = [
-  // Row 0
+function prereqOk(node, purchased) {
+  const all = node.prereqAll || [];
+  const any = node.prereqAny || [];
+  const has = (id) => (Number(purchased?.[id] || 0) > 0);
+
+  if (all.length && !all.every(has)) return false;
+  if (any.length && !any.some(has)) return false;
+  return true;
+}
+
+function lockReason(node, purchased, nodeById) {
+  const all = node.prereqAll || [];
+  const any = node.prereqAny || [];
+  const has = (id) => (Number(purchased?.[id] || 0) > 0);
+
+  const missingAll = all.filter((id) => !has(id));
+  if (missingAll.length) {
+    return `Requires: ${missingAll.map((id) => nodeById.get(id)?.name || id).join(", ")}`;
+  }
+
+  if (any.length && !any.some(has)) {
+    return `Requires one of: ${any.map((id) => nodeById.get(id)?.name || id).join(" / ")}`;
+  }
+
+  return "";
+}
+
+/**
+ * Tree definitions
+ * - row/col are for layout only.
+ * - prereqAll: AND requirements
+ * - prereqAny: OR requirements
+ */
+
+// -------------------- TREE 1: COMBAT TALENTS (keeps MIL_* keys for Combat.jsx) --------------------
+// Flow: Rank 1 (Thorns/Katana) -> pick left/right -> pick left/right -> Adrenal -> pick left/right
+const MIL_NODES = [
+  // Rank 1: Thorns OR Katana (or both)
   {
     id: "MIL_THORNS",
-    name: "DEFENSIVE COUNTERMEASURE",
+    name: "THORNS",
     type: "ability",
     rarity: "major",
     row: 0,
-    col: 1,
+    col: 0,
     maxRank: 1,
     icon: 25,
+    tags: ["SPACE ability"],
     desc:
-  "Press SPACEBAR to activate.\n" +
-  "ACTIVE: 5.6s\n" +
-  "COOLDOWN: 25 seconds (reduced by Quick Rearm)\n" +
-  "RAM: 34 impact damage per hit\n" +
-  "\n" +
-  "EFFECT:\n" +
-  "• Ignore all incoming damage while active\n" +
-  "• Slam through enemies and break their line",
+      "ACTIVE - Key 1\n" +
+      "Cooldown: 25s base, reduced by Quick Rearm.\n" +
+      "Duration: 5.6s base, increased by Quick Rearm.\n" +
+      "Damage: 43.2 + 4.8 per map difficulty before bonuses.\n" +
+      "While active: invulnerable, body-blocks ram enemies, and burns enemies touching you.",
+  },
+  {
+    // IMPORTANT: Combat.jsx expects this key for the Katana talent.
+    id: "MIL_KATANA_BACKUP",
+    name: "KATANA MODULE",
+    type: "passive",
+    rarity: "major",
+    row: 0,
+    col: 2,
+    maxRank: 1,
+    icon: 2,
+    tags: ["auto perk"],
+    desc:
+      "PASSIVE - lesser knife module.\n" +
+      "Every 1.55s: quick knife cut toward the nearest enemy.\n" +
+      "Damage: 10.5 before bonuses.\n" +
+      "Range: 96px. Arc: 34 degrees.\n" +
+      "This is not the Katana weapon, has no upgrades, and never unlocks Katana levels.",
   },
 
-  // Row 1 (pick ONE)
+  // Branch 1
   {
     id: "MIL_FIELD_ARMOR",
     name: "FIELD ARMOR",
@@ -74,11 +136,8 @@ const NODES = [
     col: 0,
     maxRank: 5,
     icon: 15,
-    prereq: ["MIL_THORNS"],
-    desc:
-      "Passive / Stat\n" +
-      "• + 25 Max HP per rank\n" +
-      "Your **Vanguard Spine**.",
+    prereqAny: ["MIL_THORNS", "MIL_KATANA_BACKUP"],
+    desc: "PASSIVE STAT\n+25 max HP per rank. Max rank 5 = +125 max HP.",
   },
   {
     id: "MIL_GHOST_PROTOCOL",
@@ -89,30 +148,26 @@ const NODES = [
     col: 2,
     maxRank: 5,
     icon: 21,
-    prereq: ["MIL_THORNS"],
+    prereqAny: ["MIL_THORNS", "MIL_KATANA_BACKUP"],
     desc:
-      "Major Passive\n" +
-      "When you take damage:\n" +
-      "• Freeze time for 2s\n" +
-      "• Blast an explosion around you\n" +
-      "Cooldown starts at ~60s and improves with 8 seconds per rank.",
+      "PASSIVE EMERGENCY\nWhen damage gets through: freeze time for 2.0s and explode around you.\n" +
+      "Radius: 220/230/240/250/260px. Damage: 48/62/76/90/104.\n" +
+      "Cooldown: 60/52/44/36/28s.",
   },
 
-  // Row 2 (pick ONE) — Tier gate starts here: need 5 points spent
+  // Branch 2
   {
     id: "MIL_QUICK_REARM",
     name: "THORNS: QUICK REARM",
     type: "passive",
     rarity: "stat",
     row: 2,
-    col: 0,
+    col: 2,
     maxRank: 2,
     icon: 3,
-    prereq: ["MIL_THORNS"],
-    desc:
-      "Stat\n" +
-      "• +Thorns duration 1.2 seconds\n" +
-      "• -Thorns cooldown -3 seconds",
+    prereqAll: ["MIL_THORNS"],
+    prereqAny: ["MIL_FIELD_ARMOR", "MIL_GHOST_PROTOCOL"],
+    desc: "THORNS UPGRADE\nRank 1: +0.6s duration, -3.5s cooldown. Rank 2: +1.2s duration, -7.0s cooldown.",
   },
   {
     id: "MIL_PLATE_CARRIER",
@@ -120,17 +175,14 @@ const NODES = [
     type: "passive",
     rarity: "stat",
     row: 2,
-    col: 2,
+    col: 0,
     maxRank: 5,
     icon: 12,
-    prereq: ["MIL_FIELD_ARMOR"],
-    desc:
-      "Stat (requires Field Armor)\n" +
-      "• Damage reduction per rank\n" +
-      "Small, consistent mitigation.",
+    prereqAny: ["MIL_FIELD_ARMOR", "MIL_GHOST_PROTOCOL"],
+    desc: "PASSIVE STAT\n+4% damage reduction per rank. Max rank 5 = 20% damage reduction.",
   },
 
-  // Row 3 — Tier gate: need 10 points spent
+  // Merge: Adrenal
   {
     id: "MIL_ADRENAL",
     name: "ADRENAL OVERDRIVE",
@@ -140,218 +192,184 @@ const NODES = [
     col: 1,
     maxRank: 1,
     icon: 7,
-    prereq: [],
+    prereqAny: ["MIL_QUICK_REARM", "MIL_PLATE_CARRIER"],
     desc:
-      "Major Passive\n" +
-      "After taking damage OR getting a kill:\n" +
-      "• 4s Overdrive (+move speed, +melee/attack speed)\n" +
-      "• Heal 8% of missing HP\n" +
-      "30s cooldown.",
+      "PASSIVE CLUTCH\nAfter taking damage or getting a kill: 4.0s Overdrive, 4.0s +22% move speed, heal 8% missing HP. Cooldown: 30s.",
   },
 
-  // Row 4 (pick ONE) — Tier gate: need 15 points spent
-  {
-    id: "MIL_KATANA_BACKUP",
-    name: "KATANA: BACKUP BLADE",
-    type: "passive",
-    rarity: "major",
-    row: 4,
-    col: 0,
-    maxRank: 1,
-    icon: 2,
-    prereq: ["MIL_ADRENAL"],
-    desc:
-      "Passive\n" +
-      "Always start the match with an extra **Rank 1 Katana**.\n" +
-      "Cyan-blue slash.",
-  },
+  // Pick either left or right, then bottom
   {
     id: "MIL_THRONS_DISCHARGE",
     name: "THORNS: DISCHARGE",
     type: "passive",
     rarity: "major",
     row: 4,
-    col: 2,
+    col: 0,
     maxRank: 1,
     icon: 20,
-    prereq: ["MIL_THORNS"],
+    prereqAll: ["MIL_THORNS", "MIL_ADRENAL"],
     desc:
-      "Passive\n" +
-      "When Thorns expires:\n" +
-      "• Shockwave knocks back enemies in a wide radius.",
+      "THORNS FINISHER\nWhen Thorns expires: 340px shockwave, 220ms stun, and pushback on normal enemies. Bosses and minibosses resist control.",
   },
-
-  // Row 5 — Tier gate: need 20 points spent
   {
     id: "MIL_TITANIUM_PLATES",
     name: "TITANIUM PLATES",
     type: "passive",
     rarity: "capstone",
-    row: 5,
-    col: 1,
+    row: 4,
+    col: 2,
     maxRank: 3,
     icon: 9,
-    prereq: ["MIL_ADRENAL"],
+    prereqAll: ["MIL_ADRENAL"],
     desc:
-      "Capstone\n" +
-      "Every 20s, generate a Plating.\n" +
-      "• Completely blocks the next instance of damage\n" +
-      "• Max stacks: 1/2/3 (by rank)\n" +
-      "After 60s without hits, you're stacked.",
+      "CAPSTONE PLATING\nEvery 20s: gain 1 plate. A plate blocks the next damage hit completely. Rank 1/2/3: max 1/2/3 stored plates.",
   },
 ];
 
-const LINES = [
+const MIL_LINES = [
   ["MIL_THORNS", "MIL_FIELD_ARMOR"],
-  ["MIL_THORNS", "MIL_GHOST_PROTOCOL"],
   ["MIL_THORNS", "MIL_QUICK_REARM"],
+  ["MIL_KATANA_BACKUP", "MIL_GHOST_PROTOCOL"],
   ["MIL_FIELD_ARMOR", "MIL_PLATE_CARRIER"],
-  ["MIL_QUICK_REARM", "MIL_ADRENAL"],
   ["MIL_PLATE_CARRIER", "MIL_ADRENAL"],
-  ["MIL_ADRENAL", "MIL_KATANA_BACKUP"],
-  ["MIL_THORNS", "MIL_THRONS_DISCHARGE"],
+  ["MIL_QUICK_REARM", "MIL_ADRENAL"],
+  ["MIL_ADRENAL", "MIL_THRONS_DISCHARGE"],
   ["MIL_ADRENAL", "MIL_TITANIUM_PLATES"],
 ];
 
-function tierRequirementPoints(row) {
-  // Row 0: 0, Row 1: 0, Row 2: 5, Row 3: 10, Row 4: 15, Row 5: 20 ...
-  return Math.max(0, (row - 1) * 5);
-}
+// -------------------- TREE 2: RESEARCH VESSEL --------------------
+const RES_NODES = [
+  // Row 1: A or B (or both), but SPACE ability is exclusive at runtime
+  {
+    id: "RES_ONBOARD_PROD",
+    name: "SIDEARM PISTOL",
+    type: "passive",
+    rarity: "major",
+    row: 0,
+    col: 0,
+    maxRank: 1,
+    icon: 12,
+    tags: ["auto perk"],
+    desc:
+      "PASSIVE SIDEARM\nStarts every match with a small pistol. Fire rate: 0.98s. Damage: 8.5. Bullet speed: 13.5. No upgrades or weapon slot.",
+  },
+  {
+    id: "RES_DECOY_HOLO",
+    name: "DECOY HOLOGRAM",
+    type: "ability",
+    rarity: "major",
+    row: 0,
+    col: 2,
+    maxRank: 1,
+    icon: 21,
+    tags: ["SPACE ability"],
+    desc:
+      "ACTIVE - Key 2\nCooldown: 18s. Duration: 8s. Drops a hologram. Normal enemies, ram enemies, turrets, and bosses target it while it exists.",
+  },
 
-function sumRanks(purchased) {
-  return Object.values(purchased || {}).reduce((a, b) => a + (Number(b) || 0), 0);
-}
+  // Row 2: both can be bought
+  {
+    id: "RES_COMBUSTION",
+    name: "SPONTANEOUS COMBUSTION",
+    type: "passive",
+    rarity: "major",
+    row: 1,
+    col: 0,
+    maxRank: 1,
+    icon: 20,
+    prereqAny: ["RES_ONBOARD_PROD", "RES_DECOY_HOLO"],
+    desc: "PASSIVE CHAIN REACTION\nEvery 10th kill explodes. Radius: 125px. Damage: 90 + 10 per map difficulty at center, falling to 40% at edge.",
+  },
+  {
+    id: "RES_DRONE_ORBIT",
+    name: "COVER BIRD",
+    type: "passive",
+    rarity: "major",
+    row: 1,
+    col: 2,
+    maxRank: 1,
+    icon: 9,
+    prereqAny: ["RES_ONBOARD_PROD", "RES_DECOY_HOLO"],
+    desc:
+      "PASSIVE HELPER DRONE\nRemoved old fleet clone. This unlocks Cover Bird: a small orbiting helper that fires every 0.42s. Damage: 4.8 before bonuses.",
+  },
 
-export default function GalaxyShop({
-  title = "MILITARY // DOCTRINE",
-  credits = 0,
-  onSpend = () => {},
-  resetToken = 0,
-  storageKey = null, // if provided, we persist to sessionStorage (until browser/tab closes)
-  onBuildChange = () => {},
+  // Row 3: big ability
+  {
+    id: "RES_GRAV_PICKUP",
+    name: "GRAVITIC VACUUM",
+    type: "passive",
+    rarity: "capstone",
+    row: 2,
+    col: 1,
+    maxRank: 1,
+    icon: 3,
+    prereqAny: ["RES_COMBUSTION", "RES_DRONE_ORBIT"],
+    desc: "PASSIVE VACUUM\nXP pickup range x2. XP orb flight speed x2.",
+  },
+
+  // Row 5
+  {
+    id: "RES_SLOW_PULSE",
+    name: "WAVE DAMPENER PULSE",
+    type: "passive",
+    rarity: "major",
+    row: 3,
+    col: 1,
+    maxRank: 1,
+    icon: 25,
+    prereqAll: ["RES_GRAV_PICKUP"],
+    desc:
+      "PASSIVE PULSE\nEvery 20s: 520px pulse slows normal enemies by 45% for 5.0s. Bosses and minibosses resist it.",
+  },
+];
+
+const RES_LINES = [
+  ["RES_ONBOARD_PROD", "RES_COMBUSTION"],
+  ["RES_DECOY_HOLO", "RES_DRONE_ORBIT"],
+  ["RES_COMBUSTION", "RES_GRAV_PICKUP"],
+  ["RES_DRONE_ORBIT", "RES_GRAV_PICKUP"],
+  ["RES_GRAV_PICKUP", "RES_SLOW_PULSE"],
+];
+
+function Tree({
+  treeId,
+  title,
+  subtitle,
+  nodes,
+  lines,
+  credits,
+  purchased,
+  setPurchased,
+  onSpend,
 }) {
-  const storageNs = useMemo(() => (storageKey ? `xeno:shop:${storageKey}` : null), [storageKey]);
-  const lastResetTokenRef = useRef(resetToken);
-  const [purchased, setPurchased] = useState(() => {
-    if (!storageNs) return {};
-    try {
-      const raw = sessionStorage.getItem(storageNs);
-      return raw ? JSON.parse(raw) : {};
-    } catch {
-      return {};
-    }
-  });
-
-  // reset between runs / characters
-  useEffect(() => {
-    // resetToken is used by App to wipe a run.
-    // IMPORTANT: do NOT wipe on initial mount; only wipe when resetToken actually changes.
-    if (!storageNs) {
-      setPurchased({});
-      lastResetTokenRef.current = resetToken;
-      return;
-    }
-
-    if (lastResetTokenRef.current === resetToken) return;
-    lastResetTokenRef.current = resetToken;
-
-    try {
-      sessionStorage.removeItem(storageNs);
-    } catch {}
-    setPurchased({});
-  }, [resetToken, storageNs]);
-
-  // when storageKey changes, load (or clear) that character's build
-  useEffect(() => {
-    if (!storageNs) return;
-    try {
-      const raw = sessionStorage.getItem(storageNs);
-      setPurchased(raw ? JSON.parse(raw) : {});
-    } catch {
-      setPurchased({});
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storageNs]);
-
-  useEffect(() => {
-    if (storageNs) {
-      try {
-        sessionStorage.setItem(storageNs, JSON.stringify(purchased || {}));
-      } catch {}
-    }
-    onBuildChange({ purchased: purchased || {} });
-  }, [purchased, onBuildChange, storageNs]);
-
   const grid = useMemo(() => {
-    const maxRow = Math.max(...NODES.map((n) => n.row));
-    const maxCol = Math.max(...NODES.map((n) => n.col));
+    const maxRow = Math.max(...nodes.map((n) => n.row));
+    const maxCol = Math.max(...nodes.map((n) => n.col));
     return { rows: maxRow + 1, cols: maxCol + 1 };
-  }, []);
-
-  const pointsSpent = useMemo(() => sumRanks(purchased), [purchased]);
+  }, [nodes]);
 
   const nodeById = useMemo(() => {
     const m = new Map();
-    for (const n of NODES) m.set(n.id, n);
+    for (const n of nodes) m.set(n.id, n);
     return m;
-  }, []);
+  }, [nodes]);
 
-  const rowPickedId = useMemo(() => {
-    const byRow = new Map();
-    for (const n of NODES) {
-      const r = Number(purchased[n.id] || 0);
-      if (r > 0) byRow.set(n.row, n.id);
-    }
-    return byRow; // row -> chosen id
-  }, [purchased]);
-
-  function prereqOk(node) {
-    const prereq = node.prereq || [];
-    if (!prereq.length) return true;
-    return prereq.every((pid) => (purchased?.[pid] || 0) > 0);
-  }
-
-  function tierOk(node) {
-    const req = tierRequirementPoints(node.row);
-    return pointsSpent >= req;
-  }
-
-  function rowExclusiveOk(node) {
-    const chosen = rowPickedId.get(node.row);
-    return !chosen || chosen === node.id;
-  }
+  const pointsSpent = useMemo(() => sumRanks(purchased), [purchased]);
 
   function canBuy(node) {
     const r = Number(purchased[node.id] || 0);
     if (r >= node.maxRank) return false;
-    if (!prereqOk(node)) return false;
-    if (!tierOk(node)) return false;
-    if (!rowExclusiveOk(node)) return false;
+    if (!prereqOk(node, purchased)) return false;
     return credits >= 1;
   }
 
   function nodeState(node) {
     const r = Number(purchased[node.id] || 0);
     if (r >= node.maxRank) return "maxed";
-    if (!prereqOk(node) || !tierOk(node) || !rowExclusiveOk(node)) return "locked";
+    if (!prereqOk(node, purchased)) return "locked";
     if (credits < 1) return "unaffordable";
     return "available";
-  }
-
-  function lockReason(node) {
-    if (!prereqOk(node)) {
-      const need = (node.prereq || []).filter((pid) => (purchased?.[pid] || 0) <= 0);
-      return `Requires: ${need.map((id) => nodeById.get(id)?.name || id).join(", ")}`;
-    }
-    if (!tierOk(node)) {
-      const req = tierRequirementPoints(node.row);
-      return `Requires ${req} points spent in tree`;
-    }
-    if (!rowExclusiveOk(node)) {
-      const chosenId = rowPickedId.get(node.row);
-      return `Row locked by: ${nodeById.get(chosenId)?.name || chosenId}`;
-    }
-    return "";
   }
 
   function buy(node) {
@@ -364,13 +382,11 @@ export default function GalaxyShop({
     });
   }
 
-  // --- layout (narrower window) ---
-  const cellW = 84;
-  const cellH = 82;
-
-  const padX = 16;
-  const padY = 16;
-
+  // layout
+  const cellW = 150;
+  const cellH = 116;
+  const padX = 24;
+  const padY = 22;
   const width = padX * 2 + grid.cols * cellW;
   const height = padY * 2 + grid.rows * cellH;
 
@@ -379,14 +395,274 @@ export default function GalaxyShop({
     y: padY + node.row * cellH + cellH / 2,
   });
 
+  const spaceOwned = {
+    thorns: Number(purchased["MIL_THORNS"] || 0) > 0,
+    decoy: Number(purchased["RES_DECOY_HOLO"] || 0) > 0,
+  };
+
+  const showAbilityKeys = spaceOwned.thorns || spaceOwned.decoy;
+
   return (
-    <div className="xshop">
+    <div className="xshop-tree">
+      <div className="xshop-treeHeader">
+        <div>
+          <div className="xshop-title">{title}</div>
+          {subtitle && <div className="xshop-subtitle">{subtitle}</div>}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div className="xshop-points">
+            <span>💠 Pills</span>
+            <strong>{credits}</strong>
+            <span style={{ opacity: 0.6, marginLeft: 8 }}>spent: {pointsSpent}</span>
+          </div>
+        </div>
+      </div>
+
+      {showAbilityKeys && (
+        <div className="xshop-spacePick">
+          <div style={{ fontWeight: 900, letterSpacing: 1.2 }}>Unlocked Active Abilities</div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            {spaceOwned.thorns && <span className="xshop-radio"><b>1</b> Thorns</span>}
+            {spaceOwned.decoy && <span className="xshop-radio"><b>2</b> Decoy Hologram</span>}
+            <div style={{ opacity: 0.78, fontSize: 12 }}>No mutual exclusion. Buy both, use both.</div>
+          </div>
+        </div>
+      )}
+
+      <div className="xshop-gridWrap">
+        <svg
+          width={width}
+          height={height}
+          className="xshop-lines"
+          style={{ overflow: "visible" }}
+        >
+          {lines.map(([a, b], i) => {
+            const na = nodeById.get(a);
+            const nb = nodeById.get(b);
+            if (!na || !nb) return null;
+
+            const A = nodePos(na);
+            const B = nodePos(nb);
+
+            const hasA = Number(purchased[a] || 0) > 0;
+            const hasB = Number(purchased[b] || 0) > 0;
+            const lineOn = hasA && (hasB || prereqOk(nb, purchased));
+            const midY = (A.y + B.y) / 2;
+            const d = `M ${A.x} ${A.y + 34} L ${A.x} ${midY} L ${B.x} ${midY} L ${B.x} ${B.y - 34}`;
+
+            return (
+              <path
+                key={i}
+                d={d}
+                fill="none"
+                stroke={lineOn ? "rgba(0,242,255,0.55)" : "rgba(34,48,86,0.9)"}
+                strokeWidth={lineOn ? 2.2 : 1.2}
+                strokeLinecap="round"
+              />
+            );
+          })}
+        </svg>
+
+        <div
+          className="xshop-grid"
+          style={{
+            width,
+            height,
+            gridTemplateColumns: `repeat(${grid.cols}, ${cellW}px)`,
+            gridTemplateRows: `repeat(${grid.rows}, ${cellH}px)`,
+            padding: `${padY}px ${padX}px`,
+          }}
+        >
+          {nodes.map((node) => {
+            const rank = Number(purchased[node.id] || 0);
+            const state = nodeState(node);
+            const lockedText = state === "locked" ? lockReason(node, purchased, nodeById) : "";
+            const isSpace = (node.tags || []).includes("SPACE ability");
+
+
+            return (
+              <button
+                key={node.id}
+                className={`xshop-node ${state} ${node.rarity || ""} ${isSpace ? "space" : ""}`}
+                style={{
+                  gridColumn: node.col + 1,
+                  gridRow: node.row + 1,
+                }}
+                onClick={() => buy(node)}
+                title={
+                  `${node.name}\n\n${node.desc}` +
+                  (lockedText ? `\n\nLOCKED: ${lockedText}` : "") +
+                  `\n\nRank: ${rank}/${node.maxRank}` +
+                  (isSpace ? `\n\nCombat key: ${node.id === "MIL_THORNS" ? "1" : "2"}` : "")
+                }
+              >
+                <div className="xshop-icon">
+                  <img src={iconUrl(node.icon)} alt="" draggable={false} />
+                  {isSpace && <div className="xshop-badge">SPACE</div>}
+                </div>
+                <div className="xshop-name">{node.name}</div>
+                <div className="xshop-stat">{String(node.desc || "").split("\n").slice(0, 3).join(" ")}</div>
+                <div className="xshop-rank">
+                  <span>{rank}/{node.maxRank}</span>
+                  {state === "available" ? <em>BUY</em> : state === "maxed" ? <em>MAX</em> : <em>{state.toUpperCase()}</em>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function GalaxyShopV2({
+  title = "GALAXY SHOP",
+  credits = 0,
+  onSpend = () => {},
+  resetToken = 0,
+  storageKey = null, // if provided, persists to sessionStorage until tab closes
+  onBuildChange = () => {},
+}) {
+  const storageNs = useMemo(() => (storageKey ? `xeno:shopv2:${storageKey}` : null), [storageKey]);
+  const lastResetTokenRef = useRef(resetToken);
+
+  const [purchased, setPurchased] = useState(() => {
+    if (!storageNs) return {};
+    try {
+      const raw = sessionStorage.getItem(storageNs);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const [meta, setMeta] = useState(() => {
+    if (!storageNs) return { activeSpaceAbility: null };
+    try {
+      const raw = sessionStorage.getItem(`${storageNs}:meta`);
+      return raw ? JSON.parse(raw) : { activeSpaceAbility: null };
+    } catch {
+      return { activeSpaceAbility: null };
+    }
+  });
+
+  // Reset between runs
+  useEffect(() => {
+    if (!storageNs) {
+      setPurchased({});
+      setMeta({ activeSpaceAbility: null });
+      lastResetTokenRef.current = resetToken;
+      return;
+    }
+    if (lastResetTokenRef.current === resetToken) return;
+    lastResetTokenRef.current = resetToken;
+
+    try {
+      sessionStorage.removeItem(storageNs);
+      sessionStorage.removeItem(`${storageNs}:meta`);
+    } catch {}
+    setPurchased({});
+    setMeta({ activeSpaceAbility: null });
+  }, [resetToken, storageNs]);
+
+  // Load when key changes
+  useEffect(() => {
+    if (!storageNs) return;
+    try {
+      const raw = sessionStorage.getItem(storageNs);
+      setPurchased(raw ? JSON.parse(raw) : {});
+    } catch {
+      setPurchased({});
+    }
+    try {
+      const raw = sessionStorage.getItem(`${storageNs}:meta`);
+      setMeta(raw ? JSON.parse(raw) : { activeSpaceAbility: null });
+    } catch {
+      setMeta({ activeSpaceAbility: null });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageNs]);
+
+  // Persist + notify
+  useEffect(() => {
+    if (storageNs) {
+      try {
+        sessionStorage.setItem(storageNs, JSON.stringify(purchased || {}));
+        sessionStorage.setItem(`${storageNs}:meta`, JSON.stringify(meta || {}));
+      } catch {}
+    }
+    onBuildChange({ purchased: purchased || {}, meta: meta || {} });
+  }, [purchased, meta, onBuildChange, storageNs]);
+
+  const pointsSpent = useMemo(() => sumRanks(purchased), [purchased]);
+
+  const [activeSpaceAbility, setActiveSpaceAbility] = useState(meta?.activeSpaceAbility || null);
+
+  // keep meta in sync with picker
+  useEffect(() => {
+    setMeta((m) => ({ ...(m || {}), activeSpaceAbility: activeSpaceAbility || null }));
+  }, [activeSpaceAbility]);
+
+  // auto-pick if they only have one owned ability
+  useEffect(() => {
+    const hasThorns = Number(purchased["MIL_THORNS"] || 0) > 0;
+    const hasDecoy = Number(purchased["RES_DECOY_HOLO"] || 0) > 0;
+
+    if (!hasThorns && !hasDecoy) {
+      if (activeSpaceAbility !== null) setActiveSpaceAbility(null);
+      return;
+    }
+    if (hasThorns && !hasDecoy && activeSpaceAbility !== "THORNS") setActiveSpaceAbility("THORNS");
+    if (!hasThorns && hasDecoy && activeSpaceAbility !== "DECOY") setActiveSpaceAbility("DECOY");
+  }, [purchased, activeSpaceAbility]);
+
+  // Split purchased state by tree (we store it all in one object, but render in two)
+  const milPurchased = useMemo(() => {
+    const out = {};
+    for (const n of MIL_NODES) out[n.id] = purchased[n.id] || 0;
+    return out;
+  }, [purchased]);
+  const resPurchased = useMemo(() => {
+    const out = {};
+    for (const n of RES_NODES) out[n.id] = purchased[n.id] || 0;
+    return out;
+  }, [purchased]);
+
+  const setMilPurchased = (updater) => {
+    setPurchased((prev) => {
+      const base = { ...(prev || {}) };
+      const nextMil = typeof updater === "function" ? updater(milPurchased) : updater;
+      for (const k of Object.keys(nextMil || {})) base[k] = nextMil[k];
+      return base;
+    });
+  };
+
+  const setResPurchased = (updater) => {
+    setPurchased((prev) => {
+      const base = { ...(prev || {}) };
+      const nextRes = typeof updater === "function" ? updater(resPurchased) : updater;
+      for (const k of Object.keys(nextRes || {})) base[k] = nextRes[k];
+      return base;
+    });
+  };
+
+  function resetAll() {
+    // Refund everything you spent, then clear.
+    const refund = pointsSpent;
+    if (refund > 0) onSpend(-refund);
+    setPurchased({});
+    setMeta({ activeSpaceAbility: null });
+    setActiveSpaceAbility(null);
+  }
+
+  return (
+    <div className="xshopV2">
       <style>{`
-        .xshop{
+        .xshopV2{
           --bg0:#070a12;
           --bg1:#0b1021;
           --line:#223056;
-          --line2:#1a2342;
           --txt:#d8e6ff;
           --muted:#91a5d6;
           --good:#4CFF9A;
@@ -398,475 +674,313 @@ export default function GalaxyShop({
           color:var(--txt);
           width:100%;
         }
-        .xshop-top{
+
+        .xshopTop{
           display:flex;
           align-items:center;
           justify-content:space-between;
           gap:16px;
-          padding:14px 16px;
-          border:1px solid rgba(120,170,255,0.18);
-          background:
-            radial-gradient(1200px 600px at 20% 0%, rgba(86,120,255,0.12), transparent 60%),
-            linear-gradient(180deg, rgba(14,18,36,0.96), rgba(6,8,18,0.96));
-          border-radius:14px;
-          box-shadow: 0 12px 28px rgba(0,0,0,0.45);
-          margin-bottom:14px;
+          padding: 12px 14px;
+          border-radius: 12px;
+          background: linear-gradient(180deg, rgba(10,16,34,0.75), rgba(6,8,18,0.65));
+          border: 1px solid rgba(0,242,255,0.15);
+          margin-bottom: 12px;
         }
-        .xshop-title{
+        .xshopTop h2{
+          margin:0;
+          font-size:18px;
+          letter-spacing:4px;
           font-weight:900;
-          letter-spacing:0.18em;
-          text-transform:uppercase;
-          font-size:14px;
-          opacity:0.92;
         }
-        .xshop-sub{
-          font-size:12px;
-          color:var(--muted);
-          opacity:0.9;
-          margin-top:2px;
-        }
-        .xshop-pill{
-          display:flex;
-          align-items:center;
-          gap:10px;
-          padding:10px 14px;
-          border-radius:999px;
-          border:1px solid rgba(120,170,255,0.22);
-          background:
-            radial-gradient(120px 60px at 30% 30%, rgba(0,242,255,0.15), transparent 70%),
-            linear-gradient(180deg, rgba(18,26,52,0.92), rgba(8,10,20,0.92));
-          box-shadow:
-            0 0 0 1px rgba(0,242,255,0.10) inset,
-            0 14px 26px rgba(0,0,0,0.38);
-        }
-        .xshop-pillIcon{
-          filter: drop-shadow(0 0 10px rgba(0,242,255,0.35));
-          font-size:16px;
-        }
-        .xshop-pillNum{
-          font-weight:900;
-          font-size:16px;
-          color:#00f2ff;
-          text-shadow: 0 0 18px rgba(0,242,255,0.45), 0 0 26px rgba(0,242,255,0.22);
-          letter-spacing:0.04em;
-          min-width:28px;
-          text-align:right;
-        }
+        .xshopRules{ display:none; }
+        .xshopRules b{ color:#fff; }
 
-        .xshop-wrap{
+        .xshopActions{
           display:flex;
-          gap:14px;
-          align-items:flex-start;
-          flex-wrap:wrap;
-          max-width: 980px;
+          flex-direction:column;
+          gap:10px;
+          align-items:flex-end;
+        }
+        .xshopBtn{
+          cursor:pointer;
+          user-select:none;
+          border-radius: 14px;
+          padding: 10px 12px;
+          letter-spacing: 2px;
+          font-weight: 900;
+          border: 1px solid rgba(255,82,119,0.45);
+          background: rgba(255,0,122,0.16);
+          color: rgba(255,220,240,0.95);
+          box-shadow: 0 0 18px rgba(255,0,122,0.14);
+        }
+        .xshopBtn:hover{
+          filter: brightness(1.07);
+          box-shadow: 0 0 22px rgba(255,0,122,0.22);
+        }
+        .xshopBtn:active{ transform: translateY(1px); }
+
+        .xshopTrees{
+          display:grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 18px;
+          align-items:start;
+        }
+        @media (max-width: 980px){
+          .xshopTrees{ grid-template-columns: 1fr; }
         }
 
         .xshop-tree{
-          border:1px solid rgba(120,170,255,0.18);
-          background:
-            radial-gradient(1200px 680px at 0% 0%, rgba(182,145,255,0.08), transparent 55%),
-            linear-gradient(180deg, rgba(12,16,34,0.94), rgba(6,8,18,0.94));
-          border-radius:14px;
-          padding:12px;
-          box-shadow: 0 12px 28px rgba(0,0,0,0.45);
+          border-radius: 12px;
+          border: 1px solid rgba(255,255,255,0.10);
+          background: radial-gradient(1200px 900px at 30% 10%, rgba(0,242,255,0.10), transparent 60%),
+                      radial-gradient(1200px 900px at 70% 0%, rgba(255,0,122,0.08), transparent 55%),
+                      linear-gradient(180deg, rgba(7,10,18,0.70), rgba(4,6,12,0.62));
+          box-shadow: 0 0 28px rgba(0,242,255,0.06);
+          overflow:hidden;
         }
 
-        .xshop-help{
-          max-width:420px;
-          border:1px dashed rgba(120,170,255,0.18);
-          border-radius:14px;
-          padding:12px 14px;
-          background: rgba(8,10,20,0.65);
+        .xshop-treeHeader{
+          display:flex;
+          justify-content:space-between;
+          align-items:flex-start;
+          gap: 10px;
+          padding: 12px 14px 10px;
+          border-bottom: 1px solid rgba(255,255,255,0.08);
+          background: rgba(0,0,0,0.18);
         }
-        .xshop-help h3{
-          margin:0 0 6px 0;
-          font-size:12px;
-          letter-spacing:0.14em;
-          text-transform:uppercase;
-          opacity:0.9;
+        .xshop-title{
+          font-weight: 900;
+          letter-spacing: 4px;
+          font-size: 14px;
         }
-        .xshop-help p{
-          margin:6px 0;
-          font-size:12px;
-          color:var(--muted);
-          line-height:1.35;
+        .xshop-subtitle{
+          margin-top: 4px;
+          font-size: 11px;
+          color: rgba(145,165,214,0.95);
+          letter-spacing: 1px;
         }
-        .xshop-kbd{
-          display:inline-flex;
-          align-items:center;
+        .xshop-points{
+          display:flex;
+          align-items:baseline;
+          gap: 8px;
+          padding: 8px 10px;
+          border-radius: 14px;
+          border: 1px solid rgba(0,242,255,0.20);
+          background: rgba(0,0,0,0.22);
+          font-size: 12px;
+          letter-spacing: 1px;
+        }
+        .xshop-points strong{
+          font-size: 18px;
+          letter-spacing: 0;
+        }
+
+        .xshop-spacePick{
+          padding: 10px 14px 12px;
+          border-bottom: 1px solid rgba(255,255,255,0.08);
+          background: rgba(0,0,0,0.16);
+          display:flex;
+          flex-direction:column;
+          gap: 10px;
+        }
+        .xshop-radio{
+          display:flex;
           gap:8px;
-          padding:2px 10px;
-          border-radius:999px;
-          border:1px solid rgba(255,255,255,0.12);
-          background: rgba(255,255,255,0.06);
-          color:var(--txt);
-          font-weight:800;
-          letter-spacing:0.04em;
+          align-items:center;
+          padding: 6px 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(255,255,255,0.14);
+          background: rgba(0,0,0,0.25);
+          cursor:pointer;
+          user-select:none;
+        }
+        .xshop-radio input{ accent-color: #00f2ff; }
+        .xshop-radio.disabled{
+          opacity: 0.45;
+          cursor:not-allowed;
         }
 
+        .xshop-gridWrap{
+          position:relative;
+          padding: 14px 16px 18px;
+        }
+        .xshop-lines{
+          position:absolute;
+          left: 16px;
+          top: 14px;
+          pointer-events:none;
+          opacity: 0.95;
+        }
         .xshop-grid{
           position:relative;
-          width:${width}px;
-          height:${height}px;
-          border-radius:12px;
-          overflow:visible;
-          background:
-            radial-gradient(900px 500px at 50% 0%, rgba(0,242,255,0.06), transparent 60%),
-            linear-gradient(180deg, rgba(10,12,24,0.85), rgba(4,6,14,0.85));
-        }
-        .xshop-grid::before{
-          content:"";
-          position:absolute; inset:0;
-          background-image:
-            linear-gradient(to right, rgba(80,120,210,0.12) 1px, transparent 1px),
-            linear-gradient(to bottom, rgba(80,120,210,0.10) 1px, transparent 1px);
-          background-size:${cellW}px ${cellH}px;
-          opacity:0.22;
-          pointer-events:none;
-        }
-
-        .xshop-line{
-          position:absolute;
-          height:2px;
-          background: linear-gradient(90deg, rgba(0,242,255,0.0), rgba(0,242,255,0.35), rgba(0,242,255,0.0));
-          transform-origin:left center;
-          opacity:0.55;
-          pointer-events:none;
+          display:grid;
+          gap: 0px;
         }
 
         .xshop-node{
-          position:absolute;
-          width:66px; height:66px;
-          border-radius:14px;
-          transform: translate(-50%, -50%);
-          display:flex;
-          align-items:center;
-          justify-content:center;
+          width: 136px;
+          height: 102px;
+          border-radius: 10px;
+          border: 1px solid rgba(255,255,255,0.12);
+          background: rgba(0,0,0,0.26);
+          box-shadow: 0 0 0 rgba(0,0,0,0);
+          padding: 9px 10px 8px;
+          text-align:left;
           cursor:pointer;
-          border:1px solid rgba(170,210,255,0.20);
-          background:
-            radial-gradient(60px 40px at 30% 25%, rgba(180,220,255,0.18), transparent 60%),
-            linear-gradient(180deg, rgba(18,22,44,0.95), rgba(8,10,18,0.95));
-          box-shadow:
-            0 0 0 1px rgba(0,0,0,0.45) inset,
-            0 14px 22px rgba(0,0,0,0.45);
-          transition: transform 0.12s ease, box-shadow 0.18s ease, border-color 0.18s ease, filter 0.18s ease;
-          user-select:none;
+          transition: transform 120ms ease, filter 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
         }
         .xshop-node:hover{
-          transform: translate(-50%, -50%) scale(1.02);
+          transform: translateY(-1px);
+          filter: brightness(1.06);
+          box-shadow: 0 0 22px rgba(0,242,255,0.12);
+          border-color: rgba(0,242,255,0.30);
         }
+        .xshop-node:active{ transform: translateY(0px); }
 
-        .xshop-node.available{
-          border-color: rgba(76,255,154,0.42);
-          box-shadow:
-            0 0 0 1px rgba(76,255,154,0.14) inset,
-            0 0 20px rgba(76,255,154,0.18),
-            0 18px 26px rgba(0,0,0,0.55);
-          filter: saturate(1.08);
+        .xshop-node.locked{
+          opacity: 0.42;
+          cursor:not-allowed;
+          filter: grayscale(0.2);
         }
         .xshop-node.unaffordable{
-          border-color: rgba(255,82,119,0.34);
-          opacity:0.96;
-        }
-        .xshop-node.locked{
-          border-color: rgba(108,120,153,0.30);
-          opacity:0.55;
-          cursor:not-allowed;
-          filter: grayscale(0.35);
+          opacity: 0.78;
+          border-color: rgba(255,82,119,0.35);
+          box-shadow: 0 0 14px rgba(255,82,119,0.10);
         }
         .xshop-node.maxed{
-          border-color: rgba(255,209,106,0.48);
-          box-shadow:
-            0 0 0 1px rgba(255,209,106,0.16) inset,
-            0 0 22px rgba(255,209,106,0.16),
-            0 18px 26px rgba(0,0,0,0.55);
+          border-color: rgba(76,255,154,0.35);
+          box-shadow: 0 0 18px rgba(76,255,154,0.10);
         }
 
-        .xshop-node.major:not(.locked):not(.maxed){
-          border-color: rgba(182,145,255,0.44);
-          box-shadow:
-            0 0 0 1px rgba(182,145,255,0.16) inset,
-            0 0 22px rgba(182,145,255,0.18),
-            0 18px 26px rgba(0,0,0,0.55);
+        .xshop-node.major{ border-color: rgba(182,145,255,0.30); }
+        .xshop-node.capstone{ border-color: rgba(255,209,106,0.32); }
+
+        .xshop-node.space{
+          border-color: rgba(0,242,255,0.32);
         }
-        .xshop-node.capstone:not(.locked){
-          border-color: rgba(255,209,106,0.55);
+        .xshop-node.activeSpace{
+          box-shadow: 0 0 22px rgba(0,242,255,0.18);
+          border-color: rgba(0,242,255,0.55);
+          background: rgba(0,242,255,0.08);
         }
 
         .xshop-icon{
-          width:46px; height:46px;
-          border-radius:12px;
-          background: rgba(255,255,255,0.06);
-          display:flex;
-          align-items:center;
-          justify-content:center;
+          position:relative;
+          width: 34px;
+          height: 34px;
+          border-radius: 8px;
           overflow:hidden;
-          box-shadow: 0 0 0 1px rgba(255,255,255,0.10) inset;
+          border: 1px solid rgba(255,255,255,0.14);
+          background: rgba(255,255,255,0.06);
+          box-shadow: 0 0 18px rgba(0,0,0,0.25);
         }
         .xshop-icon img{
-          width:100%; height:100%;
+          width:100%;
+          height:100%;
           object-fit:cover;
-          filter: saturate(1.05) contrast(1.05);
+          display:block;
+        }
+        .xshop-badge{
+          position:absolute;
+          right: -6px;
+          top: -6px;
+          padding: 2px 6px;
+          border-radius: 999px;
+          font-size: 9px;
+          font-weight: 900;
+          letter-spacing: 1px;
+          color: rgba(230,255,255,0.95);
+          border: 1px solid rgba(0,242,255,0.40);
+          background: rgba(0,0,0,0.55);
+          box-shadow: 0 0 14px rgba(0,242,255,0.12);
         }
 
+        .xshop-name{
+          margin-top: 5px;
+          font-size: 10.5px;
+          font-weight: 900;
+          letter-spacing: 0.4px;
+          line-height: 1.15;
+          text-transform: uppercase;
+          min-height: 23px;
+        }
+        .xshop-stat{
+          font-size: 9px;
+          line-height: 1.15;
+          color: rgba(190,208,240,0.82);
+          height: 22px;
+          overflow: hidden;
+          margin-top: 2px;
+          letter-spacing: 0;
+        }
         .xshop-rank{
-          position:absolute;
-          bottom:6px; left:8px;
-          font-size:11px;
-          color: rgba(216,230,255,0.9);
-          background: rgba(0,0,0,0.38);
-          border:1px solid rgba(255,255,255,0.10);
-          border-radius:999px;
-          padding:2px 8px;
+          display:flex;
+          align-items:baseline;
+          justify-content:space-between;
+          gap: 8px;
+          margin-top: 4px;
+          font-size: 10px;
+          opacity: 0.9;
         }
-        .xshop-cost{
-          position:absolute;
-          top:6px; right:7px;
-          font-size:11px;
-          font-weight:900;
-          border-radius:999px;
-          padding:2px 8px;
-          border:1px solid rgba(255,255,255,0.10);
-          background: rgba(0,0,0,0.35);
-          box-shadow: 0 0 0 1px rgba(0,0,0,0.35) inset;
-        }
-
-        .xshop-node.available .xshop-cost{
-          background: rgba(76,255,154,0.14);
-          border-color: rgba(76,255,154,0.28);
-          color: var(--good);
-          box-shadow: 0 0 16px rgba(76,255,154,0.20);
-        }
-        .xshop-node.unaffordable .xshop-cost{
-          background: rgba(255,82,119,0.12);
-          border-color: rgba(255,82,119,0.26);
-          color: var(--bad);
-        }
-        .xshop-node.locked .xshop-cost{
-          background: rgba(108,120,153,0.14);
-          border-color: rgba(108,120,153,0.20);
-          color: rgba(108,120,153,1);
-        }
-        .xshop-node.major .xshop-cost{
-          background: rgba(182,145,255,0.14);
-          border-color: rgba(182,145,255,0.28);
-          color: #d6c1ff;
-        }
-        .xshop-node.capstone .xshop-cost{
-          background: rgba(255,209,106,0.14);
-          border-color: rgba(255,209,106,0.30);
-          color: #ffe2a3;
-        }
-
-        .xshop-tip{
-          position:fixed;
-          z-index:100000;
-          min-width:260px;
-          max-width:340px;
-          padding:10px 12px;
-          border-radius:12px;
-          border:1px solid rgba(120,170,255,0.22);
-          background:
-            radial-gradient(420px 220px at 30% 0%, rgba(0,242,255,0.12), transparent 70%),
-            linear-gradient(180deg, rgba(14,18,38,0.96), rgba(6,8,18,0.96));
-          box-shadow: 0 20px 40px rgba(0,0,0,0.55);
-          pointer-events:none;
-        }
-        .xshop-tip h4{
-          margin:0;
-          font-size:12px;
-          letter-spacing:0.12em;
-          text-transform:uppercase;
-        }
-        .xshop-tip .meta{
-          font-size:11px;
-          color: var(--muted);
-          margin-top:4px;
-        }
-        .xshop-tip pre{
-          margin:8px 0 0 0;
-          white-space:pre-wrap;
-          font-family:inherit;
-          font-size:12px;
-          line-height:1.3;
-          color: rgba(216,230,255,0.92);
+        .xshop-rank em{
+          font-style: normal;
+          font-weight: 900;
+          letter-spacing: 1px;
+          opacity: 0.9;
         }
       `}</style>
 
-      <div className="xshop-top">
+      <div className="xshopTop">
         <div>
-          <div className="xshop-title">{title}</div>
-          <div className="xshop-sub">
-            Spend 5 points to unlock deeper rows • Pick 1 talent per row • Spacebar activates Thorns
+          <h2>{title}</h2>
+
+          <div className="xshopRules">
+            <b>Run Rules</b><br />
+            • You earn <b>💠 pills equal to the mission difficulty</b> when you clear a tile (example: difficulty 5 → +5 pills).<br />
+            • Spend pills to buy ranks. Talents apply automatically (you don’t “pick” them in the match lobby).<br />
+            • Refreshing the browser wipes the run (roguelite).<br />
+            • Unlocking is by arrows / prerequisites — no “row gates”.<br />
+            • <b>SPACE</b> uses your chosen SPACE ability: <b>Thorns</b> or <b>Decoy</b> (only one can be active).<br />
+            • Use <b>RESET TALENTS</b> to refund spent pills and respend.
           </div>
         </div>
 
-        <div className="xshop-pill" title="Doctrine Pills (1 per mission)">
-          <span className="xshop-pillIcon">💠</span>
-          <span className="xshop-pillNum">{credits}</span>
+        <div className="xshopActions">
+          <button className="xshopBtn" onClick={resetAll}>
+            RESET TALENTS
+          </button>
+          <div style={{ fontSize: 12, opacity: 0.75, textAlign: "right" }}>
+            Spent: <b>{pointsSpent}</b><br />
+            Abilities: <b>1 Thorns / 2 Decoy</b>
+          </div>
         </div>
       </div>
 
-      <div className="xshop-wrap">
-        <div className="xshop-tree">
-          <div style={{ fontWeight: 900, letterSpacing: "0.16em", textTransform: "uppercase", fontSize: 12, opacity: 0.9, margin: "2px 4px 10px" }}>
-            Military Doctrine // Left Tree
-          </div>
+      <div className="xshopTrees">
+        <Tree
+          treeId="mil"
+          title="COMBAT TALENTS"
+          subtitle="Defense, Thorns, armor, and close-range starter perks."
+          nodes={MIL_NODES}
+          lines={MIL_LINES}
+          credits={credits}
+          purchased={milPurchased}
+          setPurchased={setMilPurchased}
+          onSpend={onSpend}
+        />
 
-          <TalentGrid
-            width={width}
-            height={height}
-            nodes={NODES}
-            lines={LINES}
-            nodePos={nodePos}
-            purchased={purchased}
-            pointsSpent={pointsSpent}
-            nodeState={nodeState}
-            lockReason={lockReason}
-            buy={buy}
-          />
-        </div>
-
-        <div className="xshop-help">
-          <h3>Run Rules</h3>
-          <p>
-            You earn <span className="xshop-kbd">💠 1</span> pill per cleared mission. Spend pills to buy ranks.
-            Refreshing the browser wipes the run (roguelite).
-          </p>
-          <p>
-            Tier gates: Row 2 needs <span className="xshop-kbd">5</span> points spent, Row 3 needs{" "}
-            <span className="xshop-kbd">10</span>, Row 4 needs <span className="xshop-kbd">15</span>, Row 5 needs{" "}
-            <span className="xshop-kbd">20</span>.
-          </p>
-          <p>
-            <span className="xshop-kbd">SPACE</span> activates <b>Thorns</b> in combat (invulnerable ramming window).
-          </p>
-        </div>
+        <Tree
+          treeId="res"
+          title="RESEARCH VESSEL"
+          subtitle="Sidearms, holograms, cleanup tools, and utility."
+          nodes={RES_NODES}
+          lines={RES_LINES}
+          credits={credits}
+          purchased={resPurchased}
+          setPurchased={setResPurchased}
+          onSpend={onSpend}
+        />
       </div>
-    </div>
-  );
-}
-
-function TalentGrid({
-  width,
-  height,
-  nodes,
-  lines,
-  nodePos,
-  purchased,
-  nodeState,
-  lockReason,
-  buy,
-}) {
-  const [tip, setTip] = useState(null);
-  const lastTipRef = useRef(null);
-
-  function onEnter(e, node) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = clamp(rect.right + 10, 10, window.innerWidth - 360);
-    const y = clamp(rect.top - 10, 10, window.innerHeight - 220);
-    const next = { node, x, y };
-    lastTipRef.current = next;
-    setTip(next);
-  }
-
-  function onLeave() {
-    setTip(null);
-  }
-
-  useEffect(() => {
-    if (!tip) return;
-    const onMove = () => {
-      // keep tooltip in-bounds even if the user scrolls the panel
-      const t = lastTipRef.current;
-      if (!t) return;
-      setTip((prev) => (prev ? { ...prev, x: clamp(prev.x, 10, window.innerWidth - 360), y: clamp(prev.y, 10, window.innerHeight - 220) } : prev));
-    };
-    window.addEventListener('resize', onMove);
-    window.addEventListener('scroll', onMove, true);
-    return () => {
-      window.removeEventListener('resize', onMove);
-      window.removeEventListener('scroll', onMove, true);
-    };
-  }, [tip]);
-
-  return (
-    <div className="xshop-grid" style={{ width, height }}>
-      {/* lines */}
-      {lines.map(([a, b]) => {
-        const na = nodes.find((n) => n.id === a);
-        const nb = nodes.find((n) => n.id === b);
-        if (!na || !nb) return null;
-        const pa = nodePos(na);
-        const pb = nodePos(nb);
-        const dx = pb.x - pa.x;
-        const dy = pb.y - pa.y;
-        const len = Math.hypot(dx, dy);
-        const ang = (Math.atan2(dy, dx) * 180) / Math.PI;
-        return (
-          <div
-            key={`${a}-${b}`}
-            className="xshop-line"
-            style={{
-              left: pa.x,
-              top: pa.y,
-              width: len,
-              transform: `rotate(${ang}deg)`,
-            }}
-          />
-        );
-      })}
-
-      {/* nodes */}
-      {nodes.map((node) => {
-        const pos = nodePos(node);
-        const r = Number(purchased?.[node.id] || 0);
-        const st = nodeState(node);
-
-        return (
-          <div
-            key={node.id}
-            className={[
-              "xshop-node",
-              st,
-              node.rarity === "major" ? "major" : "",
-              node.rarity === "capstone" ? "capstone" : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            style={{ left: pos.x, top: pos.y }}
-            role="button"
-            tabIndex={0}
-            onClick={() => buy(node)}
-            onMouseEnter={(e) => onEnter(e, node)}
-            onMouseLeave={onLeave}
-            title= {undefined}
-          >
-            <div className="xshop-icon">
-              <img src={iconUrl(node.icon)} alt="" />
-            </div>
-
-            <div className="xshop-cost">💠 1</div>
-            <div className="xshop-rank">
-              {r}/{node.maxRank}
-            </div>
-          </div>
-        );
-      })}
-
-      {tip &&
-        createPortal(
-          <div className="xshop-tip" style={{ left: tip.x, top: tip.y }}>
-            <h4>{tip.node.name}</h4>
-            <div className="meta">
-              {tip.node.type.toUpperCase()} • Rank {Number(purchased?.[tip.node.id] || 0)}/{tip.node.maxRank}
-              {lockReason(tip.node) ? ` • ${lockReason(tip.node)}` : ""}
-            </div>
-            <pre>{tip.node.desc}</pre>
-          </div>,
-          document.body
-        )}
     </div>
   );
 }
