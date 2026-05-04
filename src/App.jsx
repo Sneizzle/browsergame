@@ -43,14 +43,26 @@ import hero26 from "./assets/hero/hero26.png";
 
 const API_URL = "https://69787eb6cd4fe130e3d91a96.mockapi.io/sessions";
 const LEADERBOARD_URL = "https://69787eb6cd4fe130e3d91a96.mockapi.io/Leaderboard";
-const BASE_MATCH_MS = 65000;
+const BASE_MATCH_MS = 240000;
 
-const rollMatchLengthMs = () => Math.round(BASE_MATCH_MS * (0.50 + Math.random() * 0.35));
+const rollMatchLengthMs = (difficulty = 1) => {
+  const d = Math.max(1, Math.min(5, Math.round(difficulty || 1)));
+  const ranges = {
+    1: [70000, 95000],
+    2: [105000, 145000],
+    3: [180000, 250000],
+    4: [420000, 560000],
+    5: [720000, 920000],
+  };
+  const [min, max] = ranges[d] || ranges[3];
+  return Math.round(min + Math.random() * (max - min));
+};
 const matchLengthLabel = (ms = BASE_MATCH_MS) => {
-  const s = Math.round(ms / 1000);
-  if (s <= 40) return `SHORT - ${s}s`;
-  if (s <= 50) return `STANDARD - ${s}s`;
-  return `LONG - ${s}s`;
+  if (ms <= 100000) return "SHORT";
+  if (ms <= 160000) return "MEDIUM";
+  if (ms <= 300000) return "LONG";
+  if (ms <= 600000) return "EXTRA LONG";
+  return "INSANE";
 };
 
 const PLANETS = [
@@ -133,6 +145,7 @@ export default function App() {
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [leaderboardDeaths, setLeaderboardDeaths] = useState(0);
   const [leaderboardTilesCleared, setLeaderboardTilesCleared] = useState(0);
+  const [leaderboardKills, setLeaderboardKills] = useState(0);
   const [leaderboardRecordId, setLeaderboardRecordId] = useState(null);
   const [combatCtx, setCombatCtx] = useState(null);
 
@@ -271,6 +284,7 @@ export default function App() {
         points: Math.max(...group.map((r) => Number(r.points || 0))),
         tilesCleared: Math.max(...group.map((r) => Number(r.tilesCleared || r.tiles || 0))),
         deaths: Math.max(...group.map((r) => Number(r.deaths || 0))),
+        kills: Math.max(...group.map((r) => Number(r.kills || 0))),
       };
       merged.push(combined);
       if (dupes.length && primary?.id) {
@@ -292,6 +306,7 @@ export default function App() {
     const score = Math.max(0, Math.round(snapshot.points ?? leaderboardPoints ?? 0));
     const tilesCleared = Math.max(0, Math.round(snapshot.tilesCleared ?? leaderboardTilesCleared ?? 0));
     const deaths = Math.max(0, Math.round(snapshot.deaths ?? leaderboardDeaths ?? 0));
+    const kills = Math.max(0, Math.round(snapshot.kills ?? leaderboardKills ?? 0));
     if (!name) return;
     try {
       const res = await fetch(LEADERBOARD_URL);
@@ -300,10 +315,15 @@ export default function App() {
       const existing = mergedRows.find((r) => normalizeName(r.name) === normalizeName(name)) || null;
       const payload = {
         name,
+        characterName: snapshot.characterName || selectedHero?.name || existing?.characterName || "",
+        characterPortrait: snapshot.characterPortrait || selectedHero?.portrait || existing?.characterPortrait || "",
         points: Math.max(score, Number(existing?.points || 0)),
         tilesCleared: Math.max(tilesCleared, Number(existing?.tilesCleared || existing?.tiles || 0)),
         deaths: Math.max(deaths, Number(existing?.deaths || 0)),
+        kills: Math.max(kills, Number(existing?.kills || 0)),
         lastRunPoints: score,
+        lastRunKills: Math.max(0, Math.round(snapshot.lastRunKills ?? 0)),
+        lastRunSummary: snapshot.lastRunSummary || existing?.lastRunSummary || null,
         updatedAt: new Date().toISOString()
       };
       if (existing?.id) {
@@ -362,7 +382,7 @@ export default function App() {
   };
 
   const startWithoutTutorial = () => {
-    submitLeaderboard({ points: leaderboardPoints, tilesCleared: leaderboardTilesCleared, deaths: leaderboardDeaths });
+    submitLeaderboard({ points: leaderboardPoints, tilesCleared: leaderboardTilesCleared, deaths: leaderboardDeaths, kills: leaderboardKills });
     setTutorialShownThisSession(true);
     setTutorialVisible(false);
     setTutorialStep(0);
@@ -372,7 +392,7 @@ export default function App() {
   };
 
   const startTutorial = () => {
-    submitLeaderboard({ points: leaderboardPoints, tilesCleared: leaderboardTilesCleared, deaths: leaderboardDeaths });
+    submitLeaderboard({ points: leaderboardPoints, tilesCleared: leaderboardTilesCleared, deaths: leaderboardDeaths, kills: leaderboardKills });
     setShopUnlocked(false);
     setTalentPills(0);
     setTutorialShownThisSession(false);
@@ -384,7 +404,7 @@ export default function App() {
   // Roguelite hard reset after 5 deaths (auto-refresh)
   useEffect(() => {
     if (!gameOver) return;
-    submitLeaderboard({ points: leaderboardPoints, tilesCleared: leaderboardTilesCleared, deaths: leaderboardDeaths });
+    submitLeaderboard({ points: leaderboardPoints, tilesCleared: leaderboardTilesCleared, deaths: leaderboardDeaths, kills: leaderboardKills });
     const t = setTimeout(() => {
       window.location.reload();
     }, 1400);
@@ -400,6 +420,9 @@ export default function App() {
         points: Math.max(0, Math.round(leaderboardPoints || 0)),
         tilesCleared: Math.max(0, Math.round(leaderboardTilesCleared || 0)),
         deaths: Math.max(0, Math.round(leaderboardDeaths || 0)),
+        kills: Math.max(0, Math.round(leaderboardKills || 0)),
+        characterName: selectedHero?.name || "",
+        characterPortrait: selectedHero?.portrait || "",
         lastRunPoints: Math.max(0, Math.round(leaderboardPoints || 0)),
         updatedAt: new Date().toISOString(),
       });
@@ -413,7 +436,7 @@ export default function App() {
     };
     window.addEventListener("beforeunload", onUnload);
     return () => window.removeEventListener("beforeunload", onUnload);
-  }, [leaderboardPoints, leaderboardTilesCleared, leaderboardDeaths, leaderboardRecordId, playerName, selectedHero?.name]);
+  }, [leaderboardPoints, leaderboardTilesCleared, leaderboardDeaths, leaderboardKills, leaderboardRecordId, playerName, selectedHero?.name]);
 
   const hexGrid = focusPlanet
     ? (() => {
@@ -462,7 +485,8 @@ export default function App() {
       hexId: selectedHex,
       reward: selectedHexInfo?.reward || 0,
       difficulty: selectedHexInfo?.difficulty || 1,
-      runTimeMs: selectedHexInfo?.runTimeMs || rollMatchLengthMs(),
+      runTimeMs: selectedHexInfo?.runTimeMs || rollMatchLengthMs(selectedHexInfo?.difficulty || 1),
+      requiresExtraction: !!selectedHexInfo?.requiresExtraction,
     });
 
     try {
@@ -476,7 +500,9 @@ export default function App() {
     setView("deploy_video");
   };
 
-  const handleVictory = () => {
+  const handleVictory = (summary = {}) => {
+    const runKills = Math.max(0, Math.round(summary.kills || 0));
+    if (runKills > 0) setLeaderboardKills((k) => k + runKills);
     if (combatCtx?.planetId && combatCtx?.hexId) {
       setClearedHexes((prev) => {
         const current = new Set(prev[combatCtx.planetId] || []);
@@ -500,7 +526,16 @@ export default function App() {
             const next = pts + earnedScore;
             const nextTiles = leaderboardTilesCleared + 1;
             setLeaderboardTilesCleared(nextTiles);
-            submitLeaderboard({ points: next, tilesCleared: nextTiles, deaths: leaderboardDeaths });
+            submitLeaderboard({
+              points: next,
+              tilesCleared: nextTiles,
+              deaths: leaderboardDeaths,
+              kills: leaderboardKills + runKills,
+              characterName: selectedHero?.name || "",
+              characterPortrait: selectedHero?.portrait || "",
+              lastRunKills: runKills,
+              lastRunSummary: summary,
+            });
             return next;
           });
 
@@ -834,30 +869,82 @@ export default function App() {
               onClick={(e) => e.stopPropagation()}
               style={{
                 position: "fixed",
-                right: 24,
-                top: 92,
-                zIndex: 9300,
-                width: 360,
-                maxHeight: "70vh",
-                overflow: "auto",
-                padding: 16,
-                border: "1px solid rgba(0,242,255,0.35)",
-                background: "rgba(0,0,0,0.78)",
-                boxShadow: "0 0 28px rgba(0,242,255,0.12)",
+                inset: 0,
+                zIndex: 9400,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 24,
+                background: "rgba(0,0,0,0.64)",
+                backdropFilter: "blur(5px)",
               }}
             >
-              <h3 style={{ margin: "0 0 12px", letterSpacing: 3 }}>LEADERBOARD</h3>
-              {leaderboardLoading && <div style={{ opacity: 0.75 }}>LOADING...</div>}
-              {!leaderboardLoading && leaderboardRows.length === 0 && <div style={{ opacity: 0.75 }}>NO SCORES YET</div>}
-              {!leaderboardLoading && leaderboardRows.map((row, i) => (
-                <div key={row.id || `${row.name}-${i}`} style={{ display: "grid", gridTemplateColumns: "32px 1fr 54px 54px 62px", gap: 8, padding: "8px 0", borderTop: "1px solid rgba(255,255,255,0.10)", alignItems: "center", fontSize: 12 }}>
-                  <b>{i + 1}</b>
-                  <span>{row.name || "UNKNOWN"}</span>
-                  <span style={{ opacity: 0.78, textAlign: "right" }}>D {Number(row.deaths || 0)}</span>
-                  <span style={{ opacity: 0.78, textAlign: "right" }}>T {Number(row.tilesCleared || row.tiles || 0)}</span>
-                  <strong style={{ color: "#ffe16b", textAlign: "right" }}>{Number(row.points || 0)}</strong>
+              <div
+                style={{
+                  width: "min(980px, calc(100vw - 48px))",
+                  maxHeight: "82vh",
+                  overflow: "auto",
+                  border: "1px solid rgba(0,242,255,0.42)",
+                  background: "linear-gradient(180deg, rgba(5,12,22,0.96), rgba(0,0,0,0.94))",
+                  boxShadow: "0 0 42px rgba(0,242,255,0.20), inset 0 0 28px rgba(0,242,255,0.05)",
+                  padding: 18,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 14 }}>
+                  <div>
+                    <h2 style={{ margin: 0, letterSpacing: 5, fontSize: 24 }}>LEADERBOARD</h2>
+                    <div style={{ opacity: 0.72, fontSize: 12, letterSpacing: 2, marginTop: 4 }}>RUNS ENGRAVED FOREVER</div>
+                  </div>
+                  <button
+                    className="scifi-btn"
+                    onClick={() => setLeaderboardOpen(false)}
+                    style={{ minWidth: 48, padding: "10px 14px", borderColor: "rgba(255,255,255,0.28)" }}
+                  >
+                    X
+                  </button>
                 </div>
-              ))}
+
+                <div style={{ display: "grid", gridTemplateColumns: "58px minmax(240px, 1fr) 120px 120px 120px 120px", gap: 12, padding: "10px 12px", color: "rgba(190,235,255,0.82)", fontSize: 11, letterSpacing: 2, borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
+                  <b>RANK</b><b>PLAYER</b><b style={{ textAlign: "right" }}>POINTS</b><b style={{ textAlign: "right" }}>TILES</b><b style={{ textAlign: "right" }}>DEATHS</b><b style={{ textAlign: "right" }}>KILLS</b>
+                </div>
+
+                {leaderboardLoading && <div style={{ opacity: 0.75, padding: 18 }}>LOADING...</div>}
+                {!leaderboardLoading && leaderboardRows.length === 0 && <div style={{ opacity: 0.75, padding: 18 }}>NO SCORES YET</div>}
+                {!leaderboardLoading && leaderboardRows.map((row, i) => {
+                  const topColors = ["rgba(255,218,107,0.20)", "rgba(210,230,255,0.16)", "rgba(255,154,82,0.15)"];
+                  const rankColor = i === 0 ? "#ffe16b" : i === 1 ? "#d9ecff" : i === 2 ? "#ffb36b" : "rgba(255,255,255,0.72)";
+                  return (
+                    <div
+                      key={row.id || `${row.name}-${i}`}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "58px minmax(240px, 1fr) 120px 120px 120px 120px",
+                        gap: 12,
+                        padding: "12px",
+                        borderBottom: "1px solid rgba(255,255,255,0.08)",
+                        alignItems: "center",
+                        background: topColors[i] || "rgba(255,255,255,0.025)",
+                        boxShadow: i < 3 ? `inset 3px 0 0 ${rankColor}` : undefined,
+                      }}
+                    >
+                      <b style={{ color: rankColor, fontSize: 18 }}>{i + 1}</b>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                        <div style={{ width: 46, height: 46, borderRadius: 8, overflow: "hidden", border: "1px solid rgba(0,242,255,0.35)", background: "rgba(0,242,255,0.08)", flex: "0 0 auto" }}>
+                          {row.characterPortrait ? <img src={row.characterPortrait} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : null}
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 900, letterSpacing: 1.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.name || "UNKNOWN"}</div>
+                          <div style={{ opacity: 0.72, fontSize: 12, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.characterName || "Unlisted Operator"}</div>
+                        </div>
+                      </div>
+                      <strong style={{ color: "#ffe16b", textAlign: "right", fontSize: 18 }}>{Number(row.points || 0)}</strong>
+                      <span style={{ opacity: 0.88, textAlign: "right" }}>{Number(row.tilesCleared || row.tiles || 0)} cleared</span>
+                      <span style={{ opacity: 0.88, textAlign: "right" }}>{Number(row.deaths || 0)} deaths</span>
+                      <span style={{ opacity: 0.88, textAlign: "right" }}>{Number(row.kills || 0).toLocaleString()} kills</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -1097,11 +1184,13 @@ export default function App() {
                         // ✅ Tutorial step 2: ONLY allow selecting the forced tile
                         if (tutorialVisible && tutorialStep === 2 && h.id !== TUTORIAL_TILE_ID) return;
 
+                        const difficulty = h.difficulty + (p.difficulty - 1);
                         setSelectedHex(h.id);
                         setSelectedHexInfo({
-                          difficulty: h.difficulty + (p.difficulty - 1),
-                          reward: (h.difficulty + (p.difficulty - 1)) * 20,
-                          runTimeMs: rollMatchLengthMs(),
+                          difficulty,
+                          reward: difficulty * 20,
+                          runTimeMs: rollMatchLengthMs(difficulty),
+                          requiresExtraction: Math.random() < 0.30,
                         });
 
                         // ✅ DO NOT end tutorial here — ends on DEPLOY
@@ -1144,30 +1233,17 @@ export default function App() {
                 <strong>{selectedHexInfo.difficulty}</strong>
               </div>
 
-              {(() => {
-                const reward = selectedHexInfo.reward || 0;
-                let rewardColor = "rgba(255,255,255,0.65)";
-                if (reward >= 200) rewardColor = "#ff007a";
-                else if (reward >= 140) rewardColor = "#ff9d00";
-                else if (reward >= 80) rewardColor = "#00f2ff";
-
-                return (
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-                    <span style={{ opacity: 0.8 }}>Rewards</span>
-                    <strong style={{ color: rewardColor, letterSpacing: 1 }}>+{reward}</strong>
-                  </div>
-                );
-              })()}
-
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
-                <span style={{ opacity: 0.8 }}>HP</span>
-                <strong>{Math.max(0, lives)}</strong>
-              </div>
-
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
-                <span style={{ opacity: 0.8 }}>Match Length</span>
+                <span style={{ opacity: 0.8 }}>Operation</span>
                 <strong>{matchLengthLabel(selectedHexInfo.runTimeMs)}</strong>
               </div>
+
+              {selectedHexInfo.requiresExtraction && (
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
+                  <span style={{ opacity: 0.8 }}>Objective</span>
+                  <strong>EXTRACT</strong>
+                </div>
+              )}
 
               <div style={{ height: 1, background: "rgba(0,242,255,0.18)", margin: "14px 0" }} />
 
@@ -1230,14 +1306,27 @@ export default function App() {
 {view === "combat" && (
   <Combat
     crew={crew}
-    tileDifficulty={selectedHexInfo?.difficulty || 1}
+    tileDifficulty={combatCtx?.difficulty || selectedHexInfo?.difficulty || 1}
     selectedHero={selectedHero}   // ✅ add this
     runBuild={runBuild}
     runTimeMs={combatCtx?.runTimeMs}
-    onExit={() => {
+    requiresExtraction={!!combatCtx?.requiresExtraction}
+    playerName={cleanPlayerName()}
+    onExit={(summary = {}) => {
+      const runKills = Math.max(0, Math.round(summary.kills || 0));
+      if (runKills > 0) setLeaderboardKills((k) => k + runKills);
       setLeaderboardDeaths((d) => {
         const nextDeaths = d + 1;
-        submitLeaderboard({ points: leaderboardPoints, tilesCleared: leaderboardTilesCleared, deaths: nextDeaths });
+        submitLeaderboard({
+          points: leaderboardPoints,
+          tilesCleared: leaderboardTilesCleared,
+          deaths: nextDeaths,
+          kills: leaderboardKills + runKills,
+          characterName: selectedHero?.name || "",
+          characterPortrait: selectedHero?.portrait || "",
+          lastRunKills: runKills,
+          lastRunSummary: summary,
+        });
         return nextDeaths;
       });
       setLives((l) => l - 1);
