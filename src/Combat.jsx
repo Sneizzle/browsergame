@@ -36,7 +36,7 @@ const SPRITES = {
 };
 
 const ARENA_SIZE = 2800; // +40%
-const BOSS_TIME = 65000; // shorter maps: faster boss timing, more punch per run
+const BOSS_TIME = 120000;
 
 // -------------------- DIFFICULTY TUNING (BASE) --------------------
 const TRASH_HP_MULT = 0.95;           // trash HP slightly up (less one-shot mid/late)
@@ -72,6 +72,23 @@ const RELIEF_SPAWN_INTERVAL_MULT = 1.00; // keep pressure; avoid dead-air breaks
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * clamp(t, 0, 1);
 const norm01 = (x, a, b) => (b <= a ? 0 : clamp((x - a) / (b - a), 0, 1));
+
+const tileDifficultyRank = (difficulty) => clamp(Math.round(Number(difficulty) || 1), 1, 5);
+const difficultyHpMult = (difficulty) => {
+  const d = tileDifficultyRank(difficulty);
+  return [0, 0.62, 0.95, 1.45, 2.18, 3.05][d] || 1;
+};
+const difficultyPressureMult = (difficulty) => {
+  const d = tileDifficultyRank(difficulty);
+  return [0, 0.62, 0.92, 1.30, 1.72, 2.25][d] || 1;
+};
+const bossMilestonesForDifficulty = (difficulty) => {
+  const d = tileDifficultyRank(difficulty);
+  if (d >= 5) return [0.20, 0.40, 0.60, 0.80, 1.00];
+  if (d >= 4) return [0.70, 1.00];
+  if (d >= 3) return [0.50, 1.00];
+  return [1.00];
+};
 
 const dist2 = (a, b) => {
   const dx = a.x - b.x;
@@ -150,6 +167,9 @@ const isEliteType = (type) => {
   return (
     t === 'boss' ||
     t === 'boss_split' ||
+    t === 'abomination' ||
+    t === 'merge_brute' ||
+    t === 'lane_elite' ||
     t === 'brute' ||
     t === 'juggernaut' ||
     t === 'wall' ||
@@ -165,6 +185,9 @@ const isControlImmune = (type) => {
     t === 'juggernaut' ||
     t === 'wall' ||
     t === 'turret' ||
+    t === 'abomination' ||
+    t === 'merge_brute' ||
+    t === 'lane_elite' ||
     t === 'splitter_boss' ||
     t.startsWith('mini_')
   );
@@ -183,12 +206,12 @@ const WEAPONS = [
     targeting: 'closest',
     color: '#e9f7ff',
     levels: [
-      { title: 'Rifle I', description: 'Precision shot with guaranteed ricochet.', stats: { cooldown: 520, bulletSpeed: 15.5, damage: 11, pellets: 1, spread: 0.06, width: 12, height: 4, pierce: 2, ricochets: 1 } },
-      { title: 'Rifle II', description: 'Tighter cadence.', stats: { cooldown: 475, damage: 13 } },
+      { title: 'Rifle I', description: 'Clean precision shot.', stats: { cooldown: 540, bulletSpeed: 15.5, damage: 11, pellets: 1, spread: 0.04, width: 12, height: 4, pierce: 1 } },
+      { title: 'Rifle II', description: 'Tighter cadence and a bit more punch.', stats: { cooldown: 480, damage: 14, pierce: 1 } },
       // Rank 3+: crowd control + mild splash to help late swarms
       { title: 'Rifle III', description: 'Two-round burst + suppression slow.', stats: { pellets: 2, spread: 0.10, damage: 14, pierce: 3, ricochets: 1, slow: 0.18, slowDuration: 820 } },
       { title: 'Rifle IV', description: 'Smart bounces + micro-stun shock.', stats: { ricochets: 3, damage: 16, pierce: 4, microFreeze: 180, chain: 1, explodeRadius: 28, explodeMult: 0.22 } },
-      { title: 'Rifle V', description: 'Triple fan burst + shrapnel pop.', stats: { pellets: 3, spread: 0.18, damage: 16, pierce: 5, ricochets: 3, chain: 2, explodeRadius: 48, explodeMult: 0.36, slow: 0.20, slowDuration: 960 } }
+      { title: 'Rifle V', description: 'Triple fan burst + shrapnel pop.', stats: { pellets: 3, spread: 0.18, damage: 15, pierce: 5, ricochets: 2, chain: 2, explodeRadius: 42, explodeMult: 0.30, slow: 0.18, slowDuration: 900 } }
     ]
   },
   {
@@ -298,11 +321,11 @@ const WEAPONS = [
     targeting: 'closest',
     color: '#ff3f2f',
     levels: [
-      { title: 'Axes I', description: 'Left cleave, right cleave, then alternating bladestorm and axe toss. All hits bleed.', stats: { cooldown: 980, damage: 13, range: 168, bleed: 7200, stormMult: 0.72, stormRangeMult: 0.94, throwMult: 1.55, throwBounces: 7, throwCount: 1 } },
-      { title: 'Axes II', description: 'Harder cleaves, longer bleed, sharper finishers.', stats: { cooldown: 950, damage: 15, range: 178, bleed: 8600, stormMult: 0.76, stormRangeMult: 0.98, throwMult: 1.68, throwBounces: 8, throwCount: 1 } },
-      { title: 'Axes III', description: 'Blood axes: kills can burst while the rhythm keeps carving.', stats: { cooldown: 920, damage: 17, range: 188, bleed: 10200, stormMult: 0.80, stormRangeMult: 1.02, throwMult: 1.82, throwBounces: 9, throwCount: 2, deathBurstRadius: 60, deathBurstMult: 0.24 } },
-      { title: 'Axes IV', description: 'Execution rhythm: bigger cleaves and stronger blood bursts.', stats: { cooldown: 890, damage: 19, range: 198, bleed: 11800, stormMult: 0.84, stormRangeMult: 1.06, throwMult: 1.96, throwBounces: 10, throwCount: 2, deathBurstRadius: 76, deathBurstMult: 0.30 } },
-      { title: 'Axes V', description: 'Twinfall: brutal finishers with heavy bleed and death bursts.', stats: { cooldown: 860, damage: 22, range: 210, bleed: 14000, stormMult: 0.88, stormRangeMult: 1.10, throwMult: 2.12, throwBounces: 11, throwCount: 3, deathBurstRadius: 92, deathBurstMult: 0.36 } }
+      { title: 'Axes I', description: 'Left cleave, right cleave, then alternating bladestorm and axe toss. All hits bleed.', stats: { cooldown: 980, damage: 11, range: 168, bleed: 10500, stormMult: 0.58, stormRangeMult: 0.94, throwMult: 0.95, throwBounces: 7, throwCount: 1 } },
+      { title: 'Axes II', description: 'Harder cleaves, longer bleed, sharper finishers.', stats: { cooldown: 950, damage: 12, range: 178, bleed: 12800, stormMult: 0.60, stormRangeMult: 0.98, throwMult: 1.00, throwBounces: 8, throwCount: 2 } },
+      { title: 'Axes III', description: 'Blood axes: kills can burst while the rhythm keeps carving.', stats: { cooldown: 920, damage: 13, range: 188, bleed: 15400, stormMult: 0.62, stormRangeMult: 1.02, throwMult: 1.05, throwBounces: 9, throwCount: 3, deathBurstRadius: 60, deathBurstMult: 0.18 } },
+      { title: 'Axes IV', description: 'Execution rhythm: bigger cleaves and stronger blood bursts.', stats: { cooldown: 890, damage: 14, range: 198, bleed: 18400, stormMult: 0.64, stormRangeMult: 1.06, throwMult: 1.10, throwBounces: 10, throwCount: 4, deathBurstRadius: 76, deathBurstMult: 0.22 } },
+      { title: 'Axes V', description: 'Twinfall: brutal finishers with heavy bleed and death bursts.', stats: { cooldown: 860, damage: 15, range: 210, bleed: 22000, stormMult: 0.66, stormRangeMult: 1.10, throwMult: 1.15, throwBounces: 11, throwCount: 5, deathBurstRadius: 92, deathBurstMult: 0.26 } }
     ]
   },
 
@@ -312,12 +335,12 @@ const WEAPONS = [
     targeting: 'closest',
     color: '#ffe58f',
     levels: [
-      { title: 'SMG I', description: 'Close target bursts.', stats: { cooldown: 120, bulletSpeed: 17, damage: 7, pellets: 1, spread: 0.18, width: 10, height: 4, pierce: 0, slow: 0.08 } },
-      { title: 'SMG II', description: 'Improved control.', stats: { cooldown: 112, damage: 8, spread: 0.16, slow: 0.10 } },
+      { title: 'SMG I', description: 'Close target bursts.', stats: { cooldown: 126, bulletSpeed: 17, damage: 7, pellets: 1, spread: 0.18, width: 10, height: 4, pierce: 0 } },
+      { title: 'SMG II', description: 'Improved control and steadier spray.', stats: { cooldown: 116, damage: 8, spread: 0.14 } },
       // Rank 3+: more control, chain and burn at higher ranks
       { title: 'SMG III', description: 'Double burst + ricochet + stronger slow.', stats: { pellets: 2, spread: 0.22, damage: 7, ricochets: 1, slow: 0.14, slowDuration: 820 } },
       { title: 'SMG IV', description: 'Rattle fire + electrified rounds (micro-stun).', stats: { cooldown: 100, damage: 7, ricochets: 2, slow: 0.16, slowDuration: 920, microFreeze: 90, chain: 1 } },
-      { title: 'SMG V', description: 'Wide triple spray + chain zap + ignite.', stats: { pellets: 3, spread: 0.34, damage: 6, ricochets: 2, chain: 2, slow: 0.16, slowDuration: 980, burn: 1600 } }
+      { title: 'SMG V', description: 'Wide triple spray + chain zap + light tracer bleed.', stats: { pellets: 3, spread: 0.34, damage: 5.5, ricochets: 2, chain: 2, slow: 0.14, slowDuration: 900, burn: 700 } }
     ]
   },
 
@@ -342,12 +365,12 @@ const WEAPONS = [
     targeting: 'closest',
     color: '#ff8ef6',
     levels: [
-      { title: 'Laser I', description: 'Fat beam that carves crowds.', stats: { cooldown: 980, beamMs: 160, beamWidth: 34, damage: 8, tickMs: 16, pierce: 999 } },
-      { title: 'Laser II', description: 'Hotter cut.', stats: { damage: 10, beamWidth: 38 } },
+      { title: 'Laser I', description: 'Fat beam that carves crowds.', stats: { cooldown: 1060, beamMs: 150, beamWidth: 32, damage: 6.5, tickMs: 18, pierce: 999, eliteDmgMult: 0.58 } },
+      { title: 'Laser II', description: 'Hotter cut.', stats: { damage: 8, beamWidth: 36, eliteDmgMult: 0.60 } },
       // Rank 3+: apply slow/burn to keep lanes open
-      { title: 'Laser III', description: 'Twin beam fan + scorch.', stats: { beams: 2, fan: 0.12, damage: 9, burn: 1300 } },
-      { title: 'Laser IV', description: 'Overcharged slice + drag slow.', stats: { cooldown: 860, damage: 12, beamWidth: 44, slow: 0.14, slowDuration: 620 } },
-      { title: 'Laser V', description: 'Tri-beam + chain burn + micro-stun ticks.', stats: { beams: 3, fan: 0.18, damage: 11, beamWidth: 48, burn: 1800, microFreeze: 70 } }
+      { title: 'Laser III', description: 'Twin beam fan + scorch.', stats: { beams: 2, fan: 0.12, damage: 8, burn: 1000, eliteDmgMult: 0.62 } },
+      { title: 'Laser IV', description: 'Overcharged slice + drag slow.', stats: { cooldown: 920, damage: 10, beamWidth: 42, slow: 0.14, slowDuration: 620, eliteDmgMult: 0.66 } },
+      { title: 'Laser V', description: 'Tri-beam + chain burn + micro-stun ticks.', stats: { beams: 3, fan: 0.18, damage: 9, beamWidth: 46, burn: 1350, microFreeze: 60, eliteDmgMult: 0.68 } }
     ]
   },
 
@@ -357,12 +380,12 @@ const WEAPONS = [
     targeting: 'closest',
     color: '#8fffef',
     levels: [
-      { title: 'Sniper I', description: 'Railcannon (tear-through + shockwave).', stats: { cooldown: 1450, bulletSpeed: 26, damage: 60, pellets: 1, spread: 0.01, width: 26, height: 6, pierce: 3, flashy: true, explodeRadius: 70, explodeMult: 0.65, rail: true, railWidth: 18, railMs: 90 } },
-      { title: 'Sniper II', description: 'More rupture.', stats: { damage: 80, pierce: 4, explodeRadius: 78, explodeMult: 0.70, railWidth: 20 } },
+      { title: 'Sniper I', description: 'Railcannon (tear-through + shockwave).', stats: { cooldown: 1600, bulletSpeed: 26, damage: 44, pellets: 1, spread: 0.01, width: 26, height: 6, pierce: 2, flashy: true, explodeRadius: 54, explodeMult: 0.42, rail: true, railWidth: 16, railMs: 90, eliteDmgMult: 0.62 } },
+      { title: 'Sniper II', description: 'More rupture.', stats: { damage: 58, pierce: 3, explodeRadius: 62, explodeMult: 0.48, railWidth: 18, eliteDmgMult: 0.66 } },
       // Rank 3-5: stronger utility & waveclear; slightly less oppressive vs elites
-      { title: 'Sniper III', description: 'Lance density + concussive slow.', stats: { damage: 92, pierce: 5, explodeRadius: 92, explodeMult: 0.78, railWidth: 22, slow: 0.18, slowDuration: 780, eliteDmgMult: 0.82 } },
-      { title: 'Sniper IV', description: 'Faster cycling + stun shockwave.', stats: { cooldown: 1250, damage: 104, explodeRadius: 104, explodeMult: 0.82, railWidth: 24, stun: 120, eliteDmgMult: 0.78 } },
-      { title: 'Sniper V', description: 'Annihilator (stun shock) + bigger rupture (but fair vs elites).', stats: { damage: 122, pierce: 6, explodeRadius: 120, explodeMult: 0.88, stun: 160, railWidth: 26, eliteDmgMult: 0.74 } }
+      { title: 'Sniper III', description: 'Lance density + concussive slow.', stats: { damage: 76, pierce: 4, explodeRadius: 78, explodeMult: 0.62, railWidth: 20, slow: 0.18, slowDuration: 780, eliteDmgMult: 0.70 } },
+      { title: 'Sniper IV', description: 'Faster cycling + stun shockwave.', stats: { cooldown: 1380, damage: 88, explodeRadius: 88, explodeMult: 0.66, railWidth: 22, stun: 110, eliteDmgMult: 0.70 } },
+      { title: 'Sniper V', description: 'Annihilator (stun shock) + bigger rupture (but fair vs elites).', stats: { damage: 102, pierce: 5, explodeRadius: 102, explodeMult: 0.70, stun: 145, railWidth: 24, eliteDmgMult: 0.70 } }
     ]
   },
 
@@ -372,11 +395,11 @@ const WEAPONS = [
     targeting: 'closest',
     color: '#a6b7ff',
     levels: [
-      { title: 'Tesla I', description: 'Chain lightning (closer, snappier zap).', stats: { cooldown: 650, damage: 18, chain: 3, arcRange: 175, stun: 170, chainFalloff: 0.90, zapSlow: 0.18, zapSlowDuration: 820 } },
-      { title: 'Tesla II', description: 'Bigger arcs + stronger stun.', stats: { damage: 20, chain: 4, arcRange: 220, stun: 220, zapSlow: 0.20, zapSlowDuration: 900 } },
-      { title: 'Tesla III', description: 'More jumps + fork.', stats: { chain: 6, damage: 21, fork: 1 } },
-      { title: 'Tesla IV', description: 'Forked discharge.', stats: { chain: 7, damage: 22, fork: 2 } },
-      { title: 'Tesla V', description: 'Overload storm.', stats: { cooldown: 560, damage: 24, chain: 8, fork: 3, storm: true } }
+      { title: 'Tesla I', description: 'Longer chain lightning that heavily slows zapped targets.', stats: { cooldown: 920, damage: 12, chain: 3, arcRange: 260, stun: 80, chainFalloff: 0.86, zapSlow: 0.55, zapSlowDuration: 1600 } },
+      { title: 'Tesla II', description: 'Bigger arcs, longer reach.', stats: { cooldown: 900, damage: 13, chain: 4, arcRange: 320, stun: 100, zapSlow: 0.62, zapSlowDuration: 1900 } },
+      { title: 'Tesla III', description: 'Deep temporal lock on chained targets.', stats: { chain: 5, damage: 14, arcRange: 380, zapSlow: 0.75, zapSlowDuration: 2400, fork: 1 } },
+      { title: 'Tesla IV', description: 'Wide forked discharge.', stats: { cooldown: 860, chain: 6, damage: 15, arcRange: 430, zapSlow: 0.84, zapSlowDuration: 2850, fork: 2 } },
+      { title: 'Tesla V', description: 'Overload storm: huge arcs, lower damage, brutal slow.', stats: { cooldown: 820, damage: 16, chain: 7, arcRange: 500, zapSlow: 0.90, zapSlowDuration: 3000, fork: 3, storm: true } }
     ]
   },
 
@@ -386,12 +409,11 @@ const WEAPONS = [
     targeting: 'closest',
     color: '#ff9a8a',
     levels: [
-      { title: 'Rocket I', description: 'Missile with big early boom.', stats: { cooldown: 1080, bulletSpeed: 4.6, accel: 0.22, damage: 26, pellets: 1, spread: 0.05, width: 18, height: 8, pierce: 0, explodeRadius: 120, explodeMult: 0.85, homing: false } },
-      { title: 'Rocket II', description: 'Bigger blast.', stats: { cooldown: 1120, damage: 30, explodeRadius: 140, explodeMult: 0.88 } },
-      // Rank 3+: more crowd clear / control
-      { title: 'Rocket III', description: 'Triple salvo (spreads targets) + flame wash.', stats: { cooldown: 1450, pellets: 3, spread: 0.26, damage: 25, explodeRadius: 260, explodeMult: 0.90, burn: 1400, slow: 0.12, slowDuration: 780 } },
-      { title: 'Rocket IV', description: 'Heat-seeking guidance + concussive stun.', stats: { cooldown: 1650, homing: true, damage: 28, explodeRadius: 300, explodeMult: 0.92, stun: 110 } },
-      { title: 'Rocket V', description: 'Swarm barrage (12 seekers) + napalm storm.', stats: { cooldown: 1950, pellets: 12, spread: 0.95, bulletSpeed: 4.2, accel: 0.26, homing: true, damage: 18, explodeRadius: 360, explodeMult: 0.90, burn: 2000, slow: 0.14, slowDuration: 860 } }
+      { title: 'Rocket I', description: 'One real missile, then reload.', stats: { cooldown: 2300, bulletSpeed: 6.2, accel: 0.10, damage: 42, pellets: 1, burstDelay: 150, burstArc: 0.08, spread: 0.03, width: 34, height: 14, pierce: 0, explodeRadius: 142, explodeMult: 0.86, homing: false, aoeBurn: false, rocketVisual: true } },
+      { title: 'Rocket II', description: 'Two-missile salvo in the same firing lane.', stats: { cooldown: 2700, pellets: 2, burstDelay: 185, burstArc: 0.13, damage: 38, explodeRadius: 152, explodeMult: 0.84, aoeBurn: false, rocketVisual: true } },
+      { title: 'Rocket III', description: 'Three-missile salvo with concussive slow.', stats: { cooldown: 3150, pellets: 3, burstDelay: 175, burstArc: 0.15, damage: 35, explodeRadius: 164, explodeMult: 0.82, burn: 800, aoeBurn: false, slow: 0.08, slowDuration: 560, rocketVisual: true } },
+      { title: 'Rocket IV', description: 'Quad salvo: pew, pew, pew, pew.', stats: { cooldown: 3600, pellets: 4, burstDelay: 165, burstArc: 0.17, damage: 33, explodeRadius: 176, explodeMult: 0.82, burn: 1000, aoeBurn: false, stun: 70, rocketVisual: true } },
+      { title: 'Rocket V', description: 'Eight-missile magazine. Big lane barrage, then long reload.', stats: { cooldown: 4700, pellets: 8, burstDelay: 125, burstArc: 0.20, bulletSpeed: 5.8, accel: 0.13, damage: 27, explodeRadius: 188, explodeMult: 0.78, burn: 1200, aoeBurn: false, slow: 0.10, slowDuration: 620, rocketVisual: true } }
     ]
   },
 
@@ -401,12 +423,12 @@ const WEAPONS = [
     targeting: 'closest',
     color: '#c08bff',
     levels: [
-      { title: 'Void I', description: 'Shoots out, stops, then grows into a pulling maelstrom.', stats: { cooldown: 860, bulletSpeed: 5.8, damage: 13, pellets: 1, spread: 0.04, width: 24, height: 24, pierce: 8, pull: 1.05, pullRadius: 185, vortexDps: 10, maxRange: 305, anchorOnMaxRange: true, lifeMs: 2400, singularity: false } },
-      { title: 'Void II', description: 'Bigger maelstrom + stronger pull.', stats: { pull: 1.25, pullRadius: 215, width: 30, height: 30, damage: 14, vortexDps: 12, maxRange: 330 } },
+      { title: 'Void I', description: 'Shoots out, stops, then grows into a pulling maelstrom.', stats: { cooldown: 900, bulletSpeed: 5.8, damage: 9, pellets: 1, spread: 0.04, width: 24, height: 24, pierce: 8, pull: 1.45, pullRadius: 210, vortexDps: 5, maxRange: 305, anchorOnMaxRange: true, lifeMs: 2550, singularity: false } },
+      { title: 'Void II', description: 'Bigger maelstrom + stronger pull.', stats: { pull: 1.75, pullRadius: 245, width: 30, height: 30, damage: 10, vortexDps: 6, maxRange: 330 } },
       // Rank 3+: more vacuum + slow field
-      { title: 'Void III', description: 'Anchored maelstrom lasts longer + slow field.', stats: { lifeMs: 2800, pull: 1.45, pullRadius: 245, vortexDps: 15, damage: 15, slow: 0.16, slowDuration: 650, maxRange: 350 } },
-      { title: 'Void IV', description: 'Vortex slows harder + secondary orb.', stats: { pierce: 14, slow: 0.24, slowDuration: 900, pull: 1.65, split: 2 } },
-      { title: 'Void V', description: 'Singularity maelstrom with implosion pop.', stats: { singularity: true, explodeRadius: 150, explodeMult: 1.0, pull: 1.95, pullRadius: 285, vortexDps: 20, maxRange: 385, lifeMs: 3000, stun: 120 } }
+      { title: 'Void III', description: 'Anchored maelstrom lasts longer + slow field.', stats: { lifeMs: 2900, pull: 2.05, pullRadius: 285, vortexDps: 8, damage: 11, slow: 0.18, slowDuration: 650, maxRange: 350 } },
+      { title: 'Void IV', description: 'Vortex slows harder + secondary orb.', stats: { pierce: 14, slow: 0.26, slowDuration: 900, pull: 2.35, split: 2 } },
+      { title: 'Void V', description: 'Singularity maelstrom with implosion pop.', stats: { singularity: true, explodeRadius: 130, explodeMult: 0.55, pull: 2.70, pullRadius: 330, vortexDps: 10, maxRange: 385, lifeMs: 3200, stun: 100 } }
     ]
   },
 
@@ -416,12 +438,11 @@ const WEAPONS = [
     targeting: 'closest',
     color: '#7ff2d7',
     levels: [
-      { title: 'Time I', description: 'Stutter-freeze + heavy slow.', stats: { cooldown: 500, bulletSpeed: 13.5, damage: 20, pellets: 1, spread: 0.05, width: 18, height: 8, pierce: 2, slow: 0.44, microFreeze: 220 } },
-      { title: 'Time II', description: 'More slow + pierce.', stats: { slow: 0.50, pierce: 3, damage: 22, ricochets: 1 } },
-      // Rank 3+: more split + small pop for waveclear
-      { title: 'Time III', description: 'Temporal split + ripple pop.', stats: { split: 2, pellets: 2, spread: 0.14, damage: 20, explodeRadius: 42, explodeMult: 0.30 } },
-      { title: 'Time IV', description: 'Stasis (stun on hit) + bigger ripple.', stats: { stun: 420, damage: 23, explodeRadius: 64, explodeMult: 0.42, chain: 1 } },
-      { title: 'Time V', description: 'Chrono fracture (freeze wave) + huge ripple.', stats: { stun: 560, damage: 26, explodeRadius: 104, explodeMult: 0.70, chain: 2 } }
+      { title: 'Time I', description: 'Temporal slug: leaves a stasis scar that slows enemies crossing it.', stats: { cooldown: 980, bulletSpeed: 10.5, damage: 10, pellets: 1, spread: 0.02, width: 28, height: 10, pierce: 2, slow: 0.55, slowDuration: 1400, microFreeze: 110, timeBolt: true, timeScar: true, scarRadius: 78, scarMs: 1600 } },
+      { title: 'Time II', description: 'Longer stasis scar and deeper slow.', stats: { cooldown: 920, damage: 12, pierce: 3, slow: 0.64, slowDuration: 1700, microFreeze: 140, scarRadius: 92, scarMs: 1850, timeBolt: true, timeScar: true } },
+      { title: 'Time III', description: 'Forked chrono slug with visible time-ripple fields.', stats: { pellets: 2, spread: 0.10, damage: 11, explodeRadius: 44, explodeMult: 0.16, stun: 130, scarRadius: 108, scarMs: 2100, timeBolt: true, timeScar: true } },
+      { title: 'Time IV', description: 'Temporal latch: bolts chain once and freeze longer.', stats: { cooldown: 860, chain: 1, slow: 0.72, slowDuration: 2200, microFreeze: 180, explodeRadius: 56, explodeMult: 0.20, scarRadius: 124, scarMs: 2450, timeBolt: true, timeScar: true } },
+      { title: 'Time V', description: 'Chrono fracture: triple slugs that paint stasis lanes.', stats: { pellets: 3, spread: 0.16, chain: 2, damage: 10, stun: 260, slow: 0.78, slowDuration: 2600, explodeRadius: 72, explodeMult: 0.24, scarRadius: 140, scarMs: 2800, timeBolt: true, timeScar: true } }
     ]
   }
 ];
@@ -436,11 +457,18 @@ const UPGRADES = [
 ];
 
 // -------------------- EVENTS / PICKUPS --------------------
+const EVENT_GHOST_WAVE = 'GHOST_WAVE';
+const EVENT_ABOMINATION = 'ABOMINATION';
+const EVENT_ELITE_WALL = 'ELITE_WALL';
+
 const EVENT_DEFS = {
   SWARM: { id: 'SWARM', duration: 16000 },
   WALL: { id: 'WALL', duration: 26000 },
   TURRET: { id: 'TURRET', duration: 17000 },
   SPLITTER: { id: 'SPLITTER', duration: 14500 },
+  GHOST_WAVE: { id: EVENT_GHOST_WAVE, duration: 10000 },
+  ABOMINATION: { id: EVENT_ABOMINATION, duration: 26000 },
+  ELITE_WALL: { id: EVENT_ELITE_WALL, duration: 11000 },
   RELIEF: { id: 'RELIEF', duration: 5200 }
 };
 
@@ -468,15 +496,34 @@ const spawnEnemyBase = (difficulty, t = 0) => {
   const y = side === 2 ? margin : side === 3 ? ARENA_SIZE - margin : edgeY;
 
   const baseScale = (0.9 + difficulty * 0.004);
-  const trashHpMult = baseScale * TRASH_HP_MULT * lateAddHpMultFromT(t);
-  const eliteHpMult = baseScale * ELITE_HP_MULT;
+  const diffHp = difficultyHpMult(difficulty);
+  const trashHpMult = baseScale * TRASH_HP_MULT * lateAddHpMultFromT(t) * diffHp;
+  const eliteHpMult = baseScale * ELITE_HP_MULT * diffHp;
   const hpRoll = (amount = 0.18) => 1 + (Math.random() * 2 - 1) * amount;
 
   const roll = Math.random();
 
+  if (t > 0.16 && roll > 0.56 && roll <= 0.62) {
+    const hp = Math.max(18, Math.round(62 * trashHpMult * hpRoll(0.18)));
+    return {
+      id: Math.random(),
+      type: 'ghost',
+      x,
+      y,
+      hp,
+      maxHp: hp,
+      speed: 1.65 + difficulty * 0.035,
+      size: 28,
+      xp: 18,
+      contactDamage: 11,
+      color: '#b8bcc8',
+      revivedOnce: false
+    };
+  }
+
   if (t > 0.18 && roll > 0.955 && roll < 0.978) {
     const tier = t > 0.55 ? 3 : 2;
-    const hp = Math.round((105 + difficulty * 16) * TRASH_HP_MULT * lateAddHpMultFromT(t) * hpRoll(0.16));
+    const hp = Math.round((105 + difficulty * 16) * TRASH_HP_MULT * lateAddHpMultFromT(t) * diffHp * hpRoll(0.16));
     return { id: Math.random(), type: 'splitter', x, y, splitTier: tier, hp, maxHp: hp, speed: 0.78 + difficulty * 0.020, size: 48, xp: 15, contactDamage: 10, color: '#b6ff4a' };
   }
 
@@ -531,31 +578,44 @@ const spawnEnemy = (difficulty, forcedType = null, t = 0) => {
   if (!forcedType) return spawnEnemyBase(difficulty, t);
 
   const base = spawnEnemyBase(difficulty, t);
+  const diffHp = difficultyHpMult(difficulty);
 
   if (forcedType === 'swarm') {
     const late = norm01(t, 0.45, 1.0);
-    const hp = Math.round((12 + difficulty * 2.1) * TRASH_HP_MULT * lerp(1.0, 1.18, late));
+    const hp = Math.round((12 + difficulty * 2.1) * TRASH_HP_MULT * lerp(1.0, 1.18, late) * diffHp);
     return { ...base, type: 'swarm', hp, maxHp: hp, speed: 2.15 + difficulty * 0.05, size: 17, xp: 3, contactDamage: 5, color: '#ff4aa8' };
   }
   if (forcedType === 'wall') {
     // WALL units are intentionally chunky; still respect late adds HP nerf
     const addHpMult = lateAddHpMultFromT(t);
-    const hp = Math.round((((320 + difficulty * 26) * (1 + difficulty * 0.06)) * TRASH_HP_MULT * addHpMult) * WALL_HP_MULT);
+    const hp = Math.round((((320 + difficulty * 26) * (1 + difficulty * 0.06)) * TRASH_HP_MULT * addHpMult) * WALL_HP_MULT * diffHp);
     return { ...base, type: 'wall', hp, maxHp: hp, speed: 0.70 + difficulty * 0.01, size: 46, xp: 9, contactDamage: 19, color: '#ff2a4b' };
   }
   if (forcedType === 'turret') {
-    const hp = Math.round((520 + difficulty * 80) * ELITE_HP_MULT);
+    const hp = Math.round((520 + difficulty * 80) * ELITE_HP_MULT * diffHp);
     return { ...base, type: 'turret', hp, maxHp: hp, speed: 0, size: 72, xp: 70, contactDamage: 10, color: '#ffb84a', nextShotAt: Date.now() + 950 + Math.random() * 900 };
   }
   if (forcedType === 'splitter') {
     const tier = 3;
-    const hp = Math.round((145 + difficulty * 20) * TRASH_HP_MULT * lateAddHpMultFromT(t));
+    const hp = Math.round((145 + difficulty * 20) * TRASH_HP_MULT * lateAddHpMultFromT(t) * diffHp);
     return { ...base, type: 'splitter', splitTier: tier, hp, maxHp: hp, speed: 0.82 + difficulty * 0.025, size: 56, xp: 18, contactDamage: 12, color: '#b6ff4a' };
   }
   if (forcedType === 'splitter_boss') {
     const tier = 5;
-    const hp = Math.round((1450 + difficulty * 210) * ELITE_HP_MULT);
+    const hp = Math.round((1450 + difficulty * 210) * ELITE_HP_MULT * diffHp);
     return { ...base, type: 'splitter_boss', splitTier: tier, hp, maxHp: hp, speed: 0.58 + difficulty * 0.012, size: 118, xp: 260, contactDamage: 24, color: '#7dff4a' };
+  }
+  if (forcedType === 'ghost') {
+    const hp = Math.round((48 + difficulty * 7) * TRASH_HP_MULT * diffHp);
+    return { ...base, type: 'ghost', hp, maxHp: hp, speed: 2.05 + difficulty * 0.04, size: 30, xp: 15, contactDamage: 10, color: '#c6cad6', revivedOnce: false };
+  }
+  if (forcedType === 'merge_brute') {
+    const hp = Math.round((1400 + difficulty * 260) * ELITE_HP_MULT * diffHp);
+    return { ...base, type: 'merge_brute', hp, maxHp: hp, speed: 1.05, size: 96, xp: 160, contactDamage: 24, color: '#83ff76', mergeGroup: true };
+  }
+  if (forcedType === 'lane_elite') {
+    const hp = Math.round((420 + difficulty * 80) * ELITE_HP_MULT * diffHp);
+    return { ...base, type: 'lane_elite', hp, maxHp: hp, speed: 2.20, size: 58, xp: 34, contactDamage: 18, color: '#ffb36b', laneDir: 1 };
   }
   return base;
 };
@@ -566,7 +626,9 @@ const spawnMiniBoss = (player, difficulty, kind = 'charger', pos = null) => {
     (kind === 'charger' ? 4000 : 1400) +
     difficulty * (kind === 'charger' ? 360 : 160);
 
-  const hp = Math.round(baseHp * MINI_HP_MULT * (kind === 'charger' ? RAM_HP_MULT : 1.0));
+  const hp = Math.round(baseHp * MINI_HP_MULT * (kind === 'charger' ? RAM_HP_MULT : 1.0) * difficultyHpMult(difficulty));
+  const tileD = tileDifficultyRank(difficulty);
+  const tunedHp = Math.round(hp * (tileD <= 1 ? 0.42 : tileD === 2 ? 0.70 : 1));
 
   const spawnX = pos?.x ?? Math.min(Math.max(player.x + 460, 120), ARENA_SIZE - 120);
   const spawnY = pos?.y ?? Math.min(Math.max(player.y - 380, 120), ARENA_SIZE - 120);
@@ -576,8 +638,8 @@ const spawnMiniBoss = (player, difficulty, kind = 'charger', pos = null) => {
     type: `mini_${kind}`,
     x: spawnX,
     y: spawnY,
-    hp,
-    maxHp: hp,
+    hp: tunedHp,
+    maxHp: tunedHp,
     speed: kind === 'assassin' ? 2.75 : 2.15,
     size: kind === 'charger' ? 104 : 92,
     xp: 140,
@@ -675,10 +737,15 @@ const spawnWallRing = (pp, difficulty, meta, t = 0) => {
   return out;
 };
 
-const spawnBoss = (player, difficulty) => {
-  const hp = Math.round((5400 + difficulty * 220) * BOSS_HP_MULT);
+const spawnBoss = (player, difficulty, opts = {}) => {
+  const finalBoost = opts.finalForm ? 1.22 : 1;
+  const milestoneBoost = opts.milestonePct && opts.milestonePct < 1 ? 0.78 + opts.milestonePct * 0.34 : 1;
+  const tileD = tileDifficultyRank(opts.tileDifficulty || difficulty);
+  const bossTileMult = tileD <= 1 ? 0.34 : tileD === 2 ? (opts.isFinalBoss ? 0.31 : 0.58) : tileD === 3 ? 0.88 : 1;
+  const hp = Math.round((5400 + difficulty * 220) * BOSS_HP_MULT * difficultyHpMult(difficulty) * finalBoost * milestoneBoost * (opts.hpMult || 1) * bossTileMult);
+  const sizeMult = opts.sizeMult || (opts.finalForm ? 1.18 : 1);
   return {
-    id: 'boss',
+    id: opts.id || `boss_${Date.now()}_${Math.random()}`,
     type: 'boss',
     x: Math.min(Math.max(player.x + 380, 140), ARENA_SIZE - 140),
     y: Math.min(Math.max(player.y - 320, 140), ARENA_SIZE - 140),
@@ -693,10 +760,13 @@ const spawnBoss = (player, difficulty) => {
     originalMaxHp: hp,
     ramPhaseDone: false,
     zergPhaseDone: false,
-    size: 150,
+    isFinalBoss: !!opts.isFinalBoss,
+    milestonePct: opts.milestonePct || 1,
+    cloneMult: opts.cloneMult || (tileDifficultyRank(difficulty) >= 5 ? 2.2 : 1.6),
+    size: Math.round(150 * sizeMult),
     xp: 520,
-    contactDamage: 34,
-    color: '#ffda6b',
+    contactDamage: Math.round(34 * (opts.finalForm ? 1.15 : 1)),
+    color: opts.finalForm ? '#ffb13b' : '#ffda6b',
     phase: 1,
     nextAddAt: Date.now() + 1400,
     nextAoEAt: Date.now() + 2200
@@ -862,7 +932,7 @@ const rollUpgradeOptions = (ownedWeapons, weaponLevels, stats) => {
   });
 };
 
-export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, selectedHero, runBuild, runTimeMs }) {
+export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, selectedHero, runBuild, runTimeMs, requiresExtraction = false, playerName = '' }) {
 
 
   const progElapsedRef = useRef(0); // progression clock (pauses during events)
@@ -908,6 +978,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     const until = Date.now() + 1700;
     setToasts((prev) => [...(prev || []).filter((t) => (t.until || 0) > Date.now()), { id, text, until }]);
   };
+  const addToast = pushToast;
   const prevBuffsRef = useRef({});
 
   const [selectedWeapons, setSelectedWeapons] = useState([]);
@@ -917,6 +988,8 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   const [level, setLevel] = useState(1);
   const [upgradeOptions, setUpgradeOptions] = useState([]);
   const [bossSpawned, setBossSpawned] = useState(false);
+  const [extractionUI, setExtractionUI] = useState({ active: false, progress: 0, x: 0, y: 0 });
+  const [matchSummary, setMatchSummary] = useState(null);
   const [victory, setVictory] = useState(false);
   const [defeat, setDefeat] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -985,8 +1058,13 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   const droneLastFireRef = useRef(0);
   const droneBurstToastRef = useRef(0);
   const slowPulseNextAtRef = useRef(Date.now() + 20000);
-  const bossReturnPendingRef = useRef(null);
+  const bossReturnPendingRef = useRef([]);
+  const bossMilestoneIdxRef = useRef(0);
   const combustionNextAtRef = useRef(0);
+  const pendingUpgradeCountRef = useRef(0);
+  const extractionRef = useRef({ active: false, progress: 0, x: 0, y: 0 });
+  const timelineRef = useRef([]);
+  const matchStartedAtRef = useRef(0);
 
   useEffect(() => {
     const p = (runBuild && runBuild.purchased) ? runBuild.purchased : {};
@@ -1064,7 +1142,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     droneLastFireRef.current = 0;
     droneBurstToastRef.current = 0;
     slowPulseNextAtRef.current = Date.now() + 20000;
-    bossReturnPendingRef.current = null;
+    bossReturnPendingRef.current = [];
   }, [runBuild, tileDifficulty]);
 
   // per-run duration (random 25–100% longer)
@@ -1119,6 +1197,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   const xpTargetRef = useRef(xpTarget);
   const selectedWeaponsRef = useRef(selectedWeapons);
   const weaponLevelsRef = useRef(weaponLevels);
+  const upgradeOptionsRef = useRef(upgradeOptions);
   const bossSpawnedRef = useRef(bossSpawned);
 
   // Perf: keep simulation values in refs; sync React UI at low Hz
@@ -1167,6 +1246,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
         circleUntil: e.circleUntil ? e.circleUntil + delta : e.circleUntil,
         diveUntil: e.diveUntil ? e.diveUntil + delta : e.diveUntil,
         nextDiveAt: e.nextDiveAt ? e.nextDiveAt + delta : e.nextDiveAt,
+        reviveAt: e.reviveAt ? e.reviveAt + delta : e.reviveAt,
       }));
       pickupsRef.current = (pickupsRef.current || []).map((p) => ({ ...p, t: p.t + delta }));
       enemyProjectilesRef.current = (enemyProjectilesRef.current || []).map((p) => ({ ...p, t: p.t + delta }));
@@ -1180,6 +1260,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   useEffect(() => { xpTargetRef.current = xpTarget; }, [xpTarget]);
   useEffect(() => { selectedWeaponsRef.current = selectedWeapons; }, [selectedWeapons]);
   useEffect(() => { weaponLevelsRef.current = weaponLevels; }, [weaponLevels]);
+  useEffect(() => { upgradeOptionsRef.current = upgradeOptions; }, [upgradeOptions]);
   useEffect(() => { bossSpawnedRef.current = bossSpawned; }, [bossSpawned]);
   useEffect(() => { levelRef.current = level; }, [level]);
 
@@ -1341,6 +1422,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
 
   const onPlayerKill = (enemy) => {
     const now = Date.now();
+    if (enemy?.type !== 'ghost_spirit') killCountRef.current += 1;
     // Adrenal triggers on kill too
     tryProcAdrenal(now, 'kill');
 
@@ -1407,15 +1489,13 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
 
   useEffect(() => {
     if (victory) {
-      const t = setTimeout(() => onVictory(), 1800);
-      return () => clearTimeout(t);
+      setMatchSummary((prev) => prev || buildMatchSummary('CLEARED'));
     }
   }, [victory, onVictory]);
 
   useEffect(() => {
     if (defeat) {
-      const t = setTimeout(() => onExit(), 1800);
-      return () => clearTimeout(t);
+      setMatchSummary((prev) => prev || buildMatchSummary('DEFEATED'));
     }
   }, [defeat, onExit]);
 
@@ -1516,16 +1596,39 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   const getRunT = () => (runTimeRef.current || BOSS_TIME);
   const getProgressT = () => clamp(progElapsedRef.current / getRunT(), 0, 1);
   const getLateT = () => norm01(getProgressT(), 0.45, 1.0);
+  const fmtClock = (ms) => {
+    const total = Math.max(0, Math.floor((ms || 0) / 1000));
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  };
+  const logTimeline = (type, label) => {
+    timelineRef.current = [
+      ...(timelineRef.current || []),
+      { t: elapsed.current || 0, type, label }
+    ].slice(-80);
+  };
+  const buildMatchSummary = (result) => ({
+    result,
+    playerName: playerName || selectedHero?.name || 'UNKNOWN',
+    hero: selectedHero?.name || '',
+    elapsedMs: elapsed.current || 0,
+    progress: getProgressT(),
+    kills: killCountRef.current || 0,
+    level: levelRef.current || 1,
+    weapons: (selectedWeaponsRef.current || []).map((id) => ({ id, level: weaponLevelsRef.current?.[id] || 1 })),
+    timeline: [...(timelineRef.current || [])],
+    talents: Object.entries(runBuild?.purchased || {})
+      .filter(([, rank]) => Number(rank || 0) > 0)
+      .map(([id, rank]) => ({ id, rank: Number(rank || 0) })),
+  });
 
   const computeDifficulty = (eProg) => {
     const runT = getRunT();
     const t = clamp(eProg / runT, 0, 1);
-
-    // Before 45%: normal ramp. After 45%: slower ramp so scaling doesn't brick runs.
-    const earlyTicks = Math.floor((Math.min(eProg, runT * 0.45)) / 14000);
-    const latePart = Math.max(0, eProg - runT * 0.45);
-    const lateTicks = Math.floor(latePart / 20000); // faster late scaling (shorter run)
-    return tileDifficulty + earlyTicks + lateTicks;
+    const d = tileDifficultyRank(tileDifficulty);
+    const maxRamp = d <= 1 ? 1 : d === 2 ? 1 : d === 3 ? 2 : d === 4 ? 3 : 4;
+    return tileDifficulty + Math.floor(Math.pow(t, 1.12) * maxRamp);
   };
 
   const buildBeatPlanIfNeeded = () => {
@@ -1538,9 +1641,9 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     //  - events are shorter (see EVENT_DEFS) so we can schedule more of them.
     //  - ONLY RAM (mini_charger) as miniboss.
     const firstEventPct = r(0.10, 0.18);
-    const firstMiniPct  = r(0.24, 0.32);
-    const secondEventPct = r(0.36, 0.46);
-    const midMiniPct     = r(0.50, 0.60);
+    const firstMiniPct  = tileDifficulty <= 1 ? r(0.45, 0.58) : r(0.24, 0.32);
+    const secondEventPct = r(0.30, 0.42);
+    const midMiniPct     = r(0.55, 0.68);
     const thirdEventPct  = r(0.62, 0.74);
     const lateMiniPct    = r(0.70, 0.82);
     const fourthEventPct = r(0.80, 0.90);
@@ -1556,24 +1659,27 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
 
     // Force early beats to be swarms for readability + fairness.
     beats.push({ kind: 'EVENT', atPct: firstEventPct, id: 'SWARM' });
+    if (tileDifficulty >= 2) beats.push({ kind: 'EVENT', atPct: r(0.18, 0.30), id: EVENT_GHOST_WAVE });
     beats.push({ kind: 'MINI', atPct: firstMiniPct, count: 1, mix: 'charger' });
 
     beats.push({ kind: 'EVENT', atPct: secondEventPct, id: 'SWARM' });
     beats.push({ kind: 'EVENT', atPct: turretPct, id: 'TURRET' });
+    if (tileDifficulty >= 3) beats.push({ kind: 'EVENT', atPct: r(0.34, 0.54), id: EVENT_ELITE_WALL });
 
-    // Midgame: multiple rams WHILE trash keeps coming.
-    beats.push({ kind: 'MINI', atPct: midMiniPct, count: 2 + Math.floor(Math.random() * 2), mix: 'charger' });
+    // Midgame: multiple rams on harder maps.
+    if (tileDifficulty >= 2) beats.push({ kind: 'MINI', atPct: midMiniPct, count: 2 + Math.floor(Math.random() * 2), mix: 'charger' });
 
     beats.push({ kind: 'EVENT', atPct: thirdEventPct, id: 'SWARM' });
     beats.push({ kind: 'EVENT', atPct: splitterPct, id: 'SPLITTER' });
     beats.push({ kind: 'EVENT', atPct: wallPct, id: 'WALL' });
-    beats.push({ kind: 'EVENT', atPct: splitterBossPct, id: 'SPLITTER_BOSS' });
+    if (tileDifficulty >= 2) beats.push({ kind: 'EVENT', atPct: splitterBossPct, id: 'SPLITTER_BOSS' });
+    if (tileDifficulty >= 4) beats.push({ kind: 'EVENT', atPct: r(0.58, 0.78), id: EVENT_ABOMINATION });
 
     // Late: 3–5 RAMs at once
-    beats.push({ kind: 'MINI', atPct: lateMiniPct, count: 3 + Math.floor(Math.random() * 3), mix: 'charger' });
+    if (tileDifficulty >= 3) beats.push({ kind: 'MINI', atPct: lateMiniPct, count: 3 + Math.floor(Math.random() * 3), mix: 'charger' });
 
     beats.push({ kind: 'EVENT', atPct: turretLatePct, id: 'TURRET' });
-    beats.push({ kind: 'EVENT', atPct: fourthEventPct, id: pickLateEventId(0.45) });
+    beats.push({ kind: 'EVENT', atPct: fourthEventPct, id: Math.random() < 0.28 ? EVENT_GHOST_WAVE : pickLateEventId(0.45) });
 
     beats.sort((a, b) => a.atPct - b.atPct);
 
@@ -1622,8 +1728,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     if (!wasActive) reliefStartedAtRef.current = now;
     reliefUntilRef.current = Math.max(reliefUntilRef.current, now + ms);
 
-    const pp = playerRef.current;
-    enemiesRef.current = pruneEnemiesForRelief(enemiesRef.current || [], pp, 9);
+    // Relief now throttles new pressure without deleting living enemies.
   };
 
   const triggerReliefSoft = (ms = 2600, keepMax = 22) => {
@@ -1632,8 +1737,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     if (!wasActive) reliefStartedAtRef.current = now;
     reliefUntilRef.current = Math.max(reliefUntilRef.current, now + ms);
 
-    const pp = playerRef.current;
-    enemiesRef.current = pruneEnemiesForRelief(enemiesRef.current || [], pp, keepMax);
+    // Relief now throttles new pressure without deleting living enemies.
   };
 
   const triggerReliefEmpty = (ms = 8200) => {
@@ -1642,9 +1746,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     if (!wasActive) reliefStartedAtRef.current = now;
     reliefUntilRef.current = Math.max(reliefUntilRef.current, now + ms);
 
-    // TRUE EMPTY RELIEF: delete all non-specials
-    const prev = enemiesRef.current || [];
-    enemiesRef.current = prev.filter((e) => e.type === 'boss' || e.type === 'boss_split' || String(e.type).startsWith('mini_') || e.type === 'wall');
+    // Do not delete living enemies; just stop adding pressure for a moment.
   };
 
   const spawnMiniPack = (pp, difficulty, count) => {
@@ -1661,8 +1763,8 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     const now = Date.now();
 
     // Don't schedule beats during boss fight (keeps it readable and reduces spike chaos)
-    const bossAlive = (enemiesRef.current || []).some((x) => (x.type === 'boss' || x.type === 'boss_split') && x.hp > 0);
-    if (bossAlive) return;
+      const bossAlive = (enemiesRef.current || []).some((x) => (x.type === 'boss' || x.type === 'boss_split') && x.hp > 0);
+      if (bossAlive && tileDifficultyRank(tileDifficulty) <= 2) return;
 
     // End-of-event: auto-relief
     if (activeEventRef.current && now >= activeEventRef.current.endsAt) {
@@ -1705,12 +1807,81 @@ const beat = plan.beats[plan.idx];
 
       if (id === 'SWARM') {
         const safeAngle = Math.random() * Math.PI * 2;
-        const safeArc = Math.PI * (0.50 + Math.random() * 0.16);
+        const safeArc = Math.PI * (0.62 + Math.random() * 0.18);
         const variant = Math.random() < 0.52 ? 'encircle' : 'three_sides';
 
         const dur = Math.round((EVENT_DEFS.SWARM.duration * (0.95 + Math.random() * 0.35)) * (p < 0.30 ? 1.15 : 1.0));
         if (startEvent('SWARM', { variant, safeAngle, safeArc, duration: dur })) {
           juicePunch(0.70, 0.70);
+          plan.idx += 1;
+          return;
+        }
+      }
+
+      if (id === EVENT_GHOST_WAVE) {
+        const meta = { duration: EVENT_DEFS.GHOST_WAVE.duration };
+        if (startEvent(EVENT_GHOST_WAVE, meta)) {
+          const n = clamp(30 + tileDifficulty * 6 + Math.floor(Math.random() * 12), 30, 60);
+          const a0 = Math.random() * Math.PI * 2;
+          const spawned = [];
+          for (let i = 0; i < n; i += 1) {
+            const row = i % 10;
+            const col = Math.floor(i / 10);
+            const side = (row - 4.5) * 42;
+            const back = col * 38;
+            const baseDist = 850 + back;
+            const gx = clamp(pp.x + Math.cos(a0) * baseDist + Math.cos(a0 + Math.PI / 2) * side, 30, ARENA_SIZE - 30);
+            const gy = clamp(pp.y + Math.sin(a0) * baseDist + Math.sin(a0 + Math.PI / 2) * side, 30, ARENA_SIZE - 30);
+            const gh = spawnEnemy(difficulty, 'ghost', t);
+            spawned.push({ ...gh, x: gx, y: gy, speed: (gh.speed || 2) * 1.18 });
+          }
+          enemiesRef.current = [...(enemiesRef.current || []), ...spawned];
+          pushToast('GHOST WAVE');
+          juicePunch(0.80, 0.75);
+          plan.idx += 1;
+          return;
+        }
+      }
+
+      if (id === EVENT_ABOMINATION) {
+        const meta = { duration: EVENT_DEFS.ABOMINATION.duration };
+        if (startEvent(EVENT_ABOMINATION, meta)) {
+          const corners = [
+            { x: 90, y: 90 },
+            { x: ARENA_SIZE - 90, y: 90 },
+            { x: 90, y: ARENA_SIZE - 90 },
+            { x: ARENA_SIZE - 90, y: ARENA_SIZE - 90 },
+          ];
+          const spawned = corners.map((pos, i) => ({ ...spawnEnemy(difficulty + 2, 'merge_brute', t), ...pos, id: `merge_brute_${i}_${Math.random()}`, mergeTargetX: pp.x, mergeTargetY: pp.y }));
+          enemiesRef.current = [...(enemiesRef.current || []), ...spawned];
+          pushToast('ABOMINATION COMPONENTS');
+          juicePunch(1.0, 0.9);
+          plan.idx += 1;
+          return;
+        }
+      }
+
+      if (id === EVENT_ELITE_WALL) {
+        const meta = { duration: EVENT_DEFS.ELITE_WALL.duration };
+        if (startEvent(EVENT_ELITE_WALL, meta)) {
+          const fromLeft = Math.random() < 0.5;
+          const gap = Math.floor(4 + Math.random() * 3);
+          const spawned = [];
+          for (let i = 0; i < 12; i += 1) {
+            if (i === gap || i === gap + 1) continue;
+            const y = clamp(240 + i * ((ARENA_SIZE - 480) / 11), 80, ARENA_SIZE - 80);
+            const el = spawnEnemy(difficulty + 1, 'lane_elite', t);
+            spawned.push({
+              ...el,
+              x: fromLeft ? 40 : ARENA_SIZE - 40,
+              y,
+              laneDir: fromLeft ? 1 : -1,
+              speed: 2.45 + tileDifficulty * 0.08
+            });
+          }
+          enemiesRef.current = [...(enemiesRef.current || []), ...spawned];
+          pushToast('ELITE LINEBREAKER');
+          juicePunch(0.85, 0.8);
           plan.idx += 1;
           return;
         }
@@ -2205,7 +2376,38 @@ const beat = plan.beats[plan.idx];
           const bw = b.width || 10;
           const bh = b.height || 4;
           ctx.rotate(ang);
-          ctx.fillRect(-bw / 2, -bh / 2, bw, bh);
+          if (b.timeBolt) {
+            ctx.shadowColor = 'rgba(127,242,215,0.95)';
+            ctx.shadowBlur = 18;
+            ctx.fillStyle = 'rgba(127,242,215,0.96)';
+            ctx.beginPath();
+            ctx.ellipse(0, 0, bw * 0.55, Math.max(4, bh * 0.9), 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255,255,255,0.88)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(-bw * 0.9, 0);
+            ctx.lineTo(bw * 0.9, 0);
+            ctx.stroke();
+          } else if (b.rocketVisual) {
+            ctx.shadowColor = 'rgba(255,140,70,0.95)';
+            ctx.shadowBlur = 20;
+            ctx.fillStyle = 'rgba(255,120,50,0.95)';
+            ctx.beginPath();
+            ctx.moveTo(bw / 2, 0);
+            ctx.lineTo(-bw / 2, -bh / 2);
+            ctx.lineTo(-bw * 0.35, 0);
+            ctx.lineTo(-bw / 2, bh / 2);
+            ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = 'rgba(255,235,180,0.95)';
+            ctx.fillRect(-bw * 0.56, -bh * 0.22, bw * 0.25, bh * 0.44);
+            ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+          } else {
+            ctx.fillRect(-bw / 2, -bh / 2, bw, bh);
+          }
           ctx.restore();
         });
 
@@ -2266,6 +2468,40 @@ const beat = plan.beats[plan.idx];
             ctx.strokeStyle = 'rgba(255,255,255,0.85)';
             ctx.lineWidth = 4;
             ctx.stroke();
+            ctx.restore();
+          } else if (e.type === 'ghost' || e.type === 'ghost_spirit') {
+            ctx.save();
+            ctx.translate(sx, sy);
+            ctx.globalAlpha = e.type === 'ghost_spirit' ? 0.46 : 0.86;
+            ctx.shadowColor = 'rgba(205,215,255,0.70)';
+            ctx.shadowBlur = e.type === 'ghost_spirit' ? 18 : 12;
+            ctx.fillStyle = e.type === 'ghost_spirit' ? 'rgba(150,154,168,0.62)' : (e.color || '#c6cad6');
+            ctx.beginPath();
+            ctx.moveTo(0, -e.size * 0.62);
+            ctx.quadraticCurveTo(e.size * 0.52, -e.size * 0.18, e.size * 0.34, e.size * 0.44);
+            ctx.quadraticCurveTo(e.size * 0.10, e.size * 0.28, 0, e.size * 0.58);
+            ctx.quadraticCurveTo(-e.size * 0.10, e.size * 0.28, -e.size * 0.34, e.size * 0.44);
+            ctx.quadraticCurveTo(-e.size * 0.52, -e.size * 0.18, 0, -e.size * 0.62);
+            ctx.fill();
+            if (e.type === 'ghost_spirit') {
+              ctx.strokeStyle = 'rgba(255,255,255,0.42)';
+              ctx.lineWidth = 2;
+              ctx.stroke();
+              const reviveLeft = (e.reviveAt || 0) - Date.now();
+              if (reviveLeft > 0 && reviveLeft <= 2200) {
+                const pulse = 0.55 + 0.45 * Math.abs(Math.sin(Date.now() / 110));
+                ctx.globalAlpha = pulse;
+                ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(0, 0, e.size * (0.9 + (2200 - reviveLeft) / 2200 * 0.45), 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.fillStyle = 'rgba(255,255,255,0.95)';
+                ctx.font = 'bold 12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('REVIVE', 0, -e.size - 10);
+              }
+            }
             ctx.restore();
           } else {
             ctx.fillRect(sx - e.size / 2, sy - e.size / 2, e.size, e.size);
@@ -2333,6 +2569,16 @@ const beat = plan.beats[plan.idx];
             ctx.fillRect(barX, barY, barW, 5);
             ctx.fillStyle = isMini ? '#ffe16b' : '#ff007a';
             ctx.fillRect(barX, barY, barW * (e.hp / e.maxHp), 5);
+            if (e.healthSegments) {
+              for (let si = 0; si < e.healthSegments; si += 1) {
+                const y = barY + 8 + si * 7;
+                const segPct = clamp((e.hp / e.maxHp) * e.healthSegments - si, 0, 1);
+                ctx.fillStyle = 'rgba(10,20,12,0.85)';
+                ctx.fillRect(barX, y, barW, 4);
+                ctx.fillStyle = si % 2 ? '#83ff76' : '#ffda6b';
+                ctx.fillRect(barX, y, barW * segPct, 4);
+              }
+            }
           }
 
           if (e.burnUntil && Date.now() < e.burnUntil) {
@@ -2767,16 +3013,27 @@ const beat = plan.beats[plan.idx];
       // advance clocks
       elapsed.current += 16;
 
-      // progression pauses while ANY event is active (SWARM/WALL)
-      // and also while RAM chargers are alive (Danish feedback: RAM timing vs swarm/wall felt unfair).
-      const eventActive = !!(activeEventRef.current && Date.now() < activeEventRef.current.endsAt);
-      const ramActive = (enemiesRef.current || []).some((e) => e.type === 'mini_charger' && e.hp > 0);
-      const progPaused = eventActive || ramActive;
-      if (!progPaused) progElapsedRef.current += 16;
+      // Progress is time-based. Events and RAMs are pressure spikes, not hidden blockers.
+      progElapsedRef.current += 16;
 
 
       if (elapsed.current % 160 === 0) {
         setProgress(Math.min(1, progElapsedRef.current / (runTimeRef.current || BOSS_TIME)));
+      }
+
+      if (extractionRef.current.active) {
+        const ex = extractionRef.current;
+        const ppEx = playerRef.current;
+        const dEx = Math.hypot(ppEx.x - ex.x, ppEx.y - ex.y);
+        const inside = dEx <= 132;
+        ex.progress = clamp((ex.progress || 0) + (inside ? 16 / 9000 : -16 / 17000), 0, 1);
+        if (elapsed.current % 160 === 0) setExtractionUI({ ...ex });
+        if (ex.progress >= 1) {
+          ex.active = false;
+          setExtractionUI({ ...ex, active: false, progress: 1 });
+          setVictory(true);
+          juicePunch(1.25, 1.0);
+        }
       }
 
       // randomized beats
@@ -2856,13 +3113,21 @@ const beat = plan.beats[plan.idx];
         const nowMv = Date.now();
         const finalSpeed = baseSpeed * speedMult * (statsRef.current.moveSpeed || 1);
 
-        if (keys.current.w) ny -= finalSpeed;
-        if (keys.current.s) ny += finalSpeed;
-        if (keys.current.a) nx -= finalSpeed;
-        if (keys.current.d) nx += finalSpeed;
+        let inputX = 0;
+        let inputY = 0;
+        if (keys.current.w) inputY -= 1;
+        if (keys.current.s) inputY += 1;
+        if (keys.current.a) inputX -= 1;
+        if (keys.current.d) inputX += 1;
         if (dragMoveRef.current.active) {
-          nx += dragMoveRef.current.vecX * finalSpeed;
-          ny += dragMoveRef.current.vecY * finalSpeed;
+          inputX += dragMoveRef.current.vecX;
+          inputY += dragMoveRef.current.vecY;
+        }
+        const inputLen = Math.hypot(inputX, inputY);
+        if (inputLen > 0) {
+          const scale = inputLen > 1 ? 1 / inputLen : 1;
+          nx += inputX * scale * finalSpeed;
+          ny += inputY * scale * finalSpeed;
         }
 
         nx = clamp(nx, 0, ARENA_SIZE);
@@ -2923,15 +3188,19 @@ const beat = plan.beats[plan.idx];
 
       const inRelief = Date.now() < reliefUntilRef.current;
       const bossAlive = (enemiesRef.current || []).some((x) => (x.type === 'boss' || x.type === 'boss_split') && x.hp > 0);
+      const extractionActive = !!extractionRef.current.active;
+      const tilePressure = difficultyPressureMult(tileDifficulty);
 
       // base: fewer enemies
       let spawnInterval = spawnIntervalBase * SPAWN_INTERVAL_MULT * earlySlow * (inRelief ? RELIEF_SPAWN_INTERVAL_MULT : 1.0);
+      spawnInterval *= 1 / tilePressure;
 
       // late game: progressively fewer spawns
       spawnInterval *= lerp(1.0, LATE_SPAWN_INTERVAL_BOOST, lateT);
 
       // boss: MUCH fewer adds (and no events schedule while boss alive)
       if (bossAlive) spawnInterval *= BOSS_ADD_INTERVAL_MULT;
+      if (extractionActive) spawnInterval *= 1.20;
 
       // event modifiers
       if (isEventActive('SWARM')) spawnInterval *= 0.60;
@@ -2948,6 +3217,7 @@ const beat = plan.beats[plan.idx];
 
           const countBase = Math.min(2 + Math.floor(difficulty / 2), 12);
           let count = Math.max(1, Math.round(countBase + panicRamp * 2));
+          count = Math.max(1, Math.round(count * tilePressure));
 
           // late: scale count smoothly (negative LATE_SPAWN_COUNT_REDUCE increases count)
           count = Math.max(1, Math.round(count * lerp(1.0, 1.0 - LATE_SPAWN_COUNT_REDUCE, lateT)));
@@ -2958,12 +3228,13 @@ const beat = plan.beats[plan.idx];
 
           // boss: reduce count hard
           if (bossAlive) count = Math.max(1, Math.round(count * BOSS_ADD_COUNT_MULT));
+          if (extractionActive) count = Math.max(1, Math.round(count * 0.55));
 
           // soft cap late-game trash so density can't spiral (keeps difficulty high but fair)
-          if (!bossAlive && progT > 0.68 && !isEventActive('WALL') && !isEventActive('SWARM')) {
+        {
             const isSpecial = (x) => x.type === 'boss' || x.type === 'boss_split' || String(x.type).startsWith('mini_') || x.type === 'wall';
             const trashCount = nextEnemies.filter((e) => !isSpecial(e)).length;
-            const maxTrash = Math.round(lerp(110, 90, norm01(progT, 0.68, 1.0)));
+            const maxTrash = Math.round(lerp(50, 92, norm01(tileDifficulty, 1, 5)) + progT * lerp(12, 42, norm01(tileDifficulty, 1, 5)));
             const room = maxTrash - trashCount;
             if (room <= 0) count = 0;
             else count = Math.min(count, room);
@@ -2976,17 +3247,19 @@ const beat = plan.beats[plan.idx];
             const safeArc = meta.safeArc ?? (Math.PI * 0.55);
 
             // swarm is still intense, but softened late so it doesn't become impossible
-            let swarmCount = Math.max(8, Math.round((18 + Math.floor(difficulty * 0.55)) * (1 / SPAWN_INTERVAL_MULT)));
-            swarmCount = Math.max(8, Math.round(swarmCount * lerp(1.0, 1.18, lateT)));
+            let swarmCount = Math.max(5, Math.round((14 + Math.floor(difficulty * 0.45)) * (1 / SPAWN_INTERVAL_MULT)));
+            swarmCount = Math.max(5, Math.round(swarmCount * tilePressure));
+            swarmCount = Math.max(5, Math.round(swarmCount * lerp(1.0, 1.18, lateT)));
             const after40s = norm01(progT, 0.40, 0.60);
             swarmCount = Math.max(8, Math.round(swarmCount * lerp(1.0, 1.20, after40s)));
             if (bossAlive) swarmCount = Math.max(6, Math.round(swarmCount * 0.70));
+            if (extractionActive) swarmCount = Math.max(5, Math.round(swarmCount * 0.45));
 
             // cap swarm spawns if we're already at/over late trash budget
             if (!bossAlive && progT > 0.68) {
               const isSpecial = (x) => x.type === 'boss' || x.type === 'boss_split' || String(x.type).startsWith('mini_') || x.type === 'wall';
               const trashCount = nextEnemies.filter((e) => !isSpecial(e)).length;
-              const maxTrash = Math.round(lerp(125, 105, norm01(progT, 0.68, 1.0)));
+              const maxTrash = Math.round(lerp(58, 110, norm01(tileDifficulty, 1, 5)) + progT * lerp(10, 40, norm01(tileDifficulty, 1, 5)));
               const room = maxTrash - trashCount;
               swarmCount = Math.max(0, Math.min(swarmCount, room));
             }
@@ -3030,15 +3303,29 @@ const beat = plan.beats[plan.idx];
           }
         }
 
-        // boss spawn depends on progElapsedRef (paused during events)
-        if (!bossSpawnedRef.current && progElapsedRef.current > (runTimeRef.current || BOSS_TIME)) {
+        const milestones = bossMilestonesForDifficulty(tileDifficulty);
+        const bossIdx = bossMilestoneIdxRef.current || 0;
+        const nextMilestone = milestones[bossIdx];
+        const ramAliveForBoss = (nextEnemies || []).some((e) => e.type === 'mini_charger' && e.hp > 0);
+        if (Number.isFinite(nextMilestone) && progT >= nextMilestone && !ramAliveForBoss) {
+          const isLastBoss = bossIdx >= milestones.length - 1;
+          bossMilestoneIdxRef.current = bossIdx + 1;
           bossSpawnedRef.current = true;
           setBossSpawned(true);
 
-          // boss intro relief: clear adds so it feels fair + satisfying
-          triggerReliefSoft(2200 + Math.floor(Math.random() * 900), 34);
+          triggerReliefSoft(1500 + Math.floor(Math.random() * 700), tileDifficulty >= 5 ? 42 : 34);
 
-          nextEnemies.push(spawnBoss(pPos, difficulty));
+          const cloneMult = tileDifficulty >= 5 ? 2.35 : tileDifficulty >= 4 ? 1.9 : 1.65;
+          const bossDiff = difficulty + Math.round(tileDifficulty * (isLastBoss ? 1.2 : 0.55));
+          nextEnemies.push(spawnBoss(pPos, bossDiff, {
+            isFinalBoss: isLastBoss,
+            finalForm: isLastBoss || tileDifficulty >= 5,
+            milestonePct: nextMilestone,
+            tileDifficulty,
+            cloneMult,
+            hpMult: isLastBoss ? 1.18 : 0.92,
+            sizeMult: isLastBoss ? 1.22 : 0.96 + nextMilestone * 0.18
+          }));
           juicePunch(1.25, 1);
         }
       }
@@ -3049,6 +3336,62 @@ const beat = plan.beats[plan.idx];
         if (en.stunnedUntil && Date.now() < en.stunnedUntil) return en;
         const decoy = decoyRef.current && Date.now() < decoyRef.current.until ? decoyRef.current : null;
         const targetPoint = decoy ? decoy : pPos;
+
+        if (en.type === 'ghost_spirit') {
+          const now2 = Date.now();
+          if (now2 >= (en.reviveAt || 0)) {
+            const hp = en.reviveHp || en.maxHp || 42;
+            explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: en.x, y: en.y, r: 62, t: now2, life: 300, color: 'rgba(190,195,210,1)', glow: 18, fill: true, alpha: 0.28 }];
+            return { ...en, type: 'ghost', hp, maxHp: hp, contactDamage: 12, color: '#c6cad6', speed: Math.max(1.45, en.speed || 1.6), revivedOnce: true };
+          }
+          const dx = targetPoint.x - en.x;
+          const dy = targetPoint.y - en.y;
+          const d = Math.hypot(dx, dy) || 1;
+          const spd = (en.speed || 1.25) * 0.72;
+          return { ...en, x: en.x + (dx / d) * spd, y: en.y + (dy / d) * spd };
+        }
+
+        if (en.type === 'lane_elite') {
+          const dir = en.laneDir || 1;
+          return { ...en, x: clamp(en.x + dir * (en.speed || 2.2), 0, ARENA_SIZE) };
+        }
+
+        if (en.type === 'merge_brute') {
+          const now2 = Date.now();
+          const otherMergers = (nextEnemies || []).filter((x) => x.type === 'merge_brute' && x.id !== en.id);
+          const close = otherMergers.some((x) => Math.hypot(x.x - en.x, x.y - en.y) < 145);
+          if (close && !en.mergingAt) return { ...en, mergingAt: now2 };
+          if (en.mergingAt && now2 - en.mergingAt > 650) {
+            const group = [en, ...otherMergers.filter((x) => Math.hypot(x.x - en.x, x.y - en.y) < 210)];
+            if (group.length >= 2) {
+              const hp = group.reduce((sum, x) => sum + (x.hp || 0), 0) * 1.18;
+              const maxHp = group.reduce((sum, x) => sum + (x.maxHp || 0), 0) * 1.18;
+              group.forEach((x) => { if (x.id !== en.id) x.despawn = true; });
+              return {
+                ...en,
+                id: `abomination_${Math.random()}`,
+                type: 'abomination',
+                hp,
+                maxHp,
+                speed: 0.72,
+                size: 176,
+                xp: 380,
+                contactDamage: 34,
+                color: '#6dff6d',
+                healthSegments: 6,
+                ghostOnDeath: true,
+                mergingAt: 0
+              };
+            }
+          }
+        }
+
+        if (en.type === 'abomination') {
+          const dx = targetPoint.x - en.x;
+          const dy = targetPoint.y - en.y;
+          const d = Math.hypot(dx, dy) || 1;
+          return { ...en, x: en.x + (dx / d) * (en.speed || 0.72), y: en.y + (dy / d) * (en.speed || 0.72) };
+        }
 
         if (en.type === 'turret') {
           const now2 = Date.now();
@@ -3081,6 +3424,49 @@ const beat = plan.beats[plan.idx];
         if (en.type === 'boss') {
           const now2 = Date.now();
           const hpPct = en.hp / Math.max(1, en.maxHp || en.hp);
+          const phaseMarks = en.phaseMarks || {};
+          const triggerBossPhase = (key, threshold, fn) => {
+            if (hpPct > threshold || phaseMarks[key]) return null;
+            fn();
+            return { ...en, phaseMarks: { ...phaseMarks, [key]: true } };
+          };
+          const phase90 = triggerBossPhase('p90', 0.90, () => {
+            const burst = [];
+            for (let i = 0; i < 14 + tileDifficulty * 3; i += 1) {
+              const a = (Math.PI * 2 * i) / (14 + tileDifficulty * 3);
+              const z = spawnEnemy(tileDifficulty + 1, 'swarm', getProgressT());
+              burst.push({ ...z, x: clamp(en.x + Math.cos(a) * 130, 30, ARENA_SIZE - 30), y: clamp(en.y + Math.sin(a) * 130, 30, ARENA_SIZE - 30), color: '#ff9a3d' });
+            }
+            enemiesRef.current = [...(enemiesRef.current || []), ...burst];
+            pushToast('BOSS: ZERG WAVE');
+          });
+          if (phase90) return phase90;
+          const phase80 = triggerBossPhase('p80', 0.80, () => {
+            explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: en.x, y: en.y, r: 300, t: now2, life: 620, color: 'rgba(255,218,107,1)', glow: 40, fill: true, alpha: 0.20 }];
+            pushToast('BOSS: SHOCK RING');
+          });
+          if (phase80) return phase80;
+          const phase70 = triggerBossPhase('p70', 0.70, () => {
+            pushToast('BOSS: RAM CHARGE');
+          });
+          if (phase70) return { ...phase70, bossWindupUntil: now2 + 820, bossRamDir: Math.atan2(targetPoint.y - en.y, targetPoint.x - en.x), bossDashLen: 960, chargesDone: Math.max(en.chargesDone || 0, 1), nextRamPct: 0.52, ramPhaseDone: true };
+          const phase30 = triggerBossPhase('p30', 0.30, () => {
+            const ghosts = [];
+            for (let i = 0; i < 18 + tileDifficulty * 4; i += 1) {
+              const a = Math.random() * Math.PI * 2;
+              const gh = spawnEnemy(tileDifficulty + 1, 'ghost', getProgressT());
+              ghosts.push({ ...gh, x: clamp(en.x + Math.cos(a) * (170 + Math.random() * 90), 30, ARENA_SIZE - 30), y: clamp(en.y + Math.sin(a) * (170 + Math.random() * 90), 30, ARENA_SIZE - 30) });
+            }
+            enemiesRef.current = [...(enemiesRef.current || []), ...ghosts];
+            pushToast('BOSS: HAUNTING');
+          });
+          if (phase30) return phase30;
+          const phase10 = triggerBossPhase('p10', 0.10, () => {
+            en.speed = (en.speed || 1.6) * 1.18;
+            explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: en.x, y: en.y, r: 420, t: now2, life: 720, color: 'rgba(255,0,122,1)', glow: 46, fill: true, alpha: 0.24 }];
+            pushToast('BOSS: LAST STAND');
+          });
+          if (phase10) return { ...phase10, speed: (en.speed || 1.6) * 1.18, contactDamage: Math.round((en.contactDamage || 34) * 1.12) };
           if (hpPct <= (en.nextRamPct ?? 0.82) && (en.chargesDone || 0) < 2 && !en.bossWindupUntil && !en.bossRamUntil) {
             return {
               ...en,
@@ -3362,7 +3748,8 @@ const beat = plan.beats[plan.idx];
           for (const en of movedEnemies) {
             const d = distPointToSeg(en.x, en.y, bm.x1, bm.y1, bm.x2, bm.y2);
             if (d <= (bm.width || 30) * 0.55) {
-              beamHits.set(en.id, (beamHits.get(en.id) || 0) + bm.damage);
+              const eliteMult = isEliteType(en.type) ? (bm.eliteDmgMult ?? 1) : 1;
+              beamHits.set(en.id, (beamHits.get(en.id) || 0) + bm.damage * eliteMult);
 
               const st = statusHits.get(en.id) || {};
               if (bm.burn) st.burn = Math.max(st.burn || 0, bm.burn);
@@ -3411,6 +3798,7 @@ const beat = plan.beats[plan.idx];
 
           for (const en of movedEnemies) {
             if (b.hit) break;
+            if (en.type === 'ghost_spirit') continue;
 
             const d = Math.hypot(b.x - en.x, b.y - en.y);
             const hitRadius = en.size * 0.7 + (b.axeThrow ? 34 : b.swordThrow ? 16 : 0);
@@ -3432,6 +3820,21 @@ const beat = plan.beats[plan.idx];
 
             if (b.microFreeze) applyMicroFreeze(en, b.microFreeze);
 
+            if (b.timeScar) {
+              explosionBursts.push({
+                x: en.x,
+                y: en.y,
+                radius: b.scarRadius || 90,
+                damage: 0,
+                slow: Math.max(b.slow || 0, 0.55),
+                slowDuration: b.scarMs || b.slowDuration || 1600,
+                stun: Math.floor((b.microFreeze || 0) * 0.5),
+                burn: 0,
+                color: 'rgba(127,242,215,1)',
+                life: b.scarMs || 1600
+              });
+            }
+
             if (b.explodeRadius && b.explodeMult) {
               explosionBursts.push({
                 x: en.x,
@@ -3441,7 +3844,7 @@ const beat = plan.beats[plan.idx];
                 slow: b.slow || 0,
                 slowDuration: b.slowDuration || 0,
                 stun: b.stun || 0,
-                burn: b.burn || 0
+                burn: b.aoeBurn === false ? 0 : (b.burn || 0)
               });
             }
 
@@ -3525,13 +3928,13 @@ const beat = plan.beats[plan.idx];
       // explosion damage + status
       if (explosionBursts.length) {
         for (const burst of explosionBursts) {
-          explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: burst.x, y: burst.y, r: burst.radius, t: Date.now(), life: 260 }];
+          explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: burst.x, y: burst.y, r: burst.radius, t: Date.now(), life: burst.life || 260, color: burst.color, glow: burst.color ? 22 : undefined, fill: !!burst.color, alpha: burst.color ? 0.16 : undefined }];
           for (const en of movedEnemies) {
             const d = Math.hypot(en.x - burst.x, en.y - burst.y);
             if (d <= burst.radius) {
               const fall = 1 - d / burst.radius;
               const dmg = burst.damage * Math.max(0.25, fall);
-              bulletHits.set(en.id, (bulletHits.get(en.id) || 0) + dmg);
+              if (dmg > 0) bulletHits.set(en.id, (bulletHits.get(en.id) || 0) + dmg);
 
               const st = statusHits.get(en.id) || {};
               if (burst.slow) {
@@ -3555,7 +3958,7 @@ const beat = plan.beats[plan.idx];
       // -------------------- FIRING --------------------
       const now3 = Date.now();
       const pp = playerRef.current;
-      const currentEnemies = movedEnemies;
+      const currentEnemies = movedEnemies.filter((e) => e.type !== 'ghost_spirit');
 
       if (currentEnemies.length) {
         const overdrive = now3 < overdriveUntil.current;
@@ -3891,14 +4294,17 @@ const beat = plan.beats[plan.idx];
                 const speed = 18.5;
                 const throwCount = wStats.throwCount || 1;
                 for (let ti = 0; ti < throwCount; ti += 1) {
-                  const off = throwCount === 1 ? 0 : (ti - (throwCount - 1) / 2) * 0.20;
+                  const off = throwCount === 1 ? 0 : (ti - (throwCount - 1) / 2) * 0.30;
                   const aThrow = baseAngle + off;
+                  const sideOffset = throwCount === 1 ? 0 : (ti - (throwCount - 1) / 2) * 18;
+                  const sx = pp.x + Math.cos(aThrow + Math.PI / 2) * sideOffset;
+                  const sy = pp.y + Math.sin(aThrow + Math.PI / 2) * sideOffset;
                   spawnedBullets.push({
                     id: Math.random(),
-                    x: pp.x,
-                    y: pp.y,
-                    originX: pp.x,
-                    originY: pp.y,
+                    x: sx,
+                    y: sy,
+                    originX: sx,
+                    originY: sy,
                     vx: Math.cos(aThrow) * speed,
                     vy: Math.sin(aThrow) * speed,
                     angle: aThrow,
@@ -4076,6 +4482,7 @@ const beat = plan.beats[plan.idx];
                 y2: pp.y + Math.sin(ang) * beamLen,
                 width,
                 damage: (wStats.damage || 8) * (statsRef.current.damageMult || 1) * crewDamageMult * (doubleDamage ? 2 : 1),
+                eliteDmgMult: wStats.eliteDmgMult ?? 1,
                 tickMs,
                 burn,
 
@@ -4099,14 +4506,14 @@ const beat = plan.beats[plan.idx];
           const next = [];
 
           const isRocket = weapon.id === 'ROCKET';
-          const rocketTargets = isRocket ? pickDistinctTargets(currentEnemies, pp, pellets) : null;
 
           for (let i = 0; i < pellets; i += 1) {
             let a = baseAngle;
 
-            if (isRocket && rocketTargets && rocketTargets[i]) {
-              a = Math.atan2(rocketTargets[i].y - pp.y, rocketTargets[i].x - pp.x);
-              a += (Math.random() - 0.5) * 0.10;
+            if (isRocket) {
+              const arc = wStats.burstArc ?? 0.12;
+              const jitter = (Math.random() - 0.5) * (wStats.spread || 0.04);
+              a = baseAngle + (pellets === 1 ? 0 : (i - (pellets - 1) / 2) * arc) + jitter;
             } else {
               const spread = (Math.random() - 0.5) * (wStats.spread || 0);
               a = baseAngle + spread;
@@ -4119,7 +4526,7 @@ const beat = plan.beats[plan.idx];
             }
 
             const baseSpeed = wStats.bulletSpeed || 12;
-            const speed = isRocket ? baseSpeed * 0.78 : baseSpeed;
+            const speed = isRocket ? baseSpeed : baseSpeed;
 
             const vx = Math.cos(a) * speed;
             const vy = Math.sin(a) * speed;
@@ -4140,8 +4547,11 @@ const beat = plan.beats[plan.idx];
               lifeStart: wStats.lifeMs || (isSniper ? 900 : 1000),
               width: wStats.width,
               height: wStats.height,
+              delay: isRocket ? i * (wStats.burstDelay || 120) : 0,
+              age: 0,
               pierce: (wStats.pierce ?? 0) + smgPierceBonus,
               flashy: wStats.flashy,
+              rocketVisual: !!wStats.rocketVisual || isRocket,
 
               ricochets: wStats.ricochets || 0,
               chain: wStats.chain || 0,
@@ -4152,6 +4562,7 @@ const beat = plan.beats[plan.idx];
               explodeRadius: wStats.explodeRadius || 0,
               explodeMult: wStats.explodeMult || 0,
               burn: wStats.burn || 0,
+              aoeBurn: wStats.aoeBurn !== false,
               microFreeze: wStats.microFreeze || 0,
 
               // Sniper fairness vs elites
@@ -4159,7 +4570,7 @@ const beat = plan.beats[plan.idx];
 
               isHoming: !!wStats.homing,
               accel: wStats.accel || 0,
-              homeTargetId: isRocket && rocketTargets && rocketTargets[i] ? rocketTargets[i].id : null,
+              homeTargetId: null,
 
               pull: wStats.pull || 0,
               pullRadius: wStats.pullRadius || 0,
@@ -4173,7 +4584,8 @@ const beat = plan.beats[plan.idx];
 
               rail: !!wStats.rail,
               railWidth: wStats.railWidth || 18,
-              railMs: wStats.railMs || 90
+              railMs: wStats.railMs || 90,
+              timeBolt: !!wStats.timeBolt || weapon.id === 'TIME'
             });
           }
 
@@ -4185,6 +4597,7 @@ const beat = plan.beats[plan.idx];
       const allSlashes = [...movedSlashes, ...spawnedSlashes];
       const withDamage = movedEnemies.map((en0) => {
         let en = en0;
+        if (en.type === 'ghost_spirit') return en;
         let totalDamage = bulletHits.get(en.id) || 0;
 
         if (en.damageReductionUntil && Date.now() < en.damageReductionUntil) {
@@ -4287,7 +4700,7 @@ const beat = plan.beats[plan.idx];
 
           if (st.burn) {
             out.burnUntil = Math.max(out.burnUntil || 0, Date.now() + st.burn);
-          out.burnDps = Math.max(out.burnDps || 0, 8.5);
+          out.burnDps = Math.max(out.burnDps || 0, 13.5);
           }
 
         if (st.deathBurstRadius) {
@@ -4372,15 +4785,24 @@ const beat = plan.beats[plan.idx];
         if ((en.bossPhase || 'main') === 'main' && en.split50Done && !en.split20Done && hpPctOriginal <= 0.20) {
           const firstMax = Math.round(originalMax * 0.13);
           const baseA = Math.random() * Math.PI * 2;
-          bossReturnPendingRef.current = {
+          const initialPieces = Math.max(4, Math.round(2 * (en.cloneMult || 2)));
+          const pendingReturns = Array.isArray(bossReturnPendingRef.current)
+            ? [...bossReturnPendingRef.current]
+            : bossReturnPendingRef.current
+              ? [bossReturnPendingRef.current]
+              : [];
+          pendingReturns.push({
             x: en.x,
             y: en.y,
             originalMaxHp: originalMax,
             difficulty: tileDifficulty,
-            chargesDone: en.chargesDone || 2
-          };
-          for (let i = 0; i < 2; i += 1) {
-            const a = baseA + i * Math.PI;
+            chargesDone: en.chargesDone || 2,
+            isFinalBoss: !!en.isFinalBoss,
+            cloneMult: en.cloneMult || 2
+          });
+          bossReturnPendingRef.current = pendingReturns;
+          for (let i = 0; i < initialPieces; i += 1) {
+            const a = baseA + (i / initialPieces) * Math.PI * 2;
             phaseAdds.push({
               ...en,
               id: `boss_split_0_${i}_${Math.random()}`,
@@ -4411,6 +4833,26 @@ const beat = plan.beats[plan.idx];
       deathInput.forEach((en) => {
         if (en.hp > 0) {
           alive.push(en);
+          return;
+        }
+
+        if (en.type === 'ghost' && !en.revivedOnce) {
+          deathFxRef.current = [...(deathFxRef.current || []), { id: Math.random(), x: en.x, y: en.y, t: Date.now(), size: en.size }];
+          alive.push({
+            ...en,
+            id: `ghost_spirit_${Math.random()}`,
+            type: 'ghost_spirit',
+            hp: 1,
+            reviveHp: Math.max(18, Math.round((en.maxHp || 50) * 0.72)),
+            maxHp: Math.max(18, Math.round((en.maxHp || 50) * 0.72)),
+            reviveAt: Date.now() + 10000,
+            speed: Math.max(1.2, (en.speed || 1.6) * 0.88),
+            size: Math.max(24, en.size || 28),
+            contactDamage: 0,
+            xp: 0,
+            color: '#8e929d',
+            revivedOnce: true
+          });
           return;
         }
 
@@ -4471,6 +4913,21 @@ const beat = plan.beats[plan.idx];
           }
         }
 
+        if (en.ghostOnDeath || en.type === 'abomination') {
+          for (let i = 0; i < 10; i += 1) {
+            const a = (Math.PI * 2 * i) / 10;
+            const gh = spawnEnemy(tileDifficulty + 2, 'ghost', getProgressT());
+            alive.push({
+              ...gh,
+              x: clamp(en.x + Math.cos(a) * 95, 30, ARENA_SIZE - 30),
+              y: clamp(en.y + Math.sin(a) * 95, 30, ARENA_SIZE - 30),
+              size: 34,
+              color: '#d8dbe6'
+            });
+          }
+          explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: en.x, y: en.y, r: 260, t: Date.now(), life: 720, color: 'rgba(180,190,210,1)', glow: 40, fill: true, alpha: 0.26 }];
+        }
+
         const total = en.type === 'boss_split' ? 0 : Math.max(2, Math.floor(en.xp * 0.80));
         const pack = Math.max(1, Math.round(total / 14));
 
@@ -4503,7 +4960,18 @@ const beat = plan.beats[plan.idx];
           twinBossDeath = en;
         } else if (en.type === 'boss') {
           maybeDropPickup(en.x, en.y, 'boss');
-          setVictory(true);
+          if (en.isFinalBoss) {
+            if (requiresExtraction) {
+              extractionRef.current = { active: true, progress: 0, x: en.x, y: en.y };
+              setExtractionUI({ active: true, progress: 0, x: en.x, y: en.y });
+              pushToast('EXTRACTION ZONE DEPLOYED');
+              juicePunch(1.35, 1.0);
+            } else {
+              setVictory(true);
+            }
+          } else {
+            pushToast('BOSS DOWN');
+          }
         } else if (String(en.type).startsWith('mini_')) {
           maybeDropPickup(en.x, en.y, 'mini');
         } else if (Math.random() < 0.06) {
@@ -4535,8 +5003,12 @@ const beat = plan.beats[plan.idx];
           } : en);
         } else {
           alive.push({
-            ...spawnBoss({ x: twinBossDeath.x - 380, y: twinBossDeath.y + 320 }, tileDifficulty),
-            id: 'boss',
+            ...spawnBoss({ x: twinBossDeath.x - 380, y: twinBossDeath.y + 320 }, tileDifficulty, {
+              isFinalBoss: !!twinBossDeath.isFinalBoss,
+              finalForm: !!twinBossDeath.isFinalBoss,
+              tileDifficulty,
+              cloneMult: twinBossDeath.cloneMult || 2,
+            }),
             x: twinBossDeath.x,
             y: twinBossDeath.y,
             split50Done: true,
@@ -4552,26 +5024,38 @@ const beat = plan.beats[plan.idx];
         juicePunch(1.2, 1.0);
       }
 
-      if (bossReturnPendingRef.current && !alive.some((en) => en.type === 'boss_split')) {
-        const pending = bossReturnPendingRef.current;
-        const originalMax = pending.originalMaxHp || Math.round((5400 + tileDifficulty * 220) * BOSS_HP_MULT);
-        alive.push({
-          ...spawnBoss({ x: pending.x - 380, y: pending.y + 320 }, pending.difficulty || tileDifficulty),
-          id: 'boss',
-          x: pending.x,
-          y: pending.y,
-          hp: Math.round(originalMax * 0.19),
-          maxHp: originalMax,
-          originalMaxHp: originalMax,
-          split50Done: true,
-          split20Done: true,
-          chargesDone: Math.max(2, pending.chargesDone || 2),
-          nextRamPct: -1,
-          zergPhaseDone: true
-        });
-        bossReturnPendingRef.current = null;
-        explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: pending.x, y: pending.y, r: 520, t: Date.now(), life: 760, color: 'rgba(255,218,107,1)', glow: 52, fill: true, alpha: 0.30 }];
-        juicePunch(1.45, 1.0);
+      {
+        const pendingList = Array.isArray(bossReturnPendingRef.current)
+          ? bossReturnPendingRef.current
+          : bossReturnPendingRef.current
+            ? [bossReturnPendingRef.current]
+            : [];
+        if (pendingList.length > 0 && !alive.some((en) => en.type === 'boss_split')) {
+          pendingList.forEach((pending) => {
+            const originalMax = pending.originalMaxHp || Math.round((5400 + tileDifficulty * 220) * BOSS_HP_MULT);
+            alive.push({
+              ...spawnBoss({ x: pending.x - 380, y: pending.y + 320 }, pending.difficulty || tileDifficulty, {
+                isFinalBoss: !!pending.isFinalBoss,
+                finalForm: !!pending.isFinalBoss,
+                tileDifficulty,
+                cloneMult: pending.cloneMult || 2,
+              }),
+              x: pending.x,
+              y: pending.y,
+              hp: Math.round(originalMax * 0.19),
+              maxHp: originalMax,
+              originalMaxHp: originalMax,
+              split50Done: true,
+              split20Done: true,
+              chargesDone: Math.max(2, pending.chargesDone || 2),
+              nextRamPct: -1,
+              zergPhaseDone: true
+            });
+            explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: pending.x, y: pending.y, r: 520, t: Date.now(), life: 760, color: 'rgba(255,218,107,1)', glow: 52, fill: true, alpha: 0.30 }];
+          });
+          bossReturnPendingRef.current = [];
+          juicePunch(1.45, 1.0);
+        }
       }
 
       if (deathBursts.length) {
@@ -4668,16 +5152,28 @@ const beat = plan.beats[plan.idx];
 
       // -------------------- LEVEL UP --------------------
       if (xpRef.current >= xpTargetRef.current) {
+        let gainedLevels = 0;
         xpRef.current = xpRef.current - xpTargetRef.current;
         levelRef.current = (levelRef.current || 1) + 1;
 
         // Slightly easier XP curve so you reach higher ranks by late game
-        const t = getProgressT();
-        const late = norm01(t, 0.45, 1.0);
-        const growth = lerp(1.27, 1.20, late); // late: slower requirement increase
-        xpTargetRef.current = Math.floor(xpTargetRef.current * growth);
+        while (true) {
+          gainedLevels += 1;
+          const t = getProgressT();
+          const late = norm01(t, 0.45, 1.0);
+          const growth = lerp(1.27, 1.20, late); // late: slower requirement increase
+          xpTargetRef.current = Math.floor(xpTargetRef.current * growth);
+          if (xpRef.current < xpTargetRef.current || gainedLevels >= 12) break;
+          xpRef.current -= xpTargetRef.current;
+          levelRef.current = (levelRef.current || 1) + 1;
+        }
 
-        setUpgradeOptions(rollUpgradeOptions(selectedWeaponsRef.current, weaponLevelsRef.current, statsRef.current));
+        pendingUpgradeCountRef.current += gainedLevels;
+        if ((upgradeOptionsRef.current || []).length === 0) {
+          const nextOptions = rollUpgradeOptions(selectedWeaponsRef.current, weaponLevelsRef.current, statsRef.current);
+          upgradeOptionsRef.current = nextOptions;
+          setUpgradeOptions(nextOptions);
+        }
         syncUI(true);
         juicePunch(0.55, 0.55);
       }
@@ -4765,7 +5261,7 @@ const beat = plan.beats[plan.idx];
     }, 16);
 
     return () => clearInterval(loop);
-  }, [selectedWeapons.length, tileDifficulty, crewDamageMult, crewSpeedMult]);
+  }, [selectedWeapons.length, tileDifficulty, crewDamageMult, crewSpeedMult, requiresExtraction]);
 
   const chooseUpgrade = (option) => {
     const next = option.apply(statsRef.current);
@@ -4773,13 +5269,34 @@ const beat = plan.beats[plan.idx];
     setStats(next);
     if (option.weaponId) {
       if (option.upgradeLevel) {
-        setWeaponLevels((levels) => ({ ...levels, [option.weaponId]: option.upgradeLevel }));
+        const nextLevels = { ...weaponLevelsRef.current, [option.weaponId]: option.upgradeLevel };
+        weaponLevelsRef.current = nextLevels;
+        setWeaponLevels(nextLevels);
+        logTimeline('upgrade', `${WEAPONS.find((w) => w.id === option.weaponId)?.name || option.weaponId} rank ${option.upgradeLevel}`);
       } else {
-        setSelectedWeapons((w) => (w.length >= 4 ? w : [...w, option.weaponId]));
-        setWeaponLevels((levels) => ({ ...levels, [option.weaponId]: 1 }));
+        const curWeapons = selectedWeaponsRef.current || [];
+        const nextWeapons = curWeapons.length >= 4 || curWeapons.includes(option.weaponId)
+          ? curWeapons
+          : [...curWeapons, option.weaponId];
+        selectedWeaponsRef.current = nextWeapons;
+        setSelectedWeapons(nextWeapons);
+        const nextLevels = { ...weaponLevelsRef.current, [option.weaponId]: 1 };
+        weaponLevelsRef.current = nextLevels;
+        setWeaponLevels(nextLevels);
+        logTimeline('weapon', `Added ${WEAPONS.find((w) => w.id === option.weaponId)?.name || option.weaponId}`);
       }
+    } else {
+      logTimeline('upgrade', option.title || option.id || 'Upgrade');
     }
-    setUpgradeOptions([]);
+    pendingUpgradeCountRef.current = Math.max(0, (pendingUpgradeCountRef.current || 0) - 1);
+    if (pendingUpgradeCountRef.current > 0) {
+      const nextOptions = rollUpgradeOptions(selectedWeaponsRef.current, weaponLevelsRef.current, statsRef.current);
+      upgradeOptionsRef.current = nextOptions;
+      setUpgradeOptions(nextOptions);
+    } else {
+      upgradeOptionsRef.current = [];
+      setUpgradeOptions([]);
+    }
     pausedRef.current = false;
     pauseStartedAtRef.current = 0;
     juicePunch(0.40, 0.60);
@@ -4789,13 +5306,21 @@ const beat = plan.beats[plan.idx];
     // reset run state
     progElapsedRef.current = 0;
     elapsed.current = 0;
+    matchStartedAtRef.current = Date.now();
+    timelineRef.current = [];
+    setMatchSummary(null);
 
     flagsRef.current = { reliefLock: false };
     activeEventRef.current = null;
     eventCooldownUntilRef.current = 0;
     reliefUntilRef.current = 0;
     reliefStartedAtRef.current = 0;
-    bossReturnPendingRef.current = null;
+    bossReturnPendingRef.current = [];
+    bossMilestoneIdxRef.current = 0;
+    extractionRef.current = { active: false, progress: 0, x: 0, y: 0 };
+    setExtractionUI({ active: false, progress: 0, x: 0, y: 0 });
+    pendingUpgradeCountRef.current = 0;
+    upgradeOptionsRef.current = [];
 
     beatPlanRef.current = { ready: false, idx: 0, beats: [] };
 
@@ -4831,6 +5356,7 @@ const beat = plan.beats[plan.idx];
     setSelectedWeapons(initialWeapons);
     setWeaponLevels(initialLevels);
     setUpgradeOptions([]);
+    logTimeline('weapon', `Started with ${WEAPONS.find((w) => w.id === weaponId)?.name || weaponId}`);
     juicePunch(0.40, 0.55);
   };
 
@@ -4882,6 +5408,7 @@ const beat = plan.beats[plan.idx];
     }),
     ...matchPassiveHud.map((item) => ({ ...item, icon: SPRITES[item.id] }))
   ];
+  const matchClock = fmtClock(elapsed.current || 0);
   const renderPlayerPos = playerRef.current || player;
   const renderViewportW = typeof window !== 'undefined' ? window.innerWidth : 0;
   const renderViewportH = typeof window !== 'undefined' ? window.innerHeight : 0;
@@ -4922,8 +5449,9 @@ const beat = plan.beats[plan.idx];
         </div>
       )}
 
-      {loadoutHud.length > 0 && (
+      {loadoutHud.length > 0 && !matchSummary && !victory && !defeat && (
         <div className="loadout-hud">
+          <div className="loadout-title">TIME {matchClock} / KILLS {killCountRef.current || 0}</div>
           <div className="loadout-title">LOADOUT</div>
           {loadoutHud.map((item) => (
             <div key={item.id} className="loadout-item">
@@ -4935,7 +5463,7 @@ const beat = plan.beats[plan.idx];
         </div>
       )}
 
-      <div className="combat-hud">
+      {!matchSummary && !victory && !defeat && <div className="combat-hud">
         <div className="ability-row">
           {thornsUnlockedHUD && (
             <div className={`ability-slot ${showThorns ? 'active' : thornsOnCdHUD ? 'cooldown' : 'ready'}`}>
@@ -4973,6 +5501,26 @@ const beat = plan.beats[plan.idx];
         </div>
 
         {bossSpawned && !victory && <div className="boss-warning">BOSS ENGAGED</div>}
+
+        {extractionUI.active && (
+          <div
+            style={{
+              width: 'min(520px, calc(100vw - 40px))',
+              height: 20,
+              marginTop: 10,
+              border: '1px solid rgba(0,255,160,0.65)',
+              background: 'rgba(0,0,0,0.58)',
+              boxShadow: '0 0 24px rgba(0,255,160,0.16)',
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ height: '100%', width: `${Math.round((extractionUI.progress || 0) * 100)}%`, background: 'linear-gradient(90deg, rgba(0,255,160,0.92), rgba(255,218,107,0.92))' }} />
+            <span style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 900, letterSpacing: 2 }}>
+              EXTRACTION {Math.floor((extractionUI.progress || 0) * 100)}%
+            </span>
+          </div>
+        )}
 
         <div className="status-row" style={{ display: 'flex', gap: 10, marginTop: 10, opacity: 0.98, flexWrap: 'wrap', alignItems: 'center' }}>
           {/* Buff/ability chips (DO NOT use .boss-warning here; it has margin-left:auto and was causing the bottom-right jump) */}
@@ -5138,7 +5686,7 @@ const beat = plan.beats[plan.idx];
             </div>
           )}
         </div>
-      </div>
+      </div>}
 
       {/* Expiration toasts */}
       {toasts.length > 0 && (
@@ -5224,6 +5772,42 @@ const beat = plan.beats[plan.idx];
           />
         ))}
 
+        {extractionUI.active && (
+          <div
+            style={{
+              position: 'absolute',
+              left: extractionUI.x,
+              top: extractionUI.y,
+              width: 264,
+              height: 264,
+              marginLeft: -132,
+              marginTop: -132,
+              borderRadius: 999,
+              border: '4px solid rgba(0,255,160,0.72)',
+              background: 'radial-gradient(circle, rgba(0,255,160,0.18) 0%, rgba(0,255,160,0.08) 48%, rgba(0,0,0,0) 70%)',
+              boxShadow: '0 0 34px rgba(0,255,160,0.34), inset 0 0 30px rgba(0,255,160,0.18)',
+              zIndex: 3,
+              pointerEvents: 'none',
+            }}
+          >
+            <div
+              style={{
+                position: 'absolute',
+                left: '50%',
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+                fontSize: 13,
+                fontWeight: 900,
+                letterSpacing: 3,
+                color: 'rgba(220,255,235,0.96)',
+                textShadow: '0 0 12px rgba(0,255,160,0.9)',
+              }}
+            >
+              EXTRACT
+            </div>
+          </div>
+        )}
+
         {pickups.map((pk) => (
           (() => {
             const nowP = Date.now();
@@ -5270,7 +5854,7 @@ const beat = plan.beats[plan.idx];
         }}
       />
 
-      {upgradeOptions.length > 0 && (
+      {upgradeOptions.length > 0 && !matchSummary && !victory && !defeat && (
         <div className={liveUpgradeSelect ? 'live-upgrade-panel' : 'ui-layer'} style={liveUpgradeSelect ? undefined : { background: 'rgba(1,2,6,0.92)' }}>
           <h1>CHOOSE UPGRADE</h1>
           <div className="upgrade-grid">
@@ -5294,7 +5878,24 @@ const beat = plan.beats[plan.idx];
         <div className="victory-overlay">
           <div className="victory-blast" />
           <h1>MAP CLEARED</h1>
-          <p>Explosion propagated across the zone.</p>
+          <p>{matchSummary?.playerName || playerName || 'Operator'} survived {fmtClock(matchSummary?.elapsedMs || elapsed.current)} with {matchSummary?.kills ?? killCountRef.current} kills.</p>
+          {matchSummary && (
+            <div style={{ width: 'min(760px, calc(100vw - 36px))', maxHeight: '52vh', overflow: 'auto', marginTop: 14, textAlign: 'left', background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(0,242,255,0.25)', padding: 14 }}>
+              <strong style={{ letterSpacing: 2 }}>UPGRADE TIMELINE</strong>
+              {(matchSummary.timeline || []).length === 0 ? <div style={{ opacity: 0.75, marginTop: 8 }}>No upgrades recorded.</div> : (matchSummary.timeline || []).map((row, i) => (
+                <div key={`${row.t}-${i}`} style={{ display: 'grid', gridTemplateColumns: '64px 90px 1fr', gap: 10, padding: '6px 0', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: 12 }}>
+                  <span>{fmtClock(row.t)}</span><span>{String(row.type || '').toUpperCase()}</span><b>{row.label}</b>
+                </div>
+              ))}
+              <strong style={{ display: 'block', letterSpacing: 2, marginTop: 14 }}>TALENTS</strong>
+              {(matchSummary.talents || []).length === 0 ? <div style={{ opacity: 0.75, marginTop: 8 }}>No purchased talents.</div> : (matchSummary.talents || []).map((t) => (
+                <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: 12 }}>
+                  <span>{t.id}</span><b>Rank {t.rank}</b>
+                </div>
+              ))}
+            </div>
+          )}
+          <button className="scifi-btn" style={{ marginTop: 16 }} onClick={() => onVictory(matchSummary || buildMatchSummary('CLEARED'))}>CONTINUE</button>
         </div>
       )}
 
@@ -5302,13 +5903,30 @@ const beat = plan.beats[plan.idx];
         <div className="victory-overlay">
           <div className="victory-blast" />
           <h1>CORE BREACH</h1>
-          <p>Systems offline. Retreating to orbit.</p>
+          <p>{matchSummary?.playerName || playerName || 'Operator'} fell at {Math.floor((matchSummary?.progress || getProgressT()) * 100)}% after {fmtClock(matchSummary?.elapsedMs || elapsed.current)}.</p>
+          {matchSummary && (
+            <div style={{ width: 'min(760px, calc(100vw - 36px))', maxHeight: '52vh', overflow: 'auto', marginTop: 14, textAlign: 'left', background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(255,0,122,0.25)', padding: 14 }}>
+              <strong style={{ letterSpacing: 2 }}>UPGRADE TIMELINE</strong>
+              {(matchSummary.timeline || []).map((row, i) => (
+                <div key={`${row.t}-${i}`} style={{ display: 'grid', gridTemplateColumns: '64px 90px 1fr', gap: 10, padding: '6px 0', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: 12 }}>
+                  <span>{fmtClock(row.t)}</span><span>{String(row.type || '').toUpperCase()}</span><b>{row.label}</b>
+                </div>
+              ))}
+              <strong style={{ display: 'block', letterSpacing: 2, marginTop: 14 }}>TALENTS</strong>
+              {(matchSummary.talents || []).length === 0 ? <div style={{ opacity: 0.75, marginTop: 8 }}>No purchased talents.</div> : (matchSummary.talents || []).map((t) => (
+                <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: 12 }}>
+                  <span>{t.id}</span><b>Rank {t.rank}</b>
+                </div>
+              ))}
+            </div>
+          )}
+          <button className="scifi-btn" style={{ marginTop: 16 }} onClick={() => onExit(matchSummary || buildMatchSummary('DEFEATED'))}>CONTINUE</button>
         </div>
       )}
 
-      <button className="scifi-btn" style={{ position: 'absolute', bottom: 20, right: 20 }} onClick={onExit}>
+      {!matchSummary && !victory && !defeat && <button className="scifi-btn" style={{ position: 'absolute', bottom: 20, right: 20 }} onClick={() => onExit(buildMatchSummary('SURRENDERED'))}>
         SURRENDER
-      </button>
+      </button>}
     </div>
   );
 }
