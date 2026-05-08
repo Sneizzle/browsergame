@@ -6529,8 +6529,6 @@ const beat = plan.beats[plan.idx];
       upgradeOptionsRef.current = [];
       setUpgradeOptions([]);
     }
-    pausedRef.current = false;
-    pauseStartedAtRef.current = 0;
     juicePunch(0.40, 0.60);
   };
 
@@ -6596,7 +6594,7 @@ const beat = plan.beats[plan.idx];
     juicePunch(0.40, 0.55);
   };
 
-  const nowHUD = Date.now();
+  const nowHUD = paused && pauseStartedAtRef.current ? pauseStartedAtRef.current : Date.now();
   const tHUD = talentsRef.current;
   const showShield = nowHUD < shieldUntil.current;
   const showOverdrive = nowHUD < overdriveUntil.current;
