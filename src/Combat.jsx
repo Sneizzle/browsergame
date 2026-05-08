@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import thornsIcon from './components/t1.PNG';
 import decoyIcon from './components/t3.PNG';
+import turretIcon from './components/t8.PNG';
 import spriteAttackSpeed from './gunsprite/attackspeedupgrade.png';
 import spriteAxe from './gunsprite/axe.png';
 import spriteDamage from './gunsprite/damageupgrade.png';
@@ -42,7 +43,7 @@ const BOSS_TIME = 120000;
 const TRASH_HP_MULT = 0.95;           // trash HP slightly up (less one-shot mid/late)
 const ELITE_HP_MULT = 1.05;           // elites keep their identity late
 const MINI_HP_MULT = 1.15;            // mini-bosses a bit sturdier
-const BOSS_HP_MULT = 2.05;            // boss stays epic through late-game burst builds
+const BOSS_HP_MULT = 1.86;            // bosses need to survive late-game burst builds
 // Slightly softer early-game spawn density (prevents guaranteed wall encroach / early overwhelm)
 const SPAWN_INTERVAL_MULT = 0.90;
 
@@ -63,24 +64,43 @@ const BOSS_ADD_INTERVAL_MULT = 1.25;    // boss fight should stay populated
 const BOSS_ADD_COUNT_MULT = 1.0;        // keep pressure during boss
 // -------------------- PLAYER FEEDBACK TWEAKS --------------------
 const AFTER40_ENEMY_MULT = 1.50;     // +50% enemies after 40% progress
-const WALL_HP_MULT = 1.25;           // wall units are a real danger, not an XP circle
-const RAM_HP_MULT = 0.60;            // ~15% faster RAM kill (was 0.70)
+const WALL_HP_MULT = 0.67;           // thicker pressure walls, still breakable
+const RAM_HP_MULT = 0.21;            // RAM should be about 35% of the previous tuned HP
 const RELIEF_SPAWN_INTERVAL_MULT = 1.00; // keep pressure; avoid dead-air breaks
+
+const DEFAULT_WEAPON_CAP = 5;
+const PERF_EFFECT_CAP = 54;
+const PERF_ARC_CAP = 52;
+const PERF_DEATH_FX_CAP = 58;
+const PERF_ENEMY_SEPARATION_CAP = 150;
+const PERF_ORB_SOFT_CAP = 220;
+const PERF_NORMAL_ENEMY_CAP = 148;
+const PERF_WALL_ENEMY_CAP = 112;
+const PERF_BULLET_CAP = 130;
 
 
 // -------------------- helpers --------------------
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * clamp(t, 0, 1);
 const norm01 = (x, a, b) => (b <= a ? 0 : clamp((x - a) / (b - a), 0, 1));
+const stableUnitRoll = (value = '') => {
+  const s = String(value || '');
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i += 1) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return ((h >>> 0) % 10000) / 10000;
+};
 
 const tileDifficultyRank = (difficulty) => clamp(Math.round(Number(difficulty) || 1), 1, 5);
 const difficultyHpMult = (difficulty) => {
   const d = tileDifficultyRank(difficulty);
-  return [0, 0.62, 0.95, 1.45, 2.18, 3.05][d] || 1;
+  return [0, 0.62, 0.95, 1.45, 2.18, 4.25][d] || 1;
 };
 const difficultyPressureMult = (difficulty) => {
   const d = tileDifficultyRank(difficulty);
-  return [0, 0.62, 0.92, 1.30, 1.72, 2.25][d] || 1;
+  return [0, 0.62, 0.92, 1.30, 1.72, 3.10][d] || 1;
 };
 const bossMilestonesForDifficulty = (difficulty) => {
   const d = tileDifficultyRank(difficulty);
@@ -125,13 +145,15 @@ const applyEnemySeparation = (list) => {
   const enemies = Array.isArray(list) ? list.map((e) => ({ ...e })) : [];
   const n = enemies.length;
   if (n <= 1) return enemies;
+  if (n > 180) return enemies;
 
   for (let i = 0; i < n; i += 1) {
+    if (n > PERF_ENEMY_SEPARATION_CAP && i % 2 !== 0) continue;
     const a = enemies[i];
     if (!a || a.despawn) continue;
     if (a.type === 'wall') continue;
 
-    const jLimit = n > 170 ? Math.min(n, i + 32) : n;
+    const jLimit = n > 170 ? Math.min(n, i + 18) : n;
     for (let j = i + 1; j < jLimit; j += 1) {
       const b = enemies[j];
       if (!b || b.despawn) continue;
@@ -188,6 +210,8 @@ const isControlImmune = (type) => {
     t === 'abomination' ||
     t === 'merge_brute' ||
     t === 'lane_elite' ||
+    t === 'pylon' ||
+    t === 'grab_ghost' ||
     t === 'splitter_boss' ||
     t.startsWith('mini_')
   );
@@ -196,6 +220,64 @@ const isControlImmune = (type) => {
 const isKnockbackImmune = (type) => {
   const t = String(type || '');
   return isControlImmune(t) || t === 'splitter' || t === 'splitter_boss';
+};
+
+const appendCapped = (prev, items, cap = PERF_EFFECT_CAP) => {
+  const base = Array.isArray(prev) ? prev : [];
+  const add = Array.isArray(items) ? items : [items];
+  if (!add.length) return base;
+  return [...base, ...add].slice(-cap);
+};
+
+const buildSpatialGrid = (items, cellSize = 180) => {
+  const grid = new Map();
+  for (const item of items || []) {
+    const cx = Math.floor(item.x / cellSize);
+    const cy = Math.floor(item.y / cellSize);
+    const key = `${cx}:${cy}`;
+    const bucket = grid.get(key) || [];
+    bucket.push(item);
+    grid.set(key, bucket);
+  }
+  return { grid, cellSize };
+};
+
+const querySpatialGrid = (spatial, x, y, radius) => {
+  if (!spatial?.grid) return [];
+  const { grid, cellSize } = spatial;
+  const minX = Math.floor((x - radius) / cellSize);
+  const maxX = Math.floor((x + radius) / cellSize);
+  const minY = Math.floor((y - radius) / cellSize);
+  const maxY = Math.floor((y + radius) / cellSize);
+  const out = [];
+  for (let gx = minX; gx <= maxX; gx += 1) {
+    for (let gy = minY; gy <= maxY; gy += 1) {
+      const bucket = grid.get(`${gx}:${gy}`);
+      if (bucket) out.push(...bucket);
+    }
+  }
+  return out;
+};
+
+const capEnemyBudget = (list, playerPos) => {
+  const src = Array.isArray(list) ? list : [];
+  const walls = [];
+  const specials = [];
+  const normals = [];
+  for (const e of src) {
+    if (!e || e.hp <= 0) continue;
+    if (e.type === 'wall') walls.push(e);
+    else if (e.type === 'boss' || e.type === 'boss_split' || e.type === 'pylon' || String(e.type || '').startsWith('mini_') || e.type === 'tiny_ram' || e.type === 'turret') specials.push(e);
+    else normals.push(e);
+  }
+  const score = (e) => {
+    const dx = e.x - playerPos.x;
+    const dy = e.y - playerPos.y;
+    return dx * dx + dy * dy;
+  };
+  if (walls.length > PERF_WALL_ENEMY_CAP) walls.sort((a, b) => score(a) - score(b)).length = PERF_WALL_ENEMY_CAP;
+  if (normals.length > PERF_NORMAL_ENEMY_CAP) normals.sort((a, b) => score(a) - score(b)).length = PERF_NORMAL_ENEMY_CAP;
+  return [...specials, ...walls, ...normals];
 };
 
 // -------------------- WEAPONS (RANK 3-5: MORE CC + EXPLOSIVITY + EFFECTS) --------------------
@@ -395,11 +477,11 @@ const WEAPONS = [
     targeting: 'closest',
     color: '#a6b7ff',
     levels: [
-      { title: 'Tesla I', description: 'Longer chain lightning that heavily slows zapped targets.', stats: { cooldown: 920, damage: 12, chain: 3, arcRange: 260, stun: 80, chainFalloff: 0.86, zapSlow: 0.55, zapSlowDuration: 1600 } },
-      { title: 'Tesla II', description: 'Bigger arcs, longer reach.', stats: { cooldown: 900, damage: 13, chain: 4, arcRange: 320, stun: 100, zapSlow: 0.62, zapSlowDuration: 1900 } },
-      { title: 'Tesla III', description: 'Deep temporal lock on chained targets.', stats: { chain: 5, damage: 14, arcRange: 380, zapSlow: 0.75, zapSlowDuration: 2400, fork: 1 } },
-      { title: 'Tesla IV', description: 'Wide forked discharge.', stats: { cooldown: 860, chain: 6, damage: 15, arcRange: 430, zapSlow: 0.84, zapSlowDuration: 2850, fork: 2 } },
-      { title: 'Tesla V', description: 'Overload storm: huge arcs, lower damage, brutal slow.', stats: { cooldown: 820, damage: 16, chain: 7, arcRange: 500, zapSlow: 0.90, zapSlowDuration: 3000, fork: 3, storm: true } }
+      { title: 'Tesla I', description: 'Longer chain lightning that heavily slows zapped targets.', stats: { cooldown: 820, damage: 15, chain: 4, arcRange: 300, stun: 95, chainFalloff: 0.90, zapSlow: 0.58, zapSlowDuration: 1750 } },
+      { title: 'Tesla II', description: 'Bigger arcs, longer reach.', stats: { cooldown: 790, damage: 16, chain: 5, arcRange: 360, stun: 120, zapSlow: 0.66, zapSlowDuration: 2100 } },
+      { title: 'Tesla III', description: 'Deep temporal lock on chained targets.', stats: { cooldown: 760, chain: 6, damage: 17, arcRange: 420, zapSlow: 0.78, zapSlowDuration: 2550, fork: 1 } },
+      { title: 'Tesla IV', description: 'Wide forked discharge.', stats: { cooldown: 720, chain: 7, damage: 18, arcRange: 480, zapSlow: 0.86, zapSlowDuration: 3000, fork: 2 } },
+      { title: 'Tesla V', description: 'Overload storm: huge arcs, lower damage, brutal slow.', stats: { cooldown: 680, damage: 19, chain: 9, arcRange: 560, zapSlow: 0.92, zapSlowDuration: 3400, fork: 4, storm: true } }
     ]
   },
 
@@ -409,11 +491,11 @@ const WEAPONS = [
     targeting: 'closest',
     color: '#ff9a8a',
     levels: [
-      { title: 'Rocket I', description: 'One real missile, then reload.', stats: { cooldown: 2300, bulletSpeed: 6.2, accel: 0.10, damage: 42, pellets: 1, burstDelay: 150, burstArc: 0.08, spread: 0.03, width: 34, height: 14, pierce: 0, explodeRadius: 142, explodeMult: 0.86, homing: false, aoeBurn: false, rocketVisual: true } },
-      { title: 'Rocket II', description: 'Two-missile salvo in the same firing lane.', stats: { cooldown: 2700, pellets: 2, burstDelay: 185, burstArc: 0.13, damage: 38, explodeRadius: 152, explodeMult: 0.84, aoeBurn: false, rocketVisual: true } },
-      { title: 'Rocket III', description: 'Three-missile salvo with concussive slow.', stats: { cooldown: 3150, pellets: 3, burstDelay: 175, burstArc: 0.15, damage: 35, explodeRadius: 164, explodeMult: 0.82, burn: 800, aoeBurn: false, slow: 0.08, slowDuration: 560, rocketVisual: true } },
-      { title: 'Rocket IV', description: 'Quad salvo: pew, pew, pew, pew.', stats: { cooldown: 3600, pellets: 4, burstDelay: 165, burstArc: 0.17, damage: 33, explodeRadius: 176, explodeMult: 0.82, burn: 1000, aoeBurn: false, stun: 70, rocketVisual: true } },
-      { title: 'Rocket V', description: 'Eight-missile magazine. Big lane barrage, then long reload.', stats: { cooldown: 4700, pellets: 8, burstDelay: 125, burstArc: 0.20, bulletSpeed: 5.8, accel: 0.13, damage: 27, explodeRadius: 188, explodeMult: 0.78, burn: 1200, aoeBurn: false, slow: 0.10, slowDuration: 620, rocketVisual: true } }
+      { title: 'Rocket I', description: 'One real missile, then reload.', stats: { cooldown: 2100, bulletSpeed: 6.5, accel: 0.12, damage: 62, pellets: 1, burstDelay: 150, burstArc: 0.08, spread: 0.03, width: 34, height: 14, pierce: 0, explodeRadius: 150, explodeMult: 1.05, homing: false, aoeBurn: false, rocketVisual: true } },
+      { title: 'Rocket II', description: 'Two-missile salvo in the same firing lane.', stats: { cooldown: 2450, pellets: 2, burstDelay: 170, burstArc: 0.13, damage: 56, explodeRadius: 164, explodeMult: 1.02, aoeBurn: false, rocketVisual: true } },
+      { title: 'Rocket III', description: 'Three-missile salvo with concussive slow.', stats: { cooldown: 2850, pellets: 3, burstDelay: 160, burstArc: 0.15, damage: 50, explodeRadius: 178, explodeMult: 0.98, burn: 1000, aoeBurn: false, slow: 0.12, slowDuration: 720, rocketVisual: true } },
+      { title: 'Rocket IV', description: 'Quad salvo: pew, pew, pew, pew.', stats: { cooldown: 3250, pellets: 4, burstDelay: 150, burstArc: 0.17, damage: 46, explodeRadius: 190, explodeMult: 0.98, burn: 1250, aoeBurn: false, stun: 95, rocketVisual: true } },
+      { title: 'Rocket V', description: 'Eight-missile magazine. Big lane barrage, then long reload.', stats: { cooldown: 4200, pellets: 8, burstDelay: 110, burstArc: 0.20, bulletSpeed: 6.1, accel: 0.15, damage: 38, explodeRadius: 204, explodeMult: 0.92, burn: 1500, aoeBurn: false, slow: 0.14, slowDuration: 760, rocketVisual: true } }
     ]
   },
 
@@ -438,11 +520,11 @@ const WEAPONS = [
     targeting: 'closest',
     color: '#7ff2d7',
     levels: [
-      { title: 'Time I', description: 'Temporal slug: leaves a stasis scar that slows enemies crossing it.', stats: { cooldown: 980, bulletSpeed: 10.5, damage: 10, pellets: 1, spread: 0.02, width: 28, height: 10, pierce: 2, slow: 0.55, slowDuration: 1400, microFreeze: 110, timeBolt: true, timeScar: true, scarRadius: 78, scarMs: 1600 } },
-      { title: 'Time II', description: 'Longer stasis scar and deeper slow.', stats: { cooldown: 920, damage: 12, pierce: 3, slow: 0.64, slowDuration: 1700, microFreeze: 140, scarRadius: 92, scarMs: 1850, timeBolt: true, timeScar: true } },
-      { title: 'Time III', description: 'Forked chrono slug with visible time-ripple fields.', stats: { pellets: 2, spread: 0.10, damage: 11, explodeRadius: 44, explodeMult: 0.16, stun: 130, scarRadius: 108, scarMs: 2100, timeBolt: true, timeScar: true } },
-      { title: 'Time IV', description: 'Temporal latch: bolts chain once and freeze longer.', stats: { cooldown: 860, chain: 1, slow: 0.72, slowDuration: 2200, microFreeze: 180, explodeRadius: 56, explodeMult: 0.20, scarRadius: 124, scarMs: 2450, timeBolt: true, timeScar: true } },
-      { title: 'Time V', description: 'Chrono fracture: triple slugs that paint stasis lanes.', stats: { pellets: 3, spread: 0.16, chain: 2, damage: 10, stun: 260, slow: 0.78, slowDuration: 2600, explodeRadius: 72, explodeMult: 0.24, scarRadius: 140, scarMs: 2800, timeBolt: true, timeScar: true } }
+      { title: 'Time I', description: 'Temporal slug: leaves a stasis scar that slows enemies crossing it.', stats: { cooldown: 880, bulletSpeed: 11.5, damage: 14, pellets: 1, spread: 0.02, width: 30, height: 11, pierce: 3, slow: 0.58, slowDuration: 1550, microFreeze: 130, timeBolt: true, timeScar: true, scarRadius: 92, scarMs: 1800 } },
+      { title: 'Time II', description: 'Longer stasis scar and deeper slow.', stats: { cooldown: 820, damage: 16, pierce: 4, slow: 0.68, slowDuration: 1900, microFreeze: 165, scarRadius: 112, scarMs: 2100, timeBolt: true, timeScar: true } },
+      { title: 'Time III', description: 'Forked chrono slug with visible time-ripple fields.', stats: { cooldown: 780, pellets: 2, spread: 0.10, damage: 15, explodeRadius: 62, explodeMult: 0.24, stun: 170, scarRadius: 132, scarMs: 2400, timeBolt: true, timeScar: true } },
+      { title: 'Time IV', description: 'Temporal latch: bolts chain once and freeze longer.', stats: { cooldown: 720, chain: 1, damage: 16, slow: 0.76, slowDuration: 2500, microFreeze: 230, explodeRadius: 78, explodeMult: 0.30, scarRadius: 152, scarMs: 2850, timeBolt: true, timeScar: true } },
+      { title: 'Time V', description: 'Chrono fracture: triple slugs that paint stasis lanes.', stats: { cooldown: 660, pellets: 3, spread: 0.16, chain: 2, damage: 15, stun: 320, slow: 0.82, slowDuration: 3100, explodeRadius: 96, explodeMult: 0.34, scarRadius: 174, scarMs: 3300, timeBolt: true, timeScar: true } }
     ]
   }
 ];
@@ -460,24 +542,29 @@ const UPGRADES = [
 const EVENT_GHOST_WAVE = 'GHOST_WAVE';
 const EVENT_ABOMINATION = 'ABOMINATION';
 const EVENT_ELITE_WALL = 'ELITE_WALL';
+const EVENT_PYLON = 'PYLON';
+const EVENT_GRAB_GHOST = 'GRAB_GHOST';
 
 const EVENT_DEFS = {
   SWARM: { id: 'SWARM', duration: 16000 },
+  TINY_RAMS: { id: 'TINY_RAMS', duration: 12500 },
   WALL: { id: 'WALL', duration: 26000 },
   TURRET: { id: 'TURRET', duration: 17000 },
   SPLITTER: { id: 'SPLITTER', duration: 14500 },
   GHOST_WAVE: { id: EVENT_GHOST_WAVE, duration: 10000 },
   ABOMINATION: { id: EVENT_ABOMINATION, duration: 26000 },
   ELITE_WALL: { id: EVENT_ELITE_WALL, duration: 11000 },
+  PYLON: { id: EVENT_PYLON, duration: 25000 },
+  GRAB_GHOST: { id: EVENT_GRAB_GHOST, duration: 8500 },
   RELIEF: { id: 'RELIEF', duration: 5200 }
 };
 
 const PICKUP_DEFS = {
   MAGNET: { id: 'MAGNET', title: 'XP Magnet', life: 9200 },
   FREEZE: { id: 'FREEZE', title: 'Time Freeze', life: 3200 },
-  OVERDRIVE: { id: 'OVERDRIVE', title: 'Overdrive', life: 5200 },
-  SHIELD: { id: 'SHIELD', title: 'Emergency Shield', life: 5200 },
-  DOUBLE_DAMAGE: { id: 'DOUBLE_DAMAGE', title: 'Double Damage', life: 6000 }
+  OVERDRIVE: { id: 'OVERDRIVE', title: 'Overdrive', life: 8200 },
+  DOUBLE_DAMAGE: { id: 'DOUBLE_DAMAGE', title: 'Double Damage', life: 9000 },
+  LEVELUP: { id: 'LEVELUP', title: 'Level Core', life: 60000 }
 };
 
 // ---------- spawners ----------
@@ -522,9 +609,24 @@ const spawnEnemyBase = (difficulty, t = 0) => {
   }
 
   if (t > 0.18 && roll > 0.955 && roll < 0.978) {
-    const tier = t > 0.55 ? 3 : 2;
-    const hp = Math.round((105 + difficulty * 16) * TRASH_HP_MULT * lateAddHpMultFromT(t) * diffHp * hpRoll(0.16));
-    return { id: Math.random(), type: 'splitter', x, y, splitTier: tier, hp, maxHp: hp, speed: 0.78 + difficulty * 0.020, size: 48, xp: 15, contactDamage: 10, color: '#b6ff4a' };
+    const tier = t > 0.55 ? 4 : 3;
+    const hp = Math.round((138 + difficulty * 22) * TRASH_HP_MULT * lateAddHpMultFromT(t) * diffHp * hpRoll(0.16));
+    return { id: Math.random(), type: 'splitter', x, y, splitTier: tier, hp, maxHp: hp, speed: 0.76 + difficulty * 0.018, size: 58, xp: 19, contactDamage: 11, color: '#b6ff4a' };
+  }
+
+  if (t > 0.22 && roll > 0.885 && roll <= 0.905) {
+    const hp = Math.round((70 + difficulty * 10) * TRASH_HP_MULT * lateAddHpMultFromT(t) * diffHp);
+    return { id: Math.random(), type: 'spitter', x, y, hp, maxHp: hp, speed: 1.18 + difficulty * 0.025, size: 34, xp: 20, contactDamage: 9, color: '#64ff7a', nextSpitAt: Date.now() + 900 + Math.random() * 1000 };
+  }
+
+  if (t > 0.32 && roll > 0.905 && roll <= 0.920) {
+    const hp = Math.round((720 + difficulty * 96) * ELITE_HP_MULT * diffHp);
+    return { id: Math.random(), type: 'grab_ghost', x, y, hp: Math.round(hp * 1.7), maxHp: Math.round(hp * 1.7), speed: 2.42 + difficulty * 0.038, size: 64, xp: 120, contactDamage: 0, color: '#b9f2ff', grabUntil: 0 };
+  }
+
+  if (t > 0.42 && roll > 0.920 && roll <= 0.935) {
+    const hp = Math.round((68 + difficulty * 9) * TRASH_HP_MULT * lateAddHpMultFromT(t) * diffHp);
+    return { id: Math.random(), type: 'burrower', x, y, hp, maxHp: hp, speed: 1.35 + difficulty * 0.025, size: 32, xp: 24, contactDamage: 13, color: '#c08bff', nextBurrowAt: Date.now() + 1600 + Math.random() * 1400 };
   }
 
   // Late-game fairness: reduce elite frequency a bit after ~60% progress
@@ -589,25 +691,56 @@ const spawnEnemy = (difficulty, forcedType = null, t = 0) => {
     // WALL units are intentionally chunky; still respect late adds HP nerf
     const addHpMult = lateAddHpMultFromT(t);
     const hp = Math.round((((320 + difficulty * 26) * (1 + difficulty * 0.06)) * TRASH_HP_MULT * addHpMult) * WALL_HP_MULT * diffHp);
-    return { ...base, type: 'wall', hp, maxHp: hp, speed: 0.70 + difficulty * 0.01, size: 46, xp: 9, contactDamage: 19, color: '#ff2a4b' };
+    return { ...base, type: 'wall', hp, maxHp: hp, speed: 0.70 + difficulty * 0.01, size: 46, xp: 9, contactDamage: 0, blocksPlayer: true, color: '#ff2a4b' };
   }
   if (forcedType === 'turret') {
     const hp = Math.round((520 + difficulty * 80) * ELITE_HP_MULT * diffHp);
     return { ...base, type: 'turret', hp, maxHp: hp, speed: 0, size: 72, xp: 70, contactDamage: 10, color: '#ffb84a', nextShotAt: Date.now() + 950 + Math.random() * 900 };
   }
   if (forcedType === 'splitter') {
-    const tier = 3;
-    const hp = Math.round((145 + difficulty * 20) * TRASH_HP_MULT * lateAddHpMultFromT(t) * diffHp);
-    return { ...base, type: 'splitter', splitTier: tier, hp, maxHp: hp, speed: 0.82 + difficulty * 0.025, size: 56, xp: 18, contactDamage: 12, color: '#b6ff4a' };
+    const tier = 4;
+    const hp = Math.round((190 + difficulty * 28) * TRASH_HP_MULT * lateAddHpMultFromT(t) * diffHp);
+    return { ...base, type: 'splitter', splitTier: tier, hp, maxHp: hp, speed: 0.78 + difficulty * 0.022, size: 66, xp: 26, contactDamage: 13, color: '#b6ff4a' };
   }
   if (forcedType === 'splitter_boss') {
-    const tier = 5;
-    const hp = Math.round((1450 + difficulty * 210) * ELITE_HP_MULT * diffHp);
-    return { ...base, type: 'splitter_boss', splitTier: tier, hp, maxHp: hp, speed: 0.58 + difficulty * 0.012, size: 118, xp: 260, contactDamage: 24, color: '#7dff4a' };
+    const tier = 7;
+    const hp = Math.round((2150 + difficulty * 320) * ELITE_HP_MULT * diffHp);
+    return { ...base, type: 'splitter_boss', splitTier: tier, hp, maxHp: hp, speed: 0.54 + difficulty * 0.010, size: 148, xp: 360, contactDamage: 28, color: '#7dff4a' };
   }
   if (forcedType === 'ghost') {
     const hp = Math.round((48 + difficulty * 7) * TRASH_HP_MULT * diffHp);
     return { ...base, type: 'ghost', hp, maxHp: hp, speed: 2.05 + difficulty * 0.04, size: 30, xp: 15, contactDamage: 10, color: '#c6cad6', revivedOnce: false };
+  }
+  if (forcedType === 'spitter') {
+    const hp = Math.round((85 + difficulty * 12) * TRASH_HP_MULT * lateAddHpMultFromT(t) * diffHp);
+    return { ...base, type: 'spitter', hp, maxHp: hp, speed: 1.18 + difficulty * 0.025, size: 34, xp: 20, contactDamage: 9, color: '#64ff7a', nextSpitAt: Date.now() + 800 + Math.random() * 900 };
+  }
+  if (forcedType === 'grab_ghost') {
+    const hp = Math.round((980 + difficulty * 135) * ELITE_HP_MULT * diffHp);
+    return { ...base, type: 'grab_ghost', hp: Math.round(hp * 1.7), maxHp: Math.round(hp * 1.7), speed: 2.50 + difficulty * 0.040, size: 66, xp: 140, contactDamage: 0, color: '#b9f2ff', grabUntil: 0 };
+  }
+  if (forcedType === 'burrower') {
+    const hp = Math.round((78 + difficulty * 10) * TRASH_HP_MULT * lateAddHpMultFromT(t) * diffHp);
+    return { ...base, type: 'burrower', hp, maxHp: hp, speed: 1.35 + difficulty * 0.025, size: 32, xp: 24, contactDamage: 13, color: '#c08bff', nextBurrowAt: Date.now() + 1600 + Math.random() * 1400 };
+  }
+  if (forcedType === 'pylon') {
+    const hp = Math.round((1350 + difficulty * 230) * ELITE_HP_MULT * diffHp);
+    return {
+      ...base,
+      type: 'pylon',
+      hp,
+      maxHp: hp,
+      speed: 0,
+      size: 112,
+      xp: 240,
+      contactDamage: 0,
+      color: '#7ff2d7',
+      pylonStartedAt: Date.now(),
+      pylonChargeMs: 22000,
+      pylonAbsorbed: 0,
+      pylonPullRadius: 680,
+      pylonMonster: false
+    };
   }
   if (forcedType === 'merge_brute') {
     const hp = Math.round((1400 + difficulty * 260) * ELITE_HP_MULT * diffHp);
@@ -628,7 +761,7 @@ const spawnMiniBoss = (player, difficulty, kind = 'charger', pos = null) => {
 
   const hp = Math.round(baseHp * MINI_HP_MULT * (kind === 'charger' ? RAM_HP_MULT : 1.0) * difficultyHpMult(difficulty));
   const tileD = tileDifficultyRank(difficulty);
-  const tunedHp = Math.round(hp * (tileD <= 1 ? 0.42 : tileD === 2 ? 0.70 : 1));
+  const tunedHp = Math.round(hp * (tileD <= 1 ? 0.36 : tileD === 2 ? 0.55 : 0.72));
 
   const spawnX = pos?.x ?? Math.min(Math.max(player.x + 460, 120), ARENA_SIZE - 120);
   const spawnY = pos?.y ?? Math.min(Math.max(player.y - 380, 120), ARENA_SIZE - 120);
@@ -641,9 +774,9 @@ const spawnMiniBoss = (player, difficulty, kind = 'charger', pos = null) => {
     hp: tunedHp,
     maxHp: tunedHp,
     speed: kind === 'assassin' ? 2.75 : 2.15,
-    size: kind === 'charger' ? 104 : 92,
-    xp: 140,
-    contactDamage: kind === 'charger' ? 28 : 22,
+    size: kind === 'charger' ? 96 : 92,
+    xp: kind === 'charger' ? 90 : 140,
+    contactDamage: kind === 'charger' ? 22 : 22,
     color: kind === 'assassin' ? '#c9ff6b' : '#ffda6b'
   };
 
@@ -651,14 +784,53 @@ const spawnMiniBoss = (player, difficulty, kind = 'charger', pos = null) => {
     const stagger = Math.random() * 1000;
     return {
       ...base,
-      dashCd: 1900 + Math.random() * 900, dashWindup: 620 + Math.random() * 520, dashMs: 1120, dashSpd: 15.0,
+      dashCd: 2500 + Math.random() * 900, dashWindup: 760 + Math.random() * 420, dashMs: 860, dashSpd: 12.5,
       dashUntil: 0, windupUntil: 0, dashDir: 0,
-      nextDashAt: Date.now() + 450 + stagger,
+      nextDashAt: Date.now() + 950 + stagger,
+      chargeSequenceLeft: 7,
       damageReductionUntil: Date.now() + 1700, damageReductionMult: 0.40
     };
   }
   // assassin: short teleports if you stand still
   return { ...base, blinkCd: 1600, blinkUntil: 0, damageReductionUntil: Date.now() + 650, damageReductionMult: 0.70 };
+};
+
+const spawnTinyRamsPack = (player, difficulty, count) => {
+  const out = [];
+  const radius = 620;
+  const margin = 150;
+  const cx = clamp(player.x, radius + margin, ARENA_SIZE - (radius + margin));
+  const cy = clamp(player.y, radius + margin, ARENA_SIZE - (radius + margin));
+  const base = Math.random() * Math.PI * 2;
+  for (let i = 0; i < count; i += 1) {
+    const a = base + (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.18;
+    const ram = spawnMiniBoss(player, difficulty, 'charger', {
+      x: cx + Math.cos(a) * radius,
+      y: cy + Math.sin(a) * radius
+    });
+    const hp = Math.max(38, Math.round((52 + difficulty * 8) * TRASH_HP_MULT * difficultyHpMult(difficulty)));
+    out.push({
+      ...ram,
+      id: `tiny_ram_${Math.random()}`,
+      type: 'tiny_ram',
+      hp,
+      maxHp: hp,
+      size: 42,
+      speed: 2.35 + difficulty * 0.025,
+      xp: 16,
+      contactDamage: 10,
+      color: '#ffd46b',
+      dashCd: 3200 + Math.random() * 800,
+      dashWindup: 560 + Math.random() * 260,
+      dashMs: 520,
+      dashSpd: 8.5,
+      nextDashAt: Date.now() + 900 + Math.random() * 1400,
+      chargeSequenceLeft: 1,
+      damageReductionUntil: 0,
+      damageReductionMult: 1
+    });
+  }
+  return out;
 };
 
 // FIX: keep the ring fully in-bounds so clamp doesn’t collapse multiple spawns into the same edge pixels
@@ -703,7 +875,7 @@ const spawnWallRing = (pp, difficulty, meta, t = 0) => {
   const radiusStart = meta.radiusStart ?? 2000;
   const encroachSpeed = meta.encroachSpeed ?? 1.5;
   const minRadius = meta.minRadius ?? 10;
-  const hpMult = meta.hpMult ?? 2.8;
+  const hpMult = meta.hpMult ?? 1.0;
   const size = meta.size ?? 52;
 
   const baseRot = Math.random() * Math.PI * 2;
@@ -715,8 +887,8 @@ const spawnWallRing = (pp, difficulty, meta, t = 0) => {
     const enBase = spawnEnemy(difficulty, 'wall', t);
     const hp = Math.round(enBase.maxHp * hpMult);
 
-    const x = clamp(pp.x + Math.cos(a) * radiusStart, 40, ARENA_SIZE - 40);
-    const y = clamp(pp.y + Math.sin(a) * radiusStart, 40, ARENA_SIZE - 40);
+    const x = clamp(pp.x + Math.cos(a) * radiusStart, -160, ARENA_SIZE + 160);
+    const y = clamp(pp.y + Math.sin(a) * radiusStart, -160, ARENA_SIZE + 160);
 
     out.push({
       ...enBase,
@@ -730,10 +902,41 @@ const spawnWallRing = (pp, difficulty, meta, t = 0) => {
       wallEncroach: encroachSpeed,
       wallMinR: minRadius,
       wallCx: pp.x,
-      wallCy: pp.y
+      wallCy: pp.y,
+      wallArrivedAt: 0
     });
   }
 
+  return out;
+};
+
+const spawnWallSweep = (pp, difficulty, meta, t = 0) => {
+  const fromLeft = meta.fromLeft ?? Math.random() < 0.5;
+  const count = meta.count ?? 38;
+  const size = meta.size ?? 74;
+  const hpMult = meta.hpMult ?? 1.0;
+  const step = ARENA_SIZE / (count - 1);
+  const x = fromLeft ? 44 : ARENA_SIZE - 44;
+  const out = [];
+  for (let i = 0; i < count; i += 1) {
+    const enBase = spawnEnemy(difficulty, 'wall', t);
+    const hp = Math.round(enBase.maxHp * hpMult);
+    out.push({
+      ...enBase,
+      id: `wall_sweep_${i}_${Math.random()}`,
+      hp,
+      maxHp: hp,
+      size,
+      x,
+      y: clamp(i * step, 22, ARENA_SIZE - 22),
+      laneDir: fromLeft ? 1 : -1,
+      speed: meta.speed ?? 0.82,
+      sweepArrivedAt: 0,
+      contactDamage: 0,
+      blocksPlayer: true,
+      color: '#ff3154'
+    });
+  }
   return out;
 };
 
@@ -741,7 +944,7 @@ const spawnBoss = (player, difficulty, opts = {}) => {
   const finalBoost = opts.finalForm ? 1.22 : 1;
   const milestoneBoost = opts.milestonePct && opts.milestonePct < 1 ? 0.78 + opts.milestonePct * 0.34 : 1;
   const tileD = tileDifficultyRank(opts.tileDifficulty || difficulty);
-  const bossTileMult = tileD <= 1 ? 0.34 : tileD === 2 ? (opts.isFinalBoss ? 0.31 : 0.58) : tileD === 3 ? 0.88 : 1;
+  const bossTileMult = tileD <= 1 ? 0.44 : tileD === 2 ? (opts.isFinalBoss ? 0.36 : 0.64) : tileD === 3 ? 0.96 : 1.08;
   const hp = Math.round((5400 + difficulty * 220) * BOSS_HP_MULT * difficultyHpMult(difficulty) * finalBoost * milestoneBoost * (opts.hpMult || 1) * bossTileMult);
   const sizeMult = opts.sizeMult || (opts.finalForm ? 1.18 : 1);
   return {
@@ -803,17 +1006,46 @@ const orbVisualFromValue = (v) => {
 };
 
 const mergeOrbs = (orbs) => {
+  const input = Array.isArray(orbs) && orbs.length > PERF_ORB_SOFT_CAP
+    ? [...orbs]
+        .sort((a, b) => (b.value || 0) - (a.value || 0))
+        .slice(0, PERF_ORB_SOFT_CAP)
+    : (orbs || []);
   const merged = [];
   const mergeDist = 36; // more merging = fewer pickups
+  const mergeDist2 = mergeDist * mergeDist;
+  const cell = mergeDist;
+  const buckets = new Map();
 
-  orbs.forEach((o) => {
-    const target = merged.find((m) => Math.hypot(m.x - o.x, m.y - o.y) < mergeDist);
+  input.forEach((o) => {
+    const cx = Math.floor(o.x / cell);
+    const cy = Math.floor(o.y / cell);
+    let target = null;
+    for (let gx = cx - 1; gx <= cx + 1 && !target; gx += 1) {
+      for (let gy = cy - 1; gy <= cy + 1 && !target; gy += 1) {
+        const bucket = buckets.get(`${gx}:${gy}`) || [];
+        for (const idx of bucket) {
+          const m = merged[idx];
+          const dx = m.x - o.x;
+          const dy = m.y - o.y;
+          if (dx * dx + dy * dy < mergeDist2) {
+            target = m;
+            break;
+          }
+        }
+      }
+    }
     if (target) {
       target.value += o.value;
       target.x = (target.x + o.x) / 2;
       target.y = (target.y + o.y) / 2;
     } else {
+      const idx = merged.length;
       merged.push({ ...o });
+      const key = `${cx}:${cy}`;
+      const bucket = buckets.get(key) || [];
+      bucket.push(idx);
+      buckets.set(key, bucket);
     }
   });
 
@@ -824,9 +1056,9 @@ const mergeOrbs = (orbs) => {
   });
 };
 
-// ---------- upgrades: guarantee 3 distinct guns early, then bias toward upgrading (cap 4) ----------
-const rollUpgradeOptions = (ownedWeapons, weaponLevels, stats) => {
-  const MAX_GUNS = 4;
+// ---------- upgrades: guarantee 3 distinct guns early, then bias toward upgrading ----------
+const rollUpgradeOptions = (ownedWeapons, weaponLevels, stats, maxWeapons = DEFAULT_WEAPON_CAP) => {
+  const MAX_GUNS = maxWeapons;
   const canAddWeapon = ownedWeapons.length < MAX_GUNS;
 
   const unowned = WEAPONS.filter((w) => !ownedWeapons.includes(w.id));
@@ -848,7 +1080,7 @@ const rollUpgradeOptions = (ownedWeapons, weaponLevels, stats) => {
             id: `WEAPON_${w.id}`,
             key: `WEAPON_${w.id}`,
             title: `New Weapon: ${w.name}`,
-            description: ownedWeapons.length >= 3 ? 'Adds final weapon slot (cap 4)' : 'Adds another weapon to your loadout',
+            description: ownedWeapons.length >= 3 ? `Adds final weapon slot (cap ${MAX_GUNS})` : 'Adds another weapon to your loadout',
             weaponId: w.id,
             apply: (s) => ({ ...s })
           },
@@ -908,7 +1140,7 @@ const rollUpgradeOptions = (ownedWeapons, weaponLevels, stats) => {
     picked.push({
       id: `WEAPON_${w.id}`,
       title: `New Weapon: ${w.name}`,
-      description: ownedWeapons.length >= 3 ? 'Adds final weapon slot (cap 4)' : 'Adds another weapon to your loadout',
+      description: ownedWeapons.length >= 3 ? `Adds final weapon slot (cap ${MAX_GUNS})` : 'Adds another weapon to your loadout',
       weaponId: w.id,
       apply: (s) => ({ ...s })
     });
@@ -984,7 +1216,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   const [selectedWeapons, setSelectedWeapons] = useState([]);
   const [weaponLevels, setWeaponLevels] = useState({});
   const [xp, setXp] = useState(0);
-  const [xpTarget, setXpTarget] = useState(140);
+  const [xpTarget, setXpTarget] = useState(78);
   const [level, setLevel] = useState(1);
   const [upgradeOptions, setUpgradeOptions] = useState([]);
   const [bossSpawned, setBossSpawned] = useState(false);
@@ -1029,6 +1261,12 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     activeSpaceAbility: null,
     onboardProduction: false,
     decoyUnlocked: false,
+    deployTurretUnlocked: false,
+    extraWeaponSlot: false,
+    turretDetonate: false,
+    turretBomb: false,
+    turretFortify: false,
+    turretFlamePillar: false,
     combustion: false,
     gravPickup: false,
     droneOrbit: false,
@@ -1049,8 +1287,17 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   const platesLastGenAtRef = useRef(Date.now());
   const axeComboRef = useRef(0);
   const killCountRef = useRef(0);
+  const killsByTypeRef = useRef({});
+  const damageTakenRef = useRef(0);
+  const damageDealtRef = useRef(0);
+  const damageSourcesRef = useRef({});
   const decoyRef = useRef(null);
   const decoyCooldownUntilRef = useRef(0);
+  const playerTurretCooldownUntilRef = useRef(0);
+  const playerTurretsRef = useRef([]);
+  const playerGrabRef = useRef(null);
+  const grabGhostsSpawnedRef = useRef(0);
+  const playerBombsRef = useRef([]);
   const fleetNextAtRef = useRef(Date.now() + 40000);
   const fleetUntilRef = useRef(0);
   const droneNextAtRef = useRef(Date.now() + 60000);
@@ -1091,7 +1338,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
       thornsUnlocked,
       thornsDurationMs: (2800 + quickRearmRank * 600) * 2,
       thornsCooldownMs: Math.max(10000, 25000 - quickRearmRank * 3500),
-      thornsRamDamage: (36 + tileDifficulty * 4) * 1.20,
+      thornsRamDamage: (58 + tileDifficulty * 8) * 1.55,
       quickRearmRank,
 
       fieldArmorRank,
@@ -1112,6 +1359,12 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
 
       onboardProduction: Number(p.RES_ONBOARD_PROD || 0) > 0,
       decoyUnlocked: Number(p.RES_DECOY_HOLO || 0) > 0,
+      deployTurretUnlocked: Number(p.ENG_DEPLOY_TURRET || 0) > 0,
+      extraWeaponSlot: Number(p.ENG_EXTRA_WEAPON || 0) > 0,
+      turretDetonate: Number(p.ENG_TURRET_DETONATE || 0) > 0,
+      turretBomb: Number(p.ENG_TURRET_BOMB || 0) > 0,
+      turretFortify: Number(p.ENG_TURRET_FORTIFY || 0) > 0,
+      turretFlamePillar: Number(p.ENG_TURRET_FLAME || 0) > 0,
       combustion: Number(p.RES_COMBUSTION || 0) > 0,
       gravPickup: Number(p.RES_GRAV_PICKUP || 0) > 0,
       droneOrbit: Number(p.RES_DRONE_ORBIT || 0) > 0 || Number(p.RES_FLEET_ASSIST || 0) > 0,
@@ -1132,9 +1385,17 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     platesLastGenAtRef.current = Date.now();
     axeComboRef.current = 0;
     killCountRef.current = 0;
+    killsByTypeRef.current = {};
+    damageTakenRef.current = 0;
+    damageDealtRef.current = 0;
+    damageSourcesRef.current = {};
     combustionNextAtRef.current = 0;
     decoyRef.current = null;
     decoyCooldownUntilRef.current = 0;
+    playerTurretCooldownUntilRef.current = 0;
+    playerTurretsRef.current = [];
+    playerBombsRef.current = [];
+    playerBombsRef.current = [];
     fleetNextAtRef.current = 9999999999999;
     fleetUntilRef.current = 0;
     droneNextAtRef.current = Date.now() + 4500;
@@ -1146,7 +1407,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   }, [runBuild, tileDifficulty]);
 
   // per-run duration (random 25–100% longer)
-    const runTimeRef = useRef(runTimeMs || (BOSS_TIME * (0.50 + Math.random() * 0.35)));
+    const runTimeRef = useRef(runTimeMs || (BOSS_TIME * (0.38 + Math.random() * 0.17) * (tileDifficultyRank(tileDifficulty) <= 2 ? 1.6 : 1)));
 
   // BEAT PLAN: randomized sequence each run (matches desired arc)
   const beatPlanRef = useRef({ ready: false, idx: 0, beats: [] });
@@ -1168,6 +1429,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   const reliefUntilRef = useRef(0);
   const reliefStartedAtRef = useRef(0);
   const eventCooldownUntilRef = useRef(0);
+  const progressLastSyncRef = useRef(0);
 
   // power pickups
   const magnetUntil = useRef(0);
@@ -1177,8 +1439,8 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   const doubleDamageUntil = useRef(0);
 
   const selectingWeapon = selectedWeapons.length === 0;
-  const liveUpgradeSelect = upgradeOptions.length > 0 && selectedWeapons.length >= 3;
-  const paused = selectingWeapon || (upgradeOptions.length > 0 && !liveUpgradeSelect) || victory || defeat;
+  const liveUpgradeSelect = false;
+  const paused = selectingWeapon || upgradeOptions.length > 0 || victory || defeat;
 
   const pausedRef = useRef(paused);
   const pauseStartedAtRef = useRef(0);
@@ -1223,6 +1485,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
         shieldUntil,
         doubleDamageUntil,
         decoyCooldownUntilRef,
+        playerTurretCooldownUntilRef,
         fleetNextAtRef,
         fleetUntilRef,
         droneNextAtRef,
@@ -1250,6 +1513,8 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
       }));
       pickupsRef.current = (pickupsRef.current || []).map((p) => ({ ...p, t: p.t + delta }));
       enemyProjectilesRef.current = (enemyProjectilesRef.current || []).map((p) => ({ ...p, t: p.t + delta }));
+      playerTurretsRef.current = (playerTurretsRef.current || []).map((t) => ({ ...t, until: t.until + delta, nextShotAt: t.nextShotAt + delta }));
+      playerBombsRef.current = (playerBombsRef.current || []).map((b) => ({ ...b, detonateAt: b.detonateAt + delta }));
       pauseStartedAtRef.current = 0;
     }
     pausedRef.current = paused;
@@ -1286,15 +1551,17 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     cameraRef.current = nc;
 
     if (playerSpriteRef.current) {
-      playerSpriteRef.current.style.left = `${pos.x}px`;
-      playerSpriteRef.current.style.top = `${pos.y}px`;
+      playerSpriteRef.current.style.left = '0px';
+      playerSpriteRef.current.style.top = '0px';
+      playerSpriteRef.current.style.transform = `translate3d(${pos.x}px,${pos.y}px,0) translate(-50%, -50%) scale(1.8)`;
     }
     if (playerTracerRef.current) {
-      playerTracerRef.current.style.left = `${pos.x - 60}px`;
-      playerTracerRef.current.style.top = `${pos.y - 60}px`;
+      playerTracerRef.current.style.left = '0px';
+      playerTracerRef.current.style.top = '0px';
+      playerTracerRef.current.style.transform = `translate3d(${pos.x - 60}px,${pos.y - 60}px,0)`;
     }
     if (worldRef.current) {
-      worldRef.current.style.transform = `translate(${-nc.x}px,${-nc.y}px)`;
+      worldRef.current.style.transform = `translate3d(${-nc.x}px,${-nc.y}px,0)`;
     }
   };
 
@@ -1411,6 +1678,9 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
 
     const s = statsRef.current;
     s.hp = Math.max(0, (s.hp || 0) - dmg);
+    damageTakenRef.current += dmg;
+    const src = String(source || 'contact');
+    damageSourcesRef.current[src] = (damageSourcesRef.current[src] || 0) + dmg;
 
     // procs (only if damage actually went through)
     tryProcGhost(now);
@@ -1422,7 +1692,11 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
 
   const onPlayerKill = (enemy) => {
     const now = Date.now();
-    if (enemy?.type !== 'ghost_spirit') killCountRef.current += 1;
+    if (enemy?.type !== 'ghost_spirit') {
+      killCountRef.current += 1;
+      const type = String(enemy?.type || 'unknown');
+      killsByTypeRef.current[type] = (killsByTypeRef.current[type] || 0) + 1;
+    }
     // Adrenal triggers on kill too
     tryProcAdrenal(now, 'kill');
 
@@ -1435,15 +1709,21 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
       const hit = new Set([enemy.id]);
       const blasts = [{ x: enemy.x, y: enemy.y }];
 
-      for (let hop = 0; hop < 10; hop += 1) {
-        const candidates = (enemiesRef.current || [])
-          .filter((en) => en.hp > 0 && !hit.has(en.id))
-          .map((en) => ({ en, d: Math.hypot(en.x - origin.x, en.y - origin.y) }))
-          .filter((x) => x.d < 620)
-          .sort((a, b) => a.d - b.d);
-        const next = candidates[0]?.en;
+      for (let hop = 0; hop < 6; hop += 1) {
+        let next = null;
+        let bestD2 = 620 * 620;
+        for (const en of (enemiesRef.current || [])) {
+          if (en.hp <= 0 || hit.has(en.id)) continue;
+          const dx = en.x - origin.x;
+          const dy = en.y - origin.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < bestD2) {
+            bestD2 = d2;
+            next = en;
+          }
+        }
         if (!next) break;
-        arcsRef.current = [...(arcsRef.current || []), {
+        arcsRef.current = appendCapped(arcsRef.current, {
           id: Math.random(),
           x1: origin.x,
           y1: origin.y,
@@ -1452,15 +1732,15 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
           t: now + hop * 30,
           life: 420,
           color: 'rgba(255,218,107,0.95)'
-        }];
+        }, PERF_ARC_CAP);
         blasts.push({ x: next.x, y: next.y });
         hit.add(next.id);
         origin = next;
       }
 
-      explosionsRef.current = [
-        ...(explosionsRef.current || []),
-        ...blasts.map((b, i) => ({
+      explosionsRef.current = appendCapped(
+        explosionsRef.current,
+        blasts.map((b, i) => ({
           id: Math.random(),
           x: b.x,
           y: b.y,
@@ -1471,12 +1751,16 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
           glow: 34,
           fill: true,
           alpha: 0.40
-        }))
-      ];
+        })),
+        PERF_EFFECT_CAP
+      );
 
       enemiesRef.current = (enemiesRef.current || []).map((en) => {
         let total = 0;
+        let checked = 0;
         for (const b of blasts) {
+          checked += 1;
+          if (checked > 7) break;
           const d = Math.hypot(en.x - b.x, en.y - b.y);
           if (d <= radius) total += damage * Math.max(0.38, 1 - d / radius);
         }
@@ -1527,12 +1811,18 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
       if (k === ' ') keys.current.space = down;
       if (e.code === 'Digit1' || k === '1') keys.current.one = down;
       if (e.code === 'Digit2' || k === '2') keys.current.two = down;
+      if (e.code === 'Digit3' || k === '3') keys.current.three = down;
     };
     window.addEventListener('keydown', handleKey);
     window.addEventListener('keyup', handleKey);
+    const blockCtrlWheel = (e) => {
+      if (e.ctrlKey) e.preventDefault();
+    };
+    window.addEventListener('wheel', blockCtrlWheel, { passive: false });
     return () => {
       window.removeEventListener('keydown', handleKey);
       window.removeEventListener('keyup', handleKey);
+      window.removeEventListener('wheel', blockCtrlWheel);
     };
   }, []);
 
@@ -1615,8 +1905,15 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     elapsedMs: elapsed.current || 0,
     progress: getProgressT(),
     kills: killCountRef.current || 0,
+    killsByType: { ...(killsByTypeRef.current || {}) },
+    damageTaken: Math.round(damageTakenRef.current || 0),
+    killedByMost: Object.entries(damageSourcesRef.current || {}).sort((a, b) => Number(b[1]) - Number(a[1]))[0]?.[0] || '',
+    damageDealt: Math.round(damageDealtRef.current || 0),
+    dps: Math.round(((damageDealtRef.current || 0) / Math.max(1, (elapsed.current || 0) / 1000)) * 10) / 10,
     level: levelRef.current || 1,
     weapons: (selectedWeaponsRef.current || []).map((id) => ({ id, level: weaponLevelsRef.current?.[id] || 1 })),
+    mvpWeapon: [...(selectedWeaponsRef.current || [])]
+      .sort((a, b) => (weaponLevelsRef.current?.[b] || 1) - (weaponLevelsRef.current?.[a] || 1))[0] || '',
     timeline: [...(timelineRef.current || [])],
     talents: Object.entries(runBuild?.purchased || {})
       .filter(([, rank]) => Number(rank || 0) > 0)
@@ -1640,18 +1937,21 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     // Arc: frequent action, no empty mid/late.
     //  - events are shorter (see EVENT_DEFS) so we can schedule more of them.
     //  - ONLY RAM (mini_charger) as miniboss.
-    const firstEventPct = r(0.10, 0.18);
-    const firstMiniPct  = tileDifficulty <= 1 ? r(0.45, 0.58) : r(0.24, 0.32);
-    const secondEventPct = r(0.30, 0.42);
-    const midMiniPct     = r(0.55, 0.68);
-    const thirdEventPct  = r(0.62, 0.74);
-    const lateMiniPct    = r(0.70, 0.82);
-    const fourthEventPct = r(0.80, 0.90);
+    const firstEventPct = r(0.08, 0.14);
+    const firstMiniPct  = tileDifficulty <= 1 ? r(0.50, 0.62) : r(0.30, 0.40);
+    const secondEventPct = r(0.24, 0.34);
+    const midMiniPct     = r(0.60, 0.72);
+    const thirdEventPct  = r(0.48, 0.60);
+    const lateMiniPct    = r(0.76, 0.86);
+    const fourthEventPct = r(0.72, 0.84);
     const turretPct = r(0.28, 0.52);
     const turretLatePct = r(0.70, 0.84);
     const splitterPct = r(0.24, 0.42);
     const splitterBossPct = r(0.50, 0.68);
-    const wallPct = r(0.54, 0.72);
+    const wallPct = r(0.42, 0.58);
+    const wall2Pct = r(0.66, 0.82);
+    const ghostGrabPct = r(0.22, 0.36);
+    const ghostGrabLatePct = r(0.58, 0.74);
 
     // Mostly swarms; walls are *late* and rare "shape change" beats.
     // Danish feedback: early WALL was happening too often / too punishing with fast early spawn ramp.
@@ -1660,26 +1960,45 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     // Force early beats to be swarms for readability + fairness.
     beats.push({ kind: 'EVENT', atPct: firstEventPct, id: 'SWARM' });
     if (tileDifficulty >= 2) beats.push({ kind: 'EVENT', atPct: r(0.18, 0.30), id: EVENT_GHOST_WAVE });
-    beats.push({ kind: 'MINI', atPct: firstMiniPct, count: 1, mix: 'charger' });
+    beats.push({ kind: 'EVENT', atPct: r(0.16, 0.24), id: 'TINY_RAMS' });
+    beats.push({ kind: 'EVENT', atPct: ghostGrabPct, id: EVENT_GRAB_GHOST });
+    if (tileDifficulty >= 2) beats.push({ kind: 'MINI', atPct: firstMiniPct, count: 1, mix: 'charger' });
 
     beats.push({ kind: 'EVENT', atPct: secondEventPct, id: 'SWARM' });
     beats.push({ kind: 'EVENT', atPct: turretPct, id: 'TURRET' });
-    if (tileDifficulty >= 3) beats.push({ kind: 'EVENT', atPct: r(0.34, 0.54), id: EVENT_ELITE_WALL });
+    beats.push({ kind: 'EVENT', atPct: r(0.18, 0.28), id: Math.random() < 0.34 ? EVENT_ELITE_WALL : 'WALL' });
+    beats.push({ kind: 'EVENT', atPct: r(0.30, 0.42), id: Math.random() < 0.45 ? EVENT_ELITE_WALL : 'WALL' });
+    beats.push({ kind: 'EVENT', atPct: r(0.36, 0.52), id: EVENT_PYLON });
 
-    // Midgame: multiple rams on harder maps.
-    if (tileDifficulty >= 2) beats.push({ kind: 'MINI', atPct: midMiniPct, count: 2 + Math.floor(Math.random() * 2), mix: 'charger' });
+    if (tileDifficulty >= 3) beats.push({ kind: 'MINI', atPct: midMiniPct, count: 1 + Math.floor(Math.random() * 2), mix: 'charger' });
+    else beats.push({ kind: 'EVENT', atPct: midMiniPct, id: 'TINY_RAMS' });
 
     beats.push({ kind: 'EVENT', atPct: thirdEventPct, id: 'SWARM' });
+    beats.push({ kind: 'EVENT', atPct: r(0.44, 0.56), id: Math.random() < 0.5 ? 'SWARM' : EVENT_GHOST_WAVE });
+    beats.push({ kind: 'EVENT', atPct: ghostGrabLatePct, id: EVENT_GRAB_GHOST });
     beats.push({ kind: 'EVENT', atPct: splitterPct, id: 'SPLITTER' });
-    beats.push({ kind: 'EVENT', atPct: wallPct, id: 'WALL' });
+    beats.push({ kind: 'EVENT', atPct: wallPct, id: Math.random() < 0.66 ? 'WALL' : EVENT_ELITE_WALL });
+    beats.push({ kind: 'EVENT', atPct: r(0.52, 0.64), id: Math.random() < 0.62 ? 'WALL' : EVENT_ELITE_WALL });
+    beats.push({ kind: 'EVENT', atPct: wall2Pct, id: Math.random() < 0.50 ? EVENT_ELITE_WALL : 'WALL' });
     if (tileDifficulty >= 2) beats.push({ kind: 'EVENT', atPct: splitterBossPct, id: 'SPLITTER_BOSS' });
     if (tileDifficulty >= 4) beats.push({ kind: 'EVENT', atPct: r(0.58, 0.78), id: EVENT_ABOMINATION });
 
     // Late: 3–5 RAMs at once
-    if (tileDifficulty >= 3) beats.push({ kind: 'MINI', atPct: lateMiniPct, count: 3 + Math.floor(Math.random() * 3), mix: 'charger' });
+    if (tileDifficulty >= 4) beats.push({ kind: 'MINI', atPct: lateMiniPct, count: 2, mix: 'charger' });
+    else beats.push({ kind: 'EVENT', atPct: lateMiniPct, id: 'TINY_RAMS' });
 
     beats.push({ kind: 'EVENT', atPct: turretLatePct, id: 'TURRET' });
     beats.push({ kind: 'EVENT', atPct: fourthEventPct, id: Math.random() < 0.28 ? EVENT_GHOST_WAVE : pickLateEventId(0.45) });
+    beats.push({ kind: 'EVENT', atPct: r(0.82, 0.90), id: Math.random() < 0.5 ? 'WALL' : EVENT_ELITE_WALL });
+    beats.push({ kind: 'EVENT', atPct: r(0.86, 0.94), id: 'SWARM' });
+    if (tileDifficulty >= 3) beats.push({ kind: 'EVENT', atPct: r(0.78, 0.90), id: EVENT_GRAB_GHOST });
+    if (tileDifficulty >= 5) {
+      beats.push({ kind: 'EVENT', atPct: r(0.14, 0.22), id: 'SWARM' });
+      beats.push({ kind: 'EVENT', atPct: r(0.34, 0.48), id: EVENT_PYLON });
+      beats.push({ kind: 'EVENT', atPct: r(0.60, 0.74), id: Math.random() < 0.55 ? 'WALL' : EVENT_ELITE_WALL });
+      beats.push({ kind: 'EVENT', atPct: r(0.72, 0.88), id: 'SPLITTER_BOSS' });
+      beats.push({ kind: 'MINI', atPct: r(0.82, 0.94), count: 2, mix: 'charger' });
+    }
 
     beats.sort((a, b) => a.atPct - b.atPct);
 
@@ -1696,7 +2015,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     activeEventRef.current = { id, endsAt: now + dur, meta };
 
     // Small cooldown after the event ends
-    eventCooldownUntilRef.current = Math.max(eventCooldownUntilRef.current, activeEventRef.current.endsAt + 3200);
+    eventCooldownUntilRef.current = Math.max(eventCooldownUntilRef.current, activeEventRef.current.endsAt + 250);
     return true;
   };
 
@@ -1754,6 +2073,72 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     return spawnRamsRing(pp, difficulty, count);
   };
 
+  const getEnemyFamily = (type) => {
+    const t = String(type || '');
+    if (t === 'swarm' || t === 'sprinter' || t === 'grunt' || t === 'dancer') return 'SWARM';
+    if (t === 'brute' || t === 'juggernaut' || t === 'abomination' || t === 'merge_brute') return 'BRUTE';
+    if (t === 'mini_charger' || t === 'tiny_ram') return 'RAM';
+    if (t === 'spitter') return 'SPITTER';
+    if (t === 'grab_ghost') return 'GHOST';
+    if (t === 'splitter' || t === 'splitter_boss' || t === 'boss_split') return 'SPLITTER';
+    if (t === 'burrower' || t === 'ghost' || t === 'ghost_spirit') return 'BURROWER';
+    if (t === 'wall') return 'BLOCKER';
+    if (t === 'boss') return 'BOSS';
+    return 'XENO';
+  };
+
+  const makeTurretWallSquare = (p, difficulty, turretId = '') => {
+    const wallHp = Math.round((320 + difficulty * 58) * difficultyHpMult(difficulty));
+    const out = [];
+    const half = 132;
+    const step = 44;
+    const size = 58;
+    let idx = 0;
+    for (let x = -half; x <= half; x += step) {
+      for (const y of [-half, half]) {
+        out.push({
+          id: `turret_wall_${idx++}_${Math.random()}`,
+          type: 'wall',
+          x: clamp(p.x + x, 40, ARENA_SIZE - 40),
+          y: clamp(p.y + y, 40, ARENA_SIZE - 40),
+          hp: wallHp,
+          maxHp: wallHp,
+          speed: 0,
+          size,
+          xp: 0,
+          contactDamage: 0,
+          blocksPlayer: false,
+          blocksEnemies: true,
+          turretWall: true,
+          turretId,
+          color: '#ffcf6b'
+        });
+      }
+    }
+    for (let y = -half + step; y <= half - step; y += step) {
+      for (const x of [-half, half]) {
+        out.push({
+          id: `turret_wall_${idx++}_${Math.random()}`,
+          type: 'wall',
+          x: clamp(p.x + x, 40, ARENA_SIZE - 40),
+          y: clamp(p.y + y, 40, ARENA_SIZE - 40),
+          hp: wallHp,
+          maxHp: wallHp,
+          speed: 0,
+          size,
+          xp: 0,
+          contactDamage: 0,
+          blocksPlayer: false,
+          blocksEnemies: true,
+          turretWall: true,
+          turretId,
+          color: '#ffcf6b'
+        });
+      }
+    }
+    return out;
+  };
+
   const scheduleBeats = () => {
     buildBeatPlanIfNeeded();
 
@@ -1784,10 +2169,10 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
 if (plan.idx >= plan.beats.length) {
   if (p >= 0.40 && !activeEventRef.current && now > randomSwarmCooldownUntilRef.current && now > eventCooldownUntilRef.current) {
     // Roughly ~1 swarm every 15–25s on average, but only late-game.
-    if (Math.random() < 0.20) {
+    if (Math.random() < 0.28) {
       const dur = 6500 + Math.floor(Math.random() * 2200);
       startEvent('SWARM', { duration: dur });
-      randomSwarmCooldownUntilRef.current = now + 14000 + Math.floor(Math.random() * 11000);
+      randomSwarmCooldownUntilRef.current = now + 9000 + Math.floor(Math.random() * 8000);
     }
   }
   return;
@@ -1807,7 +2192,7 @@ const beat = plan.beats[plan.idx];
 
       if (id === 'SWARM') {
         const safeAngle = Math.random() * Math.PI * 2;
-        const safeArc = Math.PI * (0.62 + Math.random() * 0.18);
+        const safeArc = Math.PI * (0.78 + Math.random() * 0.20);
         const variant = Math.random() < 0.52 ? 'encircle' : 'three_sides';
 
         const dur = Math.round((EVENT_DEFS.SWARM.duration * (0.95 + Math.random() * 0.35)) * (p < 0.30 ? 1.15 : 1.0));
@@ -1843,18 +2228,43 @@ const beat = plan.beats[plan.idx];
         }
       }
 
+      if (id === 'TINY_RAMS') {
+        const meta = { duration: EVENT_DEFS.TINY_RAMS.duration };
+        if (startEvent('TINY_RAMS', meta)) {
+          const n = clamp(7 + tileDifficulty * 2 + Math.floor(Math.random() * 5), 8, 18);
+          enemiesRef.current = [
+            ...(enemiesRef.current || []),
+            ...spawnTinyRamsPack(pp, difficulty, n)
+          ];
+          pushToast('RAMLINGS');
+          juicePunch(0.85, 0.8);
+          plan.idx += 1;
+          return;
+        }
+      }
+
       if (id === EVENT_ABOMINATION) {
         const meta = { duration: EVENT_DEFS.ABOMINATION.duration };
         if (startEvent(EVENT_ABOMINATION, meta)) {
-          const corners = [
-            { x: 90, y: 90 },
-            { x: ARENA_SIZE - 90, y: 90 },
-            { x: 90, y: ARENA_SIZE - 90 },
-            { x: ARENA_SIZE - 90, y: ARENA_SIZE - 90 },
-          ];
-          const spawned = corners.map((pos, i) => ({ ...spawnEnemy(difficulty + 2, 'merge_brute', t), ...pos, id: `merge_brute_${i}_${Math.random()}`, mergeTargetX: pp.x, mergeTargetY: pp.y }));
+          const hp = Math.round((980 + difficulty * 150) * ELITE_HP_MULT * difficultyHpMult(difficulty));
+          const spawned = [{
+            ...spawnEnemy(difficulty + 1, 'brute', t),
+            id: `abomination_${Math.random()}`,
+            type: 'abomination',
+            x: clamp(pp.x + 560, 160, ARENA_SIZE - 160),
+            y: clamp(pp.y - 360, 160, ARENA_SIZE - 160),
+            hp,
+            maxHp: hp,
+            speed: 0.92,
+            size: 142,
+            xp: 220,
+            contactDamage: 25,
+            color: '#d7b6a0',
+            healthSegments: 4,
+            ghostOnDeath: false
+          }];
           enemiesRef.current = [...(enemiesRef.current || []), ...spawned];
-          pushToast('ABOMINATION COMPONENTS');
+          pushToast('ABOMINATION');
           juicePunch(1.0, 0.9);
           plan.idx += 1;
           return;
@@ -1862,25 +2272,10 @@ const beat = plan.beats[plan.idx];
       }
 
       if (id === EVENT_ELITE_WALL) {
-        const meta = { duration: EVENT_DEFS.ELITE_WALL.duration };
-        if (startEvent(EVENT_ELITE_WALL, meta)) {
-          const fromLeft = Math.random() < 0.5;
-          const gap = Math.floor(4 + Math.random() * 3);
-          const spawned = [];
-          for (let i = 0; i < 12; i += 1) {
-            if (i === gap || i === gap + 1) continue;
-            const y = clamp(240 + i * ((ARENA_SIZE - 480) / 11), 80, ARENA_SIZE - 80);
-            const el = spawnEnemy(difficulty + 1, 'lane_elite', t);
-            spawned.push({
-              ...el,
-              x: fromLeft ? 40 : ARENA_SIZE - 40,
-              y,
-              laneDir: fromLeft ? 1 : -1,
-              speed: 2.45 + tileDifficulty * 0.08
-            });
-          }
-          enemiesRef.current = [...(enemiesRef.current || []), ...spawned];
-          pushToast('ELITE LINEBREAKER');
+            const meta = { duration: EVENT_DEFS.ELITE_WALL.duration };
+            if (startEvent(EVENT_ELITE_WALL, meta)) {
+          enemiesRef.current = [...(enemiesRef.current || []), ...spawnWallSweep(pp, difficulty, { hpMult: 4.30, speed: 0.92, count: 58, size: 124 }, t)];
+          pushToast('WALL SWEEP');
           juicePunch(0.85, 0.8);
           plan.idx += 1;
           return;
@@ -1889,12 +2284,12 @@ const beat = plan.beats[plan.idx];
 
       if (id === 'WALL') {
         const meta = {
-          ringN: 34 + Math.floor(Math.random() * 12),
-          radiusStart: 1920 + Math.floor(Math.random() * 360),
-          encroachSpeed: 1.75 + Math.random() * 0.65,
-          minRadius: 210,
-          hpMult: 4.8 + Math.random() * 1.2,
-          size: 58,
+          ringN: 76 + Math.floor(Math.random() * 10),
+          radiusStart: 920 + Math.floor(Math.random() * 180),
+          encroachSpeed: 0.72 + Math.random() * 0.26,
+          minRadius: 135,
+          hpMult: 5.10 + Math.random() * 3.10,
+          size: 132,
           spawned: true
         };
 
@@ -1904,6 +2299,45 @@ const beat = plan.beats[plan.idx];
             ...(enemiesRef.current || []),
             ...spawnWallRing(pp, difficulty, meta, t)
           ];
+          plan.idx += 1;
+          return;
+        }
+      }
+
+      if (id === EVENT_PYLON) {
+        const meta = { duration: EVENT_DEFS.PYLON.duration };
+        if (startEvent(EVENT_PYLON, meta)) {
+          const a = Math.random() * Math.PI * 2;
+          const d = 420 + Math.random() * 260;
+          const pyl = spawnEnemy(difficulty + 1, 'pylon', t);
+          enemiesRef.current = [
+            ...(enemiesRef.current || []),
+            { ...pyl, x: clamp(pp.x + Math.cos(a) * d, 100, ARENA_SIZE - 100), y: clamp(pp.y + Math.sin(a) * d, 100, ARENA_SIZE - 100) }
+          ];
+          pushToast('GRAVITY PYLON');
+          juicePunch(0.9, 0.9);
+          plan.idx += 1;
+          return;
+        }
+      }
+
+      if (id === EVENT_GRAB_GHOST) {
+        const meta = { duration: EVENT_DEFS.GRAB_GHOST.duration };
+        if (grabGhostsSpawnedRef.current < 3 && startEvent(EVENT_GRAB_GHOST, meta)) {
+          const a = Math.random() * Math.PI * 2;
+          const d = 620 + Math.random() * 160;
+          const gh = spawnEnemy(difficulty + 1, 'grab_ghost', t);
+          grabGhostsSpawnedRef.current += 1;
+          enemiesRef.current = [
+            ...(enemiesRef.current || []),
+            { ...gh, x: clamp(pp.x + Math.cos(a) * d, 60, ARENA_SIZE - 60), y: clamp(pp.y + Math.sin(a) * d, 60, ARENA_SIZE - 60) }
+          ];
+          pushToast('GHOST GRABBER');
+          juicePunch(0.75, 0.75);
+          plan.idx += 1;
+          return;
+        }
+        if (grabGhostsSpawnedRef.current >= 3) {
           plan.idx += 1;
           return;
         }
@@ -1992,25 +2426,23 @@ const beat = plan.beats[plan.idx];
     const tNow = getProgressT();
     const late = norm01(tNow, 0.60, 1.0);
 
-    // Late-game stabilizers: slightly higher drop chance + more shield/freeze bias
+    // Late-game stabilizers: slightly higher drop chance + more freeze/damage tempo.
     const base = source === 'boss' ? 0.35 : source === 'mini' ? 0.18 : 0.08;
     const chance = base * lerp(1.0, 1.55, late);
     if (Math.random() > chance) return;
 
-    // Weighted roll (early: magnet/overdrive heavier; late: shield/freeze heavier)
+    // Weighted roll. Shield pickup removed; Overdrive and Double Damage now last +3s.
     const wMag = lerp(0.28, 0.20, late);
-    const wOvr = lerp(0.20, 0.18, late);
-    const wShd = lerp(0.20, 0.27, late);
+    const wOvr = lerp(0.28, 0.30, late);
     const wFrz = lerp(0.20, 0.25, late);
-    const wDbl = 0.14;
+    const wDbl = lerp(0.20, 0.25, late);
 
-    const total = wMag + wOvr + wShd + wFrz + wDbl;
+    const total = wMag + wOvr + wFrz + wDbl;
     let r = Math.random() * total;
 
     let type = 'MAGNET';
     if ((r -= wMag) <= 0) type = 'MAGNET';
     else if ((r -= wOvr) <= 0) type = 'OVERDRIVE';
-    else if ((r -= wShd) <= 0) type = 'SHIELD';
     else if ((r -= wFrz) <= 0) type = 'FREEZE';
     else type = 'DOUBLE_DAMAGE';
 
@@ -2019,10 +2451,20 @@ const beat = plan.beats[plan.idx];
 
   const activatePickup = (type) => {
     const now = Date.now();
+    if (type === 'LEVELUP') {
+      pendingUpgradeCountRef.current += 1;
+      if ((upgradeOptionsRef.current || []).length === 0) {
+        const nextOptions = rollUpgradeOptions(selectedWeaponsRef.current, weaponLevelsRef.current, statsRef.current, talentsRef.current.extraWeaponSlot ? 6 : DEFAULT_WEAPON_CAP);
+        upgradeOptionsRef.current = nextOptions;
+        setUpgradeOptions(nextOptions);
+      }
+      juicePunch(1.1, 1.0);
+      pushToast('LEVEL CORE');
+      return;
+    }
     if (type === 'MAGNET') magnetUntil.current = Math.max(magnetUntil.current, now + PICKUP_DEFS.MAGNET.life);
     if (type === 'FREEZE') freezeUntil.current = Math.max(freezeUntil.current, now + PICKUP_DEFS.FREEZE.life);
     if (type === 'OVERDRIVE') overdriveUntil.current = Math.max(overdriveUntil.current, now + PICKUP_DEFS.OVERDRIVE.life);
-    if (type === 'SHIELD') shieldUntil.current = Math.max(shieldUntil.current, now + PICKUP_DEFS.SHIELD.life);
     if (type === 'DOUBLE_DAMAGE') doubleDamageUntil.current = Math.max(doubleDamageUntil.current, now + PICKUP_DEFS.DOUBLE_DAMAGE.life);
     juicePunch(0.95, 0.95);
   };
@@ -2053,8 +2495,93 @@ const beat = plan.beats[plan.idx];
     }
     syncPlayerCameraDom(playerRef.current);
 
-    const loop = setInterval(() => {
+    const stepPlayerCamera = (dtScale = 1) => {
+      const prev = playerRef.current;
+      const nowMove = Date.now();
+      const grab = playerGrabRef.current;
+      if (grab && nowMove < (grab.until || 0)) {
+        const holderAlive = (enemiesRef.current || []).some((e) => e.id === grab.enemyId && e.hp > 0);
+        if (holderAlive) {
+          syncPlayerCameraDom(prev);
+          return;
+        }
+      }
+      if (grab) playerGrabRef.current = null;
+
+      let nx = prev.x;
+      let ny = prev.y;
+
+      const baseSpeed = 5.8;
+      const speedMult = Math.min(crewSpeedMult, 1.45);
+      const finalSpeed = baseSpeed * speedMult * (statsRef.current.moveSpeed || 1);
+
+      let inputX = 0;
+      let inputY = 0;
+      if (keys.current.w) inputY -= 1;
+      if (keys.current.s) inputY += 1;
+      if (keys.current.a) inputX -= 1;
+      if (keys.current.d) inputX += 1;
+      if (dragMoveRef.current.active) {
+        inputX += dragMoveRef.current.vecX;
+        inputY += dragMoveRef.current.vecY;
+      }
+      const inputLen = Math.hypot(inputX, inputY);
+      if (inputLen > 0) {
+        const scale = inputLen > 1 ? 1 / inputLen : 1;
+        nx += inputX * scale * finalSpeed * dtScale;
+        ny += inputY * scale * finalSpeed * dtScale;
+      }
+
+      nx = clamp(nx, 0, ARENA_SIZE);
+      ny = clamp(ny, 0, ARENA_SIZE);
+
+      let checkedWalls = 0;
+      for (const wall of (enemiesRef.current || [])) {
+        if (wall.type !== 'wall' || wall.hp <= 0 || wall.blocksPlayer === false) continue;
+        if (wall.turretWall) continue;
+        checkedWalls += 1;
+        if (checkedWalls > 48) break;
+        const minD = (wall.size || 46) * 0.5 + 20;
+        const dx = nx - wall.x;
+        const dy = ny - wall.y;
+        const d = Math.hypot(dx, dy);
+        if (d > 0 && d < minD) {
+          const push = minD - d;
+          nx = clamp(nx + (dx / d) * push, 0, ARENA_SIZE);
+          ny = clamp(ny + (dy / d) * push, 0, ARENA_SIZE);
+        }
+      }
+
+      const np = { x: nx, y: ny };
+      playerRef.current = np;
+      syncPlayerCameraDom(np);
+    };
+
+    const syncWorldFeedback = () => {
+      const worldEl = worldRef.current;
+      if (!worldEl) return;
+      const nowFx = Date.now();
+      const until = juice.current.until || 0;
+      const dur = juice.current.dur || 140;
+      const t = until > nowFx ? (until - nowFx) / dur : 0;
+      const chroma = (juice.current.maxChroma || 0) * t;
+
+      worldEl.style.filter = chroma > 0.02 ? `saturate(${1 + chroma * 0.10}) brightness(${1 + chroma * 0.05})` : '';
+      if (t <= 0) {
+        juice.current.maxPunch = 0;
+        juice.current.maxChroma = 0;
+      }
+    };
+
+    let rafId = 0;
+    let lastFrameTs = 0;
+
+    const loop = (frameTs = 0) => {
+      rafId = requestAnimationFrame(loop);
       if (pausedRef.current) return;
+      const frameDelta = lastFrameTs ? clamp(frameTs - lastFrameTs, 8, 34) : 16;
+      const dtScale = frameDelta / 16;
+      lastFrameTs = frameTs;
 
       const now = Date.now();
 
@@ -2085,13 +2612,16 @@ const beat = plan.beats[plan.idx];
           }
         }
 
-        // Active abilities: 1 = Thorns, 2 = Decoy. Space still triggers Thorns as a fallback.
+        // Active abilities: 1 = Thorns, 2 = Decoy, 3 = Deploy Turret. Space still triggers Thorns as a fallback.
         const oneDown = !!keys.current.one || !!keys.current.space;
         const twoDown = !!keys.current.two;
+        const threeDown = !!keys.current.three;
         const pressedOne = oneDown && !abilityWasDownRef.current.one;
         const pressedTwo = twoDown && !abilityWasDownRef.current.two;
+        const pressedThree = threeDown && !abilityWasDownRef.current.three;
         abilityWasDownRef.current.one = oneDown;
         abilityWasDownRef.current.two = twoDown;
+        abilityWasDownRef.current.three = threeDown;
         spaceWasDownRef.current = !!keys.current.space;
 
         if (t.decoyUnlocked && pressedTwo && now >= decoyCooldownUntilRef.current) {
@@ -2103,6 +2633,42 @@ const beat = plan.beats[plan.idx];
             { id: Math.random(), x: p.x, y: p.y, r: 140, t: now, life: 340, color: 'rgba(0,242,255,1)', glow: 22, fill: true, alpha: 0.45 },
             { id: Math.random(), x: p.x, y: p.y, r: 64, t: now, life: 520, color: 'rgba(255,255,255,1)', glow: 18 }
           ];
+          juicePunch(0.70, 0.85);
+        }
+
+        if (t.deployTurretUnlocked && pressedThree && now >= playerTurretCooldownUntilRef.current) {
+          const p = playerRef.current;
+          const turretHp = 520 + tileDifficulty * 72 + (t.turretFortify ? 220 : 0);
+          const turretId = `player_turret_${Math.random()}`;
+          playerTurretsRef.current = [
+            ...(playerTurretsRef.current || []),
+            {
+              id: turretId,
+              x: p.x,
+              y: p.y,
+              hp: turretHp,
+              maxHp: turretHp,
+              until: now + (t.turretFortify ? 12500 : 10000),
+              nextShotAt: now + 180,
+              nextBombAt: now + 900,
+              flameAt: t.turretFlamePillar ? now + 1150 : 0,
+              flameDone: false,
+              shockReady: !!t.turretBomb,
+              size: 48
+            }
+          ].slice(-3);
+          if (t.turretFortify) {
+            enemiesRef.current = [
+              ...(enemiesRef.current || []),
+              ...makeTurretWallSquare(p, tileDifficulty, turretId)
+            ];
+          }
+          playerTurretCooldownUntilRef.current = now + 45000;
+          explosionsRef.current = appendCapped(explosionsRef.current, [
+            { id: Math.random(), x: p.x, y: p.y, r: 122, t: now, life: 300, color: 'rgba(255,218,107,1)', glow: 24, fill: true, alpha: 0.34 },
+            { id: Math.random(), x: p.x, y: p.y, r: 56, t: now, life: 520, color: 'rgba(255,255,255,1)', glow: 16 }
+          ]);
+          pushToast('TURRET DEPLOYED');
           juicePunch(0.70, 0.85);
         }
 
@@ -2183,6 +2749,9 @@ const beat = plan.beats[plan.idx];
         }
       }
 
+      stepPlayerCamera(dtScale);
+      syncWorldFeedback();
+
       // --- CANVAS DRAWING START ---
       const ctx = ctxRef.current;
       const cam = cameraRef.current;
@@ -2196,6 +2765,10 @@ const beat = plan.beats[plan.idx];
         const viewR = cam.x + w + pad;
         const viewT = cam.y - pad;
         const viewB = cam.y + h + pad;
+        const visibleEnemyCount = (enemiesRef.current || []).reduce((n, e) => (
+          e.x < viewL || e.x > viewR || e.y < viewT || e.y > viewB ? n : n + 1
+        ), 0);
+        const perfCrowded = visibleEnemyCount > 70 || (explosionsRef.current || []).length > 34 || (orbsRef.current || []).length > 180;
 
         // Orbs
         orbsRef.current.forEach(orb => {
@@ -2204,7 +2777,7 @@ const beat = plan.beats[plan.idx];
           const r = orb.r ?? (6 + (orb.rank || 0) * 2.0);
           const col = orb.color || '#ffffff';
 
-          if ((orb.rank || 0) >= 4) {
+          if ((orb.rank || 0) >= 4 && !perfCrowded) {
             ctx.save();
             ctx.shadowColor = col;
             ctx.shadowBlur = 14 + (orb.rank || 0) * 2;
@@ -2221,13 +2794,7 @@ const beat = plan.beats[plan.idx];
             ctx.fill();
           }
 
-          // core
-          ctx.fillStyle = col;
-          ctx.beginPath();
-          ctx.arc(orb.x - cam.x, orb.y - cam.y, r, 0, Math.PI * 2);
-          ctx.fill();
-
-          if (orb.ring) {
+          if (orb.ring && !perfCrowded) {
             ctx.save();
             ctx.globalAlpha = 0.55;
             ctx.strokeStyle = col;
@@ -2417,19 +2984,19 @@ const beat = plan.beats[plan.idx];
           const sy = p.y - cam.y;
           ctx.save();
           ctx.globalAlpha = 0.94;
-          ctx.shadowColor = 'rgba(255,82,28,1)';
-          ctx.shadowBlur = 24;
-          ctx.fillStyle = 'rgba(255,92,28,0.95)';
+          ctx.shadowColor = p.acid ? 'rgba(100,255,122,1)' : 'rgba(255,82,28,1)';
+          ctx.shadowBlur = perfCrowded ? 0 : 24;
+          ctx.fillStyle = p.acid ? 'rgba(100,255,122,0.95)' : 'rgba(255,92,28,0.95)';
           ctx.beginPath();
           ctx.arc(sx, sy, p.r || 13, 0, Math.PI * 2);
           ctx.fill();
-          ctx.strokeStyle = 'rgba(255,235,190,0.95)';
+          ctx.strokeStyle = p.acid ? 'rgba(220,255,210,0.95)' : 'rgba(255,235,190,0.95)';
           ctx.lineWidth = 3;
           ctx.beginPath();
           ctx.arc(sx, sy, (p.r || 13) + 5, 0, Math.PI * 2);
           ctx.stroke();
           const speed = Math.hypot(p.vx || 0, p.vy || 0) || 1;
-          ctx.strokeStyle = 'rgba(255,92,28,0.45)';
+          ctx.strokeStyle = p.acid ? 'rgba(100,255,122,0.42)' : 'rgba(255,92,28,0.45)';
           ctx.lineWidth = 7;
           ctx.beginPath();
           ctx.moveTo(sx, sy);
@@ -2444,6 +3011,19 @@ const beat = plan.beats[plan.idx];
 
           const sx = e.x - cam.x;
           const sy = e.y - cam.y;
+
+          if (e.hidden) {
+            ctx.save();
+            ctx.globalAlpha = 0.34 + Math.abs(Math.sin(now / 90)) * 0.22;
+            ctx.strokeStyle = 'rgba(192,139,255,0.95)';
+            ctx.lineWidth = 4;
+            ctx.setLineDash([12, 10]);
+            ctx.beginPath();
+            ctx.arc(sx, sy, e.size * 1.1, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+            return;
+          }
 
           ctx.fillStyle = e.color || '#ff007a';
           if (e.type === 'boss' || e.type === 'boss_split') {
@@ -2468,6 +3048,175 @@ const beat = plan.beats[plan.idx];
             ctx.strokeStyle = 'rgba(255,255,255,0.85)';
             ctx.lineWidth = 4;
             ctx.stroke();
+            ctx.restore();
+          } else if (e.type === 'abomination') {
+            ctx.save();
+            ctx.translate(sx, sy);
+            const pulse = 0.92 + Math.sin(Date.now() / 180) * 0.04;
+            ctx.scale(pulse, pulse);
+            ctx.shadowColor = 'rgba(255,120,80,0.55)';
+            ctx.shadowBlur = 20;
+            ctx.fillStyle = '#b98a78';
+            ctx.fillRect(-e.size * 0.24, -e.size * 0.44, e.size * 0.48, e.size * 0.62);
+            ctx.fillStyle = '#d7b6a0';
+            ctx.beginPath();
+            ctx.arc(0, -e.size * 0.63, e.size * 0.18, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#7cff76';
+            ctx.fillRect(-e.size * 0.35, -e.size * 0.22, e.size * 0.18, e.size * 0.24);
+            ctx.fillStyle = '#ff7a5c';
+            ctx.fillRect(e.size * 0.16, -e.size * 0.32, e.size * 0.20, e.size * 0.32);
+            ctx.fillStyle = '#6c4dff';
+            ctx.fillRect(-e.size * 0.52, -e.size * 0.26, e.size * 0.20, e.size * 0.52);
+            ctx.fillStyle = '#ffd36b';
+            ctx.fillRect(e.size * 0.32, -e.size * 0.18, e.size * 0.20, e.size * 0.50);
+            ctx.fillStyle = '#83584f';
+            ctx.fillRect(-e.size * 0.18, e.size * 0.14, e.size * 0.14, e.size * 0.42);
+            ctx.fillStyle = '#4a7cff';
+            ctx.fillRect(e.size * 0.04, e.size * 0.14, e.size * 0.14, e.size * 0.42);
+            ctx.strokeStyle = 'rgba(255,255,255,0.82)';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(-e.size * 0.24, -e.size * 0.44, e.size * 0.48, e.size * 0.62);
+            ctx.restore();
+          } else if (e.type === 'spitter') {
+            ctx.save();
+            ctx.translate(sx, sy);
+            ctx.shadowColor = perfCrowded ? 'transparent' : 'rgba(100,255,122,0.55)';
+            ctx.shadowBlur = perfCrowded ? 0 : 16;
+            ctx.fillStyle = '#64ff7a';
+            ctx.beginPath();
+            ctx.moveTo(0, -e.size * 0.62);
+            ctx.lineTo(e.size * 0.56, e.size * 0.42);
+            ctx.lineTo(0, e.size * 0.22);
+            ctx.lineTo(-e.size * 0.56, e.size * 0.42);
+            ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = 'rgba(8,40,18,0.95)';
+            ctx.beginPath();
+            ctx.arc(0, -e.size * 0.05, e.size * 0.18, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          } else if (e.type === 'grab_ghost') {
+            ctx.save();
+            ctx.translate(sx, sy);
+            const pulse = 0.86 + Math.abs(Math.sin(Date.now() / 120)) * 0.14;
+            ctx.shadowColor = 'rgba(185,242,255,0.85)';
+            ctx.shadowBlur = perfCrowded ? 8 : 22;
+            ctx.scale(pulse, pulse);
+            ctx.fillStyle = '#b9f2ff';
+            ctx.beginPath();
+            ctx.moveTo(0, -e.size * 0.68);
+            ctx.quadraticCurveTo(e.size * 0.62, -e.size * 0.26, e.size * 0.34, e.size * 0.38);
+            ctx.quadraticCurveTo(e.size * 0.12, e.size * 0.14, 0, e.size * 0.64);
+            ctx.quadraticCurveTo(-e.size * 0.12, e.size * 0.14, -e.size * 0.34, e.size * 0.38);
+            ctx.quadraticCurveTo(-e.size * 0.62, -e.size * 0.26, 0, -e.size * 0.68);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255,255,255,0.82)';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.strokeStyle = 'rgba(185,242,255,0.72)';
+            ctx.lineWidth = 4;
+            for (const off of [-0.4, 0, 0.4]) {
+              ctx.beginPath();
+              ctx.moveTo(off * e.size, e.size * 0.18);
+              ctx.quadraticCurveTo(off * e.size * 1.8, e.size * 0.72, off * e.size * 0.7, e.size * 1.05);
+              ctx.stroke();
+            }
+            if (playerGrabRef.current?.enemyId === e.id && Date.now() < (playerGrabRef.current.until || 0)) {
+              ctx.globalAlpha = 0.28;
+              ctx.lineWidth = 8;
+              ctx.beginPath();
+              ctx.arc(0, 0, e.size * 1.55, 0, Math.PI * 2);
+              ctx.stroke();
+            }
+            ctx.restore();
+          } else if (e.type === 'splitter' || e.type === 'splitter_boss') {
+            ctx.save();
+            ctx.translate(sx, sy);
+            ctx.fillStyle = e.color || '#b6ff4a';
+            ctx.strokeStyle = 'rgba(255,255,255,0.76)';
+            ctx.lineWidth = e.type === 'splitter_boss' ? 4 : 2;
+            ctx.beginPath();
+            const points = e.type === 'splitter_boss' ? 8 : 6;
+            for (let i = 0; i < points; i += 1) {
+              const a = -Math.PI / 2 + (i / points) * Math.PI * 2;
+              const r = e.size * (i % 2 ? 0.32 : 0.58);
+              const x = Math.cos(a) * r;
+              const y = Math.sin(a) * r;
+              if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+          } else if (e.type === 'burrower') {
+            ctx.save();
+            ctx.translate(sx, sy);
+            ctx.fillStyle = '#c08bff';
+            ctx.strokeStyle = 'rgba(255,255,255,0.74)';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, e.size * 0.65, e.size * 0.42, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(35,16,65,0.95)';
+            ctx.fillRect(-e.size * 0.15, -e.size * 0.42, e.size * 0.30, e.size * 0.84);
+            ctx.restore();
+          } else if (e.type === 'pylon') {
+            const charge = e.pylonMonster ? 1 : clamp(e.pylonCharge || 0, 0, 1);
+            ctx.save();
+            ctx.translate(sx, sy);
+            ctx.shadowColor = perfCrowded ? 'transparent' : 'rgba(127,242,215,0.86)';
+            ctx.shadowBlur = perfCrowded ? 0 : 28;
+            ctx.strokeStyle = 'rgba(127,242,215,0.9)';
+            ctx.lineWidth = 5;
+            if (e.pylonMonster) {
+              ctx.strokeStyle = 'rgba(53,255,213,0.92)';
+              ctx.lineWidth = 12;
+              for (const side of [-1, 1]) {
+                ctx.beginPath();
+                ctx.moveTo(side * e.size * 0.20, -e.size * 0.15);
+                ctx.quadraticCurveTo(side * e.size * 0.72, -e.size * 0.02, side * e.size * 0.80, e.size * 0.40);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(side * e.size * 0.10, e.size * 0.10);
+                ctx.quadraticCurveTo(side * e.size * 0.62, e.size * 0.32, side * e.size * 0.52, e.size * 0.70);
+                ctx.stroke();
+              }
+              ctx.strokeStyle = 'rgba(255,255,255,0.76)';
+              ctx.lineWidth = 5;
+            }
+            ctx.fillStyle = e.pylonMonster ? 'rgba(53,255,213,0.92)' : 'rgba(20,65,78,0.92)';
+            ctx.beginPath();
+            const pts = e.pylonMonster ? 9 : 6;
+            for (let i = 0; i < pts; i += 1) {
+              const a = -Math.PI / 2 + (i / pts) * Math.PI * 2 + Date.now() / (e.pylonMonster ? 500 : 900);
+              const r = e.size * (i % 2 ? 0.34 : 0.58);
+              const x = Math.cos(a) * r;
+              const y = Math.sin(a) * r;
+              if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            if (!e.pylonMonster) {
+              ctx.globalAlpha = 0.12 + charge * 0.18;
+              ctx.fillStyle = 'rgba(127,242,215,0.34)';
+              ctx.beginPath();
+              ctx.arc(0, 0, (e.pylonPullRadius || 680) * (0.9 + charge * 0.35), 0, Math.PI * 2);
+              ctx.fill();
+              ctx.globalAlpha = 0.24 + charge * 0.24;
+              ctx.strokeStyle = 'rgba(127,242,215,1)';
+              ctx.lineWidth = 8;
+              ctx.beginPath();
+              ctx.arc(0, 0, (e.pylonPullRadius || 680) * (0.9 + charge * 0.35), 0, Math.PI * 2);
+              ctx.stroke();
+              ctx.globalAlpha = 0.9;
+              ctx.fillStyle = '#ffffff';
+              ctx.font = 'bold 12px sans-serif';
+              ctx.textAlign = 'center';
+              ctx.fillText(`${Math.floor(charge * 100)}%`, 0, -e.size * 0.78);
+            }
             ctx.restore();
           } else if (e.type === 'ghost' || e.type === 'ghost_spirit') {
             ctx.save();
@@ -2509,8 +3258,37 @@ const beat = plan.beats[plan.idx];
 
           const isMini = String(e.type || '').startsWith('mini_');
 
+          if (e.type === 'mini_charger' && Array.isArray(e.ramPath) && e.ramPath.length) {
+            ctx.save();
+            const windup = e.ramPathWindupUntil && Date.now() < e.ramPathWindupUntil;
+            ctx.globalAlpha = windup ? 0.78 : 0.48;
+            e.ramPath.forEach((seg, idx) => {
+              const x1 = seg.x1 - cam.x;
+              const y1 = seg.y1 - cam.y;
+              const x2 = seg.x2 - cam.x;
+              const y2 = seg.y2 - cam.y;
+              ctx.strokeStyle = idx === (e.ramPathDashIndex || 0) && !windup ? 'rgba(255,255,255,0.92)' : 'rgba(255,54,86,0.82)';
+              ctx.lineWidth = windup ? 12 : 8;
+              ctx.beginPath();
+              ctx.moveTo(x1, y1);
+              ctx.lineTo(x2, y2);
+              ctx.stroke();
+              ctx.strokeStyle = 'rgba(255,222,92,0.72)';
+              ctx.lineWidth = windup ? 3 : 2;
+              ctx.beginPath();
+              ctx.moveTo(x1, y1);
+              ctx.lineTo(x2, y2);
+              ctx.stroke();
+              ctx.fillStyle = idx === e.ramPath.length - 1 ? 'rgba(255,255,255,0.95)' : 'rgba(255,54,86,0.92)';
+              ctx.beginPath();
+              ctx.arc(x2, y2, 8, 0, Math.PI * 2);
+              ctx.fill();
+            });
+            ctx.restore();
+          }
+
           // RAM telegraph lane (only during windup)
-          if (e.type === 'mini_charger' && e.windupUntil && Date.now() < e.windupUntil) {
+          if ((e.type === 'mini_charger' || e.type === 'tiny_ram') && !e.ramPath && e.windupUntil && Date.now() < e.windupUntil) {
             const ang = e.dashDir || 0;
             const len = e.dashLen ?? 420;
 
@@ -2557,7 +3335,7 @@ const beat = plan.beats[plan.idx];
 
             ctx.font = '12px sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText(e.type === 'mini_charger' ? 'RAM' : 'MINI', sx, sy - e.size / 2 - 26);
+            ctx.fillText(e.type === 'tiny_ram' ? 'ram' : e.type === 'mini_charger' ? 'RAM' : 'MINI', sx, sy - e.size / 2 - 26);
             ctx.restore();
           }
 
@@ -2596,6 +3374,25 @@ const beat = plan.beats[plan.idx];
               ctx.arc(sx + ox, sy + oy, 3 + i * 0.8, 0, Math.PI * 2);
               ctx.fill();
             }
+            ctx.restore();
+          }
+
+          if (e.shieldedBy && Date.now() < (e.shieldedUntil || 0)) {
+            const pulse = 0.55 + 0.45 * Math.abs(Math.sin(Date.now() / 120));
+            ctx.save();
+            ctx.globalAlpha = 0.28 + pulse * 0.24;
+            ctx.strokeStyle = 'rgba(102,217,255,0.98)';
+            ctx.lineWidth = 4;
+            ctx.shadowColor = perfCrowded ? 'transparent' : 'rgba(102,217,255,0.95)';
+            ctx.shadowBlur = perfCrowded ? 0 : 20;
+            ctx.beginPath();
+            ctx.arc(sx, sy, e.size * 0.78 + pulse * 7, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.globalAlpha = 0.12;
+            ctx.fillStyle = 'rgba(102,217,255,0.98)';
+            ctx.beginPath();
+            ctx.arc(sx, sy, e.size * 0.82 + pulse * 7, 0, Math.PI * 2);
+            ctx.fill();
             ctx.restore();
           }
 
@@ -2659,13 +3456,13 @@ const beat = plan.beats[plan.idx];
           ctx.save();
 
           // glow for big procs (ghost/thorns/etc.)
-          if (e.glow) {
+          if (e.glow && !perfCrowded) {
             ctx.shadowColor = col;
             ctx.shadowBlur = e.glow;
           }
 
           // optional fill flash
-          if (e.fill) {
+          if (e.fill && !perfCrowded) {
             const gx = e.x - cam.x;
             const gy = e.y - cam.y;
             const grad = ctx.createRadialGradient(gx, gy, 0, gx, gy, rr);
@@ -3011,13 +3808,14 @@ const beat = plan.beats[plan.idx];
       // --- CANVAS DRAWING END ---
 
       // advance clocks
-      elapsed.current += 16;
+      elapsed.current += frameDelta;
 
       // Progress is time-based. Events and RAMs are pressure spikes, not hidden blockers.
-      progElapsedRef.current += 16;
+      progElapsedRef.current += frameDelta;
 
 
-      if (elapsed.current % 160 === 0) {
+      if (now - progressLastSyncRef.current > 33) {
+        progressLastSyncRef.current = now;
         setProgress(Math.min(1, progElapsedRef.current / (runTimeRef.current || BOSS_TIME)));
       }
 
@@ -3025,9 +3823,10 @@ const beat = plan.beats[plan.idx];
         const ex = extractionRef.current;
         const ppEx = playerRef.current;
         const dEx = Math.hypot(ppEx.x - ex.x, ppEx.y - ex.y);
-        const inside = dEx <= 132;
-        ex.progress = clamp((ex.progress || 0) + (inside ? 16 / 9000 : -16 / 17000), 0, 1);
-        if (elapsed.current % 160 === 0) setExtractionUI({ ...ex });
+        const extractionRadius = ex.radius || 172;
+        const inside = dEx <= extractionRadius;
+        ex.progress = clamp((ex.progress || 0) + (inside ? frameDelta / 9000 : -frameDelta / 17000), 0, 1);
+        if (now - progressLastSyncRef.current < 18) setExtractionUI({ ...ex });
         if (ex.progress >= 1) {
           ex.active = false;
           setExtractionUI({ ...ex, active: false, progress: 1 });
@@ -3043,11 +3842,11 @@ const beat = plan.beats[plan.idx];
       if (elapsed.current % 160 === 0) {
         const nowV = Date.now();
         deathFxRef.current = (deathFxRef.current || []).filter((f) => nowV - f.t < 280);
-        arcsRef.current = (arcsRef.current || []).filter((a) => nowV - a.t < (a.life || 150));
-        explosionsRef.current = (explosionsRef.current || []).filter((e) => nowV - e.t < (e.life || 280));
+        arcsRef.current = (arcsRef.current || []).filter((a) => nowV - a.t < (a.life || 150)).slice(-PERF_ARC_CAP);
+        explosionsRef.current = (explosionsRef.current || []).filter((e) => nowV - e.t < (e.life || 280)).slice(-PERF_EFFECT_CAP);
         railLinesRef.current = (railLinesRef.current || []).filter((l) => nowV - l.t < (l.life || 120));
         beamsRef.current = (beamsRef.current || []).filter((b) => nowV - b.t < (b.life || 120));
-        slashesRef.current = (slashesRef.current || []).filter((s) => nowV - (s.t || (nowV - (s.age || 0))) < (s.life || 260));
+        slashesRef.current = (slashesRef.current || []).filter((s) => nowV - (s.t || (nowV - (s.age || 0))) < (s.life || 260)).slice(-48);
         {
           const before = (pickupsRef.current || []);
           const kept = before.filter((p) => nowV - p.t < p.life);
@@ -3102,75 +3901,35 @@ const beat = plan.beats[plan.idx];
         s.hp = Math.min(s.maxHp, s.hp + s.regen * 0.016);
       }
 
-      // move player + camera
-      {
-        const prev = playerRef.current;
-        let nx = prev.x;
-        let ny = prev.y;
-
-        const baseSpeed = 5.8;
-        const speedMult = Math.min(crewSpeedMult, 1.45);
-        const nowMv = Date.now();
-        const finalSpeed = baseSpeed * speedMult * (statsRef.current.moveSpeed || 1);
-
-        let inputX = 0;
-        let inputY = 0;
-        if (keys.current.w) inputY -= 1;
-        if (keys.current.s) inputY += 1;
-        if (keys.current.a) inputX -= 1;
-        if (keys.current.d) inputX += 1;
-        if (dragMoveRef.current.active) {
-          inputX += dragMoveRef.current.vecX;
-          inputY += dragMoveRef.current.vecY;
-        }
-        const inputLen = Math.hypot(inputX, inputY);
-        if (inputLen > 0) {
-          const scale = inputLen > 1 ? 1 / inputLen : 1;
-          nx += inputX * scale * finalSpeed;
-          ny += inputY * scale * finalSpeed;
-        }
-
-        nx = clamp(nx, 0, ARENA_SIZE);
-        ny = clamp(ny, 0, ARENA_SIZE);
-
-        const np = { x: nx, y: ny };
-        playerRef.current = np;
-
-        syncPlayerCameraDom(np);
-
-        const worldEl = worldRef.current;
-        if (worldEl) {
-          const nowFx = Date.now();
-          const until = juice.current.until || 0;
-          const dur = juice.current.dur || 140;
-          const t = until > nowFx ? (until - nowFx) / dur : 0;
-          const chroma = (juice.current.maxChroma || 0) * t;
-
-          worldEl.style.filter = chroma > 0.02 ? `saturate(${1 + chroma * 0.10}) brightness(${1 + chroma * 0.05})` : '';
-          if (t <= 0) {
-            juice.current.maxPunch = 0;
-            juice.current.maxChroma = 0;
-          }
-        }
-      }
-
       const pPos = playerRef.current;
       const freezeWorld = Date.now() < freezeUntil.current;
 
       if (!freezeWorld) {
         const ppShot = playerRef.current;
         enemyProjectilesRef.current = (enemyProjectilesRef.current || [])
-          .map((p) => ({ ...p, x: p.x + (p.vx || 0), y: p.y + (p.vy || 0), life: (p.life || 0) - 16 }))
+          .map((p) => ({ ...p, x: p.x + (p.vx || 0) * dtScale, y: p.y + (p.vy || 0) * dtScale, life: (p.life || 0) - frameDelta }))
           .filter((p) => {
             if (p.life <= 0 || p.x < -80 || p.x > ARENA_SIZE + 80 || p.y < -80 || p.y > ARENA_SIZE + 80) return false;
             const d = Math.hypot(p.x - ppShot.x, p.y - ppShot.y);
             if (d < (p.r || 12) + 18) {
               applyPlayerDamage(p.damage || 12, 'turret');
-              explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: p.x, y: p.y, r: 54, t: Date.now(), life: 260, color: 'rgba(255,92,28,1)', glow: 18 }];
+              explosionsRef.current = appendCapped(explosionsRef.current, {
+                id: Math.random(),
+                x: p.x,
+                y: p.y,
+                r: p.acid ? 78 : 54,
+                t: Date.now(),
+                life: p.acid ? 1300 : 260,
+                color: p.acid ? 'rgba(100,255,122,1)' : 'rgba(255,92,28,1)',
+                glow: p.acid ? 10 : 18,
+                hazard: !!p.acid,
+                alpha: p.acid ? 0.18 : undefined
+              }, PERF_EFFECT_CAP);
               return false;
             }
             return true;
-          });
+          })
+          .slice(-80);
       }
 
       // -------------------- SPAWNING --------------------
@@ -3184,7 +3943,7 @@ const beat = plan.beats[plan.idx];
       const spawnIntervalBase = Math.max(190, 1250 - difficulty * 80 - panicRamp * 120);
 
       // Danish feedback: early ramp was too steep. Slow the first 25% a bit.
-      const earlySlow = lerp(1.22, 1.0, clamp(progT / 0.25, 0, 1));
+      const earlySlow = lerp(1.02, 0.92, clamp(progT / 0.25, 0, 1));
 
       const inRelief = Date.now() < reliefUntilRef.current;
       const bossAlive = (enemiesRef.current || []).some((x) => (x.type === 'boss' || x.type === 'boss_split') && x.hp > 0);
@@ -3199,12 +3958,12 @@ const beat = plan.beats[plan.idx];
       spawnInterval *= lerp(1.0, LATE_SPAWN_INTERVAL_BOOST, lateT);
 
       // boss: MUCH fewer adds (and no events schedule while boss alive)
-      if (bossAlive) spawnInterval *= BOSS_ADD_INTERVAL_MULT;
-      if (extractionActive) spawnInterval *= 1.20;
+      if (bossAlive) spawnInterval *= 1.05;
+      if (extractionActive) spawnInterval *= 1.05;
 
       // event modifiers
       if (isEventActive('SWARM')) spawnInterval *= 0.60;
-      if (isEventActive('WALL')) spawnInterval *= 1.25; // allow trickle spawns during wall event
+      if (isEventActive('WALL')) spawnInterval *= 0.85; // keep enemies present during encirclement
 
       let nextEnemies = [...enemiesRef.current];
 
@@ -3218,6 +3977,8 @@ const beat = plan.beats[plan.idx];
           const countBase = Math.min(2 + Math.floor(difficulty / 2), 12);
           let count = Math.max(1, Math.round(countBase + panicRamp * 2));
           count = Math.max(1, Math.round(count * tilePressure));
+          count = Math.max(1, Math.round(count * 1.20));
+          if (progT >= 0.20) count = Math.max(2, Math.round(count * 2.0));
 
           // late: scale count smoothly (negative LATE_SPAWN_COUNT_REDUCE increases count)
           count = Math.max(1, Math.round(count * lerp(1.0, 1.0 - LATE_SPAWN_COUNT_REDUCE, lateT)));
@@ -3225,16 +3986,18 @@ const beat = plan.beats[plan.idx];
           // after 40%: keep the arena busy
           const after40 = norm01(progT, 0.40, 0.60);
           count = Math.max(1, Math.round(count * lerp(1.0, AFTER40_ENEMY_MULT, after40)));
+          const lateDifficultyBonus = 1 + lateT * Math.max(0, tileDifficultyRank(tileDifficulty) - 1) * 0.20;
+          count = Math.max(1, Math.round(count * lateDifficultyBonus));
 
           // boss: reduce count hard
-          if (bossAlive) count = Math.max(1, Math.round(count * BOSS_ADD_COUNT_MULT));
-          if (extractionActive) count = Math.max(1, Math.round(count * 0.55));
+          if (bossAlive) count = Math.max(2, Math.round(count * 0.90));
+          if (extractionActive) count = Math.max(2, Math.round(count * 0.85));
 
           // soft cap late-game trash so density can't spiral (keeps difficulty high but fair)
         {
             const isSpecial = (x) => x.type === 'boss' || x.type === 'boss_split' || String(x.type).startsWith('mini_') || x.type === 'wall';
             const trashCount = nextEnemies.filter((e) => !isSpecial(e)).length;
-            const maxTrash = Math.round(lerp(50, 92, norm01(tileDifficulty, 1, 5)) + progT * lerp(12, 42, norm01(tileDifficulty, 1, 5)));
+          const maxTrash = Math.round((lerp(70, 132, norm01(tileDifficulty, 1, 5)) + progT * lerp(20, 56, norm01(tileDifficulty, 1, 5))) * lateDifficultyBonus);
             const room = maxTrash - trashCount;
             if (room <= 0) count = 0;
             else count = Math.min(count, room);
@@ -3249,17 +4012,20 @@ const beat = plan.beats[plan.idx];
             // swarm is still intense, but softened late so it doesn't become impossible
             let swarmCount = Math.max(5, Math.round((14 + Math.floor(difficulty * 0.45)) * (1 / SPAWN_INTERVAL_MULT)));
             swarmCount = Math.max(5, Math.round(swarmCount * tilePressure));
+            swarmCount = Math.max(5, Math.round(swarmCount * 1.20));
+            if (progT >= 0.20) swarmCount = Math.max(12, Math.round(swarmCount * 1.7));
             swarmCount = Math.max(5, Math.round(swarmCount * lerp(1.0, 1.18, lateT)));
+            swarmCount = Math.max(5, Math.round(swarmCount * lateDifficultyBonus));
             const after40s = norm01(progT, 0.40, 0.60);
             swarmCount = Math.max(8, Math.round(swarmCount * lerp(1.0, 1.20, after40s)));
-            if (bossAlive) swarmCount = Math.max(6, Math.round(swarmCount * 0.70));
-            if (extractionActive) swarmCount = Math.max(5, Math.round(swarmCount * 0.45));
+            if (bossAlive) swarmCount = Math.max(8, Math.round(swarmCount * 0.82));
+            if (extractionActive) swarmCount = Math.max(7, Math.round(swarmCount * 0.72));
 
             // cap swarm spawns if we're already at/over late trash budget
             if (!bossAlive && progT > 0.68) {
               const isSpecial = (x) => x.type === 'boss' || x.type === 'boss_split' || String(x.type).startsWith('mini_') || x.type === 'wall';
               const trashCount = nextEnemies.filter((e) => !isSpecial(e)).length;
-              const maxTrash = Math.round(lerp(58, 110, norm01(tileDifficulty, 1, 5)) + progT * lerp(10, 40, norm01(tileDifficulty, 1, 5)));
+              const maxTrash = Math.round((lerp(82, 150, norm01(tileDifficulty, 1, 5)) + progT * lerp(22, 62, norm01(tileDifficulty, 1, 5))) * lateDifficultyBonus);
               const room = maxTrash - trashCount;
               swarmCount = Math.max(0, Math.min(swarmCount, room));
             }
@@ -3298,7 +4064,7 @@ const beat = plan.beats[plan.idx];
           } else {
             // During WALL events, keep a steady trickle of normal enemies (prevents "empty" feeling).
             const wallTrickle = isEventActive('WALL');
-            const n = wallTrickle ? Math.max(1, Math.round(count * 0.35)) : count;
+            const n = wallTrickle ? Math.max(2, Math.round(count * 0.85)) : count;
             for (let i = 0; i < n; i += 1) nextEnemies.push(spawnEnemy(difficulty, null, progT));
           }
         }
@@ -3330,12 +4096,55 @@ const beat = plan.beats[plan.idx];
         }
       }
 
+      nextEnemies = capEnemyBudget(nextEnemies, pPos);
+
       // -------------------- ENEMY MOVE / AI --------------------
       const movedEnemiesRaw = nextEnemies.map((en) => {
         if (freezeWorld && !isControlImmune(en.type)) return en;
         if (en.stunnedUntil && Date.now() < en.stunnedUntil) return en;
         const decoy = decoyRef.current && Date.now() < decoyRef.current.until ? decoyRef.current : null;
-        const targetPoint = decoy ? decoy : pPos;
+        const liveTurrets = (playerTurretsRef.current || []).filter((t) => t.hp > 0 && Date.now() < t.until);
+        let targetPoint = decoy ? decoy : pPos;
+        if (!decoy && liveTurrets.length) {
+          let bestTurret = null;
+          let bestTurretD = Infinity;
+          for (const t of liveTurrets) {
+            const dT = Math.hypot(t.x - en.x, t.y - en.y);
+            if (dT < bestTurretD) { bestTurretD = dT; bestTurret = t; }
+          }
+          const family = getEnemyFamily(en.type);
+          const aggroChance = family === 'BOSS' ? 0.15 : family === 'RAM' ? 0.35 : 0.50;
+          const wantsTurret = stableUnitRoll(en.id) < aggroChance;
+          if (bestTurret && wantsTurret && bestTurretD < 900) targetPoint = bestTurret;
+        }
+
+        if (en.type === 'grab_ghost') {
+          const now2 = Date.now();
+          const activeGrab = playerGrabRef.current;
+          if (activeGrab?.enemyId === en.id && now2 < (activeGrab.until || 0)) {
+            const grabA = Math.atan2(pPos.y - en.y, pPos.x - en.x);
+            return {
+              ...en,
+              x: clamp(pPos.x - Math.cos(grabA) * 34, 0, ARENA_SIZE),
+              y: clamp(pPos.y - Math.sin(grabA) * 34, 0, ARENA_SIZE),
+              grabUntil: activeGrab.until
+            };
+          }
+
+          if (activeGrab?.enemyId === en.id && now2 >= (activeGrab.until || 0)) playerGrabRef.current = null;
+
+          const dx = pPos.x - en.x;
+          const dy = pPos.y - en.y;
+          const d = Math.hypot(dx, dy) || 1;
+          if (d < (en.size || 36) * 0.5 + 30 && (!playerGrabRef.current || now2 >= (playerGrabRef.current.until || 0))) {
+            const until = now2 + 3000;
+            playerGrabRef.current = { enemyId: en.id, until };
+            pushToast('GHOST HOLD');
+            return { ...en, grabUntil: until, stunnedUntil: Math.max(en.stunnedUntil || 0, until) };
+          }
+          const spd = (en.speed || 2.55) * dtScale;
+          return { ...en, x: clamp(en.x + (dx / d) * spd, 0, ARENA_SIZE), y: clamp(en.y + (dy / d) * spd, 0, ARENA_SIZE) };
+        }
 
         if (en.type === 'ghost_spirit') {
           const now2 = Date.now();
@@ -3344,16 +4153,26 @@ const beat = plan.beats[plan.idx];
             explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: en.x, y: en.y, r: 62, t: now2, life: 300, color: 'rgba(190,195,210,1)', glow: 18, fill: true, alpha: 0.28 }];
             return { ...en, type: 'ghost', hp, maxHp: hp, contactDamage: 12, color: '#c6cad6', speed: Math.max(1.45, en.speed || 1.6), revivedOnce: true };
           }
-          const dx = targetPoint.x - en.x;
-          const dy = targetPoint.y - en.y;
+          const dx = pPos.x - en.x;
+          const dy = pPos.y - en.y;
           const d = Math.hypot(dx, dy) || 1;
-          const spd = (en.speed || 1.25) * 0.72;
-          return { ...en, x: en.x + (dx / d) * spd, y: en.y + (dy / d) * spd };
+          const spd = (en.speed || 1.25) * 1.08 * dtScale;
+          return { ...en, contactDamage: 0, x: en.x + (dx / d) * spd, y: en.y + (dy / d) * spd };
         }
 
         if (en.type === 'lane_elite') {
           const dir = en.laneDir || 1;
-          return { ...en, x: clamp(en.x + dir * (en.speed || 2.2), 0, ARENA_SIZE) };
+          return { ...en, x: clamp(en.x + dir * (en.speed || 2.2) * dtScale, 0, ARENA_SIZE) };
+        }
+
+        if (en.type === 'wall' && Number.isFinite(en.laneDir)) {
+          const dir = en.laneDir || 1;
+          const nx = clamp(en.x + dir * (en.speed || 0.8) * dtScale, 0, ARENA_SIZE);
+          const edgeX = dir > 0 ? ARENA_SIZE - 44 : 44;
+          const arrived = dir > 0 ? nx >= edgeX : nx <= edgeX;
+          const arrivedAt = en.sweepArrivedAt || (arrived ? Date.now() : 0);
+          if (arrivedAt && Date.now() - arrivedAt > 10000) return { ...en, despawn: true };
+          return { ...en, x: nx, sweepArrivedAt: arrivedAt };
         }
 
         if (en.type === 'merge_brute') {
@@ -3390,7 +4209,8 @@ const beat = plan.beats[plan.idx];
           const dx = targetPoint.x - en.x;
           const dy = targetPoint.y - en.y;
           const d = Math.hypot(dx, dy) || 1;
-          return { ...en, x: en.x + (dx / d) * (en.speed || 0.72), y: en.y + (dy / d) * (en.speed || 0.72) };
+          const spd = (en.speed || 0.72) * dtScale;
+          return { ...en, x: en.x + (dx / d) * spd, y: en.y + (dy / d) * spd };
         }
 
         if (en.type === 'turret') {
@@ -3419,6 +4239,120 @@ const beat = plan.beats[plan.idx];
             return { ...en, nextShotAt: now2 + 1650 + Math.random() * 650 };
           }
           return en;
+        }
+
+        if (en.type === 'spitter') {
+          const now2 = Date.now();
+          const dx = targetPoint.x - en.x;
+          const dy = targetPoint.y - en.y;
+          const d = Math.hypot(dx, dy) || 1;
+          if (now2 >= (en.nextSpitAt || 0) && d < 720) {
+            const spd = 4.4;
+            enemyProjectilesRef.current = appendCapped(enemyProjectilesRef.current, {
+              id: Math.random(),
+              x: en.x,
+              y: en.y,
+              vx: (dx / d) * spd,
+              vy: (dy / d) * spd,
+              r: 12,
+              damage: 10 + tileDifficulty * 1.2,
+              t: now2,
+              life: 2800,
+              acid: true
+            }, 80);
+            return { ...en, nextSpitAt: now2 + 2100 + Math.random() * 900 };
+          }
+          const desired = d < 340 ? -1 : 0.7;
+          const spd = (en.speed || 1.1) * desired * dtScale;
+          return { ...en, x: clamp(en.x + (dx / d) * spd, 0, ARENA_SIZE), y: clamp(en.y + (dy / d) * spd, 0, ARENA_SIZE) };
+        }
+
+        if (en.type === 'shielder') {
+          const now2 = Date.now();
+          const liveIds = new Set((nextEnemies || []).filter((ally) => ally && ally.hp > 0).map((ally) => ally.id));
+          const targets = (en.shieldTargets || []).filter((id) => liveIds.has(id)).slice(0, 4);
+          if (targets.length < 4) {
+            const candidates = (nextEnemies || [])
+              .filter((ally) => {
+                if (!ally || ally.id === en.id || ally.hp <= 0 || ally.type === 'boss' || ally.type === 'wall') return false;
+                if (targets.includes(ally.id)) return false;
+                return Math.hypot(ally.x - en.x, ally.y - en.y) <= (en.shieldRadius || 190);
+              })
+              .sort((a, b) => Math.hypot(a.x - en.x, a.y - en.y) - Math.hypot(b.x - en.x, b.y - en.y));
+            for (const ally of candidates) {
+              if (targets.length >= 4) break;
+              targets.push(ally.id);
+            }
+          }
+          for (const ally of nextEnemies || []) {
+            if (!ally || !targets.includes(ally.id)) continue;
+            ally.damageReductionUntil = Math.max(ally.damageReductionUntil || 0, now2 + 180);
+            ally.damageReductionMult = 0;
+            ally.shieldedBy = en.id;
+            ally.shieldedUntil = now2 + 180;
+          }
+          return { ...en, shieldTargets: targets, buffCount: targets.length };
+        }
+
+        if (en.type === 'burrower') {
+          const now2 = Date.now();
+          if (en.burrowUntil && now2 < en.burrowUntil) return { ...en, hidden: true };
+          if (en.burrowUntil && now2 >= en.burrowUntil) {
+            const a = Math.atan2(targetPoint.y - en.y, targetPoint.x - en.x) + (Math.random() - 0.5) * 1.4;
+            const dist = 190 + Math.random() * 120;
+            return {
+              ...en,
+              hidden: false,
+              burrowUntil: 0,
+              x: clamp(targetPoint.x - Math.cos(a) * dist, 60, ARENA_SIZE - 60),
+              y: clamp(targetPoint.y - Math.sin(a) * dist, 60, ARENA_SIZE - 60),
+              nextBurrowAt: now2 + 3600 + Math.random() * 1400,
+              stunnedUntil: now2 + 180
+            };
+          }
+          if (now2 >= (en.nextBurrowAt || 0)) {
+            return { ...en, hidden: true, burrowUntil: now2 + 620 };
+          }
+        }
+
+        if (en.type === 'pylon') {
+          const now2 = Date.now();
+          if (en.pylonMonster) {
+            const dx = targetPoint.x - en.x;
+            const dy = targetPoint.y - en.y;
+            const d = Math.hypot(dx, dy) || 1;
+            const spd = (en.speed || 0.62) * dtScale;
+            return { ...en, x: en.x + (dx / d) * spd, y: en.y + (dy / d) * spd };
+          }
+          const age = now2 - (en.pylonStartedAt || now2);
+          const timeCharge = clamp(age / (en.pylonChargeMs || 22000), 0, 1);
+          let absorbed = en.pylonAbsorbed || 0;
+          const absorbNeed = 10 + tileDifficulty * 3;
+          const charge = clamp(Math.max(timeCharge * 0.45, absorbed / absorbNeed), 0, 1);
+          const pullRadius = (en.pylonPullRadius || 680) * (0.9 + charge * 0.35);
+          for (const victim of nextEnemies || []) {
+            if (!victim || victim.id === en.id || victim.hp <= 0 || victim.type === 'wall' || victim.type === 'boss' || victim.type === 'pylon' || victim.type === 'boss_split') continue;
+            const dx = en.x - victim.x;
+            const dy = en.y - victim.y;
+            const d = Math.hypot(dx, dy) || 1;
+            if (d > pullRadius) continue;
+            const pull = (5.8 + charge * 4.4) * (isControlImmune(victim.type) ? 0.20 : 1);
+            victim.x = clamp(victim.x + (dx / d) * pull * dtScale, 0, ARENA_SIZE);
+            victim.y = clamp(victim.y + (dy / d) * pull * dtScale, 0, ARENA_SIZE);
+            if (d < (en.size || 112) * 0.55 + (victim.size || 28) * 0.42) {
+              victim.hp = 0;
+              victim.absorbedByPylon = true;
+              absorbed += victim.type === 'swarm' ? 0.75 : 1.25;
+              explosionsRef.current = appendCapped(explosionsRef.current, { id: Math.random(), x: victim.x, y: victim.y, r: 42, t: now2, life: 240, color: 'rgba(127,242,215,1)', glow: 16, fill: true, alpha: 0.25 }, PERF_EFFECT_CAP);
+            }
+          }
+          if (charge >= 1) {
+            const hp = Math.round((3600 + tileDifficulty * 620) * difficultyHpMult(tileDifficulty));
+            explosionsRef.current = appendCapped(explosionsRef.current, { id: Math.random(), x: en.x, y: en.y, r: 460, t: now2, life: 720, color: 'rgba(127,242,215,1)', glow: 42, fill: true, alpha: 0.25 }, PERF_EFFECT_CAP);
+            pushToast('PYLON BEAST AWAKENED');
+            return { ...en, pylonMonster: true, hp, maxHp: hp, speed: 0.62 + tileDifficulty * 0.015, size: 214, contactDamage: 42, xp: 420, color: '#35ffd5', pylonCharge: 1, pylonAbsorbed: absorbed };
+          }
+          return { ...en, speed: 0, size: 108 + charge * 34, pylonCharge: charge, pylonAbsorbed: absorbed };
         }
 
         if (en.type === 'boss') {
@@ -3484,7 +4418,7 @@ const beat = plan.beats[plan.idx];
           }
           if (en.bossRamUntil && now2 < en.bossRamUntil) {
             const spd = 13.8;
-            return { ...en, x: clamp(en.x + Math.cos(en.bossRamDir || 0) * spd, 0, ARENA_SIZE), y: clamp(en.y + Math.sin(en.bossRamDir || 0) * spd, 0, ARENA_SIZE) };
+            return { ...en, x: clamp(en.x + Math.cos(en.bossRamDir || 0) * spd * dtScale, 0, ARENA_SIZE), y: clamp(en.y + Math.sin(en.bossRamDir || 0) * spd * dtScale, 0, ARENA_SIZE) };
           }
           if (en.bossRamUntil && now2 >= en.bossRamUntil) return { ...en, bossRamUntil: 0 };
           if ((en.bossPhase || 'main') === 'main' && hpPct <= 0.40 && !en.zergPhaseDone) {
@@ -3502,11 +4436,84 @@ const beat = plan.beats[plan.idx];
         }
 
         // mini-boss behaviors
-        if (en.type === 'mini_charger') {
+        if (en.type === 'mini_charger' || en.type === 'tiny_ram') {
           const now2 = Date.now();
           const dx = targetPoint.x - en.x;
           const dy = targetPoint.y - en.y;
           const angToPlayer = Math.atan2(dy, dx);
+
+          if (en.type === 'mini_charger') {
+            const path = Array.isArray(en.ramPath) ? en.ramPath : null;
+            if (path && path.length && en.ramPathWindupUntil && now2 < en.ramPathWindupUntil) return en;
+
+            if (path && path.length && en.ramPathWindupUntil && now2 >= en.ramPathWindupUntil && !en.ramPathDashUntil) {
+              const first = path[0];
+              return { ...en, x: first.x1, y: first.y1, ramPathDashIndex: 0, ramPathDashStartedAt: now2, ramPathDashUntil: now2 + 115, ramPathWindupUntil: 0 };
+            }
+
+            if (path && path.length && en.ramPathDashUntil) {
+              const idx = clamp(en.ramPathDashIndex || 0, 0, path.length - 1);
+              const seg = path[idx];
+              const dur = Math.max(55, (en.ramPathDashUntil || now2) - (en.ramPathDashStartedAt || now2));
+              const pct = clamp((now2 - (en.ramPathDashStartedAt || now2)) / dur, 0, 1);
+              const nx = clamp(lerp(seg.x1, seg.x2, pct), 0, ARENA_SIZE);
+              const ny = clamp(lerp(seg.y1, seg.y2, pct), 0, ARENA_SIZE);
+
+              if (now2 < en.ramPathDashUntil) return { ...en, x: nx, y: ny };
+
+              if (idx < path.length - 1) {
+                const next = path[idx + 1];
+                return {
+                  ...en,
+                  x: next.x1,
+                  y: next.y1,
+                  ramPathDashIndex: idx + 1,
+                  ramPathDashStartedAt: now2,
+                  ramPathDashUntil: now2 + 95
+                };
+              }
+
+              const last = path[path.length - 1];
+              return {
+                ...en,
+                x: last.x2,
+                y: last.y2,
+                ramPath: null,
+                ramPathDashUntil: 0,
+                ramPathDashIndex: 0,
+                nextDashAt: now2 + (en.dashCd || 1850) + Math.random() * 700
+              };
+            }
+
+            if (!path && now2 > (en.nextDashAt || 0)) {
+              const segCount = 3 + Math.floor(Math.random() * 5);
+              const pathOut = [];
+              let sx0 = en.x;
+              let sy0 = en.y;
+              let aimX = targetPoint.x;
+              let aimY = targetPoint.y;
+              for (let i = 0; i < segCount; i += 1) {
+                const pull = i === 0 ? 1 : 0.58;
+                const a = Math.atan2(aimY - sy0, aimX - sx0) + (Math.random() - 0.5) * (i === 0 ? 0.22 : 0.72);
+                const len = 360 + Math.random() * 240;
+                const ex = clamp(sx0 + Math.cos(a) * len * pull, 55, ARENA_SIZE - 55);
+                const ey = clamp(sy0 + Math.sin(a) * len * pull, 55, ARENA_SIZE - 55);
+                pathOut.push({ x1: sx0, y1: sy0, x2: ex, y2: ey });
+                sx0 = ex;
+                sy0 = ey;
+                aimX = targetPoint.x + (Math.random() - 0.5) * 420;
+                aimY = targetPoint.y + (Math.random() - 0.5) * 420;
+              }
+              return {
+                ...en,
+                ramPath: pathOut,
+                ramPathWindupUntil: now2 + 820 + segCount * 210,
+                ramPathDashIndex: 0,
+                ramPathDashUntil: 0,
+                nextDashAt: now2 + 999999
+              };
+            }
+          }
 
           if (!en.dashUntil && now2 > (en.nextDashAt || 0) && !en.windupUntil) {
             const dashMs = en.dashMs || 360;
@@ -3536,7 +4543,7 @@ const beat = plan.beats[plan.idx];
           if (en.dashUntil && now2 < en.dashUntil) {
             const totalTicks = en.dashTicks || Math.ceil((en.dashMs || 360) / 16);
             const dashLen = en.dashLen ?? ((en.dashSpd || 10.5) * totalTicks);
-            const perTick = dashLen / totalTicks;
+            const perTick = (dashLen / totalTicks) * dtScale;
 
             const nx = clamp(en.x + Math.cos(en.dashDir || 0) * perTick, 0, ARENA_SIZE);
             const ny = clamp(en.y + Math.sin(en.dashDir || 0) * perTick, 0, ARENA_SIZE);
@@ -3544,22 +4551,24 @@ const beat = plan.beats[plan.idx];
           }
 
           if (en.dashUntil && now2 >= en.dashUntil) {
-            if (en.doubleDashQueued && !en.didDoubleDash) {
+            const seqLeft = Number.isFinite(en.chargeSequenceLeft) ? en.chargeSequenceLeft : (en.type === 'mini_charger' ? 7 : 0);
+            if (seqLeft > 0) {
               const dx2 = targetPoint.x - en.x;
               const dy2 = targetPoint.y - en.y;
-              const dashMs = en.dashMs || 360;
-              const dashSpd = en.dashSpd || 11.2;
+              const fastPhase = seqLeft <= 4;
+              const dashMs = fastPhase ? 420 : (en.dashMs || 360);
+              const dashSpd = fastPhase ? 15.8 : (en.dashSpd || 11.2);
               const dashTicks = Math.ceil(dashMs / 16);
-              const dashLen = Math.min(dashSpd * dashTicks * 1.2, 600);
+              const dashLen = Math.min(dashSpd * dashTicks * (fastPhase ? 1.05 : 1.18), fastPhase ? 720 : 600);
               return {
                 ...en,
                 dashUntil: 0,
-                windupUntil: now2 + 620 + Math.random() * 420,
+                windupUntil: now2 + (fastPhase ? 210 : 620 + Math.random() * 280),
                 dashDir: Math.atan2(dy2, dx2),
                 dashLen,
                 dashTicks,
-                didDoubleDash: true,
-                secondDashTelegraph: true
+                chargeSequenceLeft: seqLeft - 1,
+                secondDashTelegraph: fastPhase
               };
             }
             return { ...en, dashUntil: 0 };
@@ -3582,20 +4591,23 @@ const beat = plan.beats[plan.idx];
 
         // WALL ring behavior
         if (en.type === 'wall' && Number.isFinite(en.wallA)) {
+          const now2 = Date.now();
           const spd = en.wallEncroach ?? 2.0;
           const minR = en.wallMinR ?? 180;
 
           const curR = en.wallR ?? 1300;
           const nr = Math.max(minR, curR - spd);
+          const arrivedAt = en.wallArrivedAt || (nr <= minR + 0.5 ? now2 : 0);
+          if (arrivedAt && now2 - arrivedAt > 10000) return { ...en, despawn: true };
 
           const cx = Number.isFinite(en.wallCx) ? en.wallCx : en.x;
           const cy = Number.isFinite(en.wallCy) ? en.wallCy : en.y;
 
-          const orbitA = nr <= minR + 1 ? en.wallA + 0.010 : en.wallA;
-          const nx = clamp(cx + Math.cos(orbitA) * nr, 40, ARENA_SIZE - 40);
-          const ny = clamp(cy + Math.sin(orbitA) * nr, 40, ARENA_SIZE - 40);
+          const orbitA = en.wallA;
+          const nx = clamp(cx + Math.cos(orbitA) * nr, -120, ARENA_SIZE + 120);
+          const ny = clamp(cy + Math.sin(orbitA) * nr, -120, ARENA_SIZE + 120);
 
-          return { ...en, wallA: orbitA, wallR: nr, x: nx, y: ny };
+          return { ...en, wallA: orbitA, wallR: nr, wallArrivedAt: arrivedAt, x: nx, y: ny };
         }
 
         if (en.type === 'dancer') {
@@ -3607,14 +4619,14 @@ const beat = plan.beats[plan.idx];
             return { ...en, diveUntil: now2 + 520, diveDir: Math.atan2(dy0, dx0), nextDiveAt: now2 + 2800 + Math.random() * 1200 };
           }
           if (en.diveUntil && now2 < en.diveUntil) {
-            const spd = (en.speed || 2.4) * 3.2;
+            const spd = (en.speed || 2.4) * 3.2 * dtScale;
             return { ...en, x: clamp(en.x + Math.cos(en.diveDir || 0) * spd, 0, ARENA_SIZE), y: clamp(en.y + Math.sin(en.diveDir || 0) * spd, 0, ARENA_SIZE) };
           }
           if (en.diveUntil && now2 >= en.diveUntil) return { ...en, diveUntil: 0 };
           const orbit = (en.circleDir || 1) * Math.PI / 2;
           const desired = d0 > 260 ? 0.55 : 1.0;
           const ang = Math.atan2(dy0, dx0) + orbit * desired;
-          const spd = (en.speed || 2.3) * (d0 > 300 ? 1.1 : 0.9);
+          const spd = (en.speed || 2.3) * (d0 > 300 ? 1.1 : 0.9) * dtScale;
           return { ...en, x: en.x + Math.cos(ang) * spd, y: en.y + Math.sin(ang) * spd };
         }
 
@@ -3624,13 +4636,103 @@ const beat = plan.beats[plan.idx];
         const d = Math.hypot(dx, dy) || 1;
 
         const slowMult = en.slowUntil && Date.now() < en.slowUntil ? (en.slowFactor ?? 0.75) : 1;
-        const spd = en.speed * slowMult;
+        const spd = en.speed * slowMult * dtScale;
         return { ...en, x: en.x + (dx / d) * spd, y: en.y + (dy / d) * spd };
       });
 
       // Filter despawned and apply a small separation force so enemies don't stack perfectly.
       let movedEnemies = movedEnemiesRaw.filter((e) => !e.despawn);
       movedEnemies = applyEnemySeparation(movedEnemies);
+      {
+        const enemyBlocks = movedEnemies.filter((e) => e.type === 'wall' && e.blocksEnemies && e.hp > 0);
+        if (enemyBlocks.length) {
+          movedEnemies = movedEnemies.map((en) => {
+            if (en.type === 'wall' || en.hidden || en.hp <= 0) return en;
+            let out = en;
+            for (const wall of enemyBlocks) {
+              const dx = out.x - wall.x;
+              const dy = out.y - wall.y;
+              const d = Math.hypot(dx, dy) || 0.0001;
+              const minD = (out.size || 28) * 0.5 + (wall.size || 54) * 0.5;
+              if (d >= minD) continue;
+              const nx = dx / d;
+              const ny = dy / d;
+              out = {
+                ...out,
+                x: clamp(wall.x + nx * minD, 0, ARENA_SIZE),
+                y: clamp(wall.y + ny * minD, 0, ARENA_SIZE),
+                stunnedUntil: isControlImmune(out.type) ? out.stunnedUntil : Math.max(out.stunnedUntil || 0, now + 80)
+              };
+              wall.hp -= Math.max(0.8, (out.contactDamage || 8) * 0.32);
+            }
+            return out;
+          }).filter((e) => e.hp > 0);
+        }
+      }
+      const enemySpatial = buildSpatialGrid(movedEnemies, 190);
+      {
+        const tNow = talentsRef.current;
+        const liveTurrets = (playerTurretsRef.current || []).filter((t) => (t.hp > 0 && now < t.until) || (tNow.turretDetonate && !t.didDeathBoom));
+        if (liveTurrets.length) {
+          const nextTurrets = liveTurrets.map((t) => ({ ...t }));
+          for (const turret of nextTurrets) {
+            if (turret.hp <= 0) continue;
+            const candidates = querySpatialGrid(enemySpatial, turret.x, turret.y, 140);
+            for (const en of candidates) {
+              const d = Math.hypot(en.x - turret.x, en.y - turret.y);
+              if (d < (en.size || 28) * 0.5 + (turret.size || 48) * 0.5) {
+                turret.hp -= (Number.isFinite(en.contactDamage) ? en.contactDamage : 8) * 0.18;
+                if (tNow.turretBomb && turret.shockReady) {
+                  turret.shockReady = false;
+                  explosionsRef.current = appendCapped(explosionsRef.current, { id: Math.random(), x: turret.x, y: turret.y, r: 360, t: now, life: 520, color: 'rgba(255,218,107,1)', glow: 38, fill: true, alpha: 0.18 }, PERF_EFFECT_CAP);
+                  for (const e2 of querySpatialGrid(enemySpatial, turret.x, turret.y, 380)) {
+                    const d2 = Math.hypot(e2.x - turret.x, e2.y - turret.y);
+                    if (d2 > 360) continue;
+                    const fall = 1 - d2 / 360;
+                    if (!isKnockbackImmune(e2.type)) {
+                      const a2 = Math.atan2(e2.y - turret.y, e2.x - turret.x);
+                      e2.x = clamp(e2.x + Math.cos(a2) * (145 * Math.max(0.25, fall)), 0, ARENA_SIZE);
+                      e2.y = clamp(e2.y + Math.sin(a2) * (145 * Math.max(0.25, fall)), 0, ARENA_SIZE);
+                    }
+                    if (!isControlImmune(e2.type)) {
+                      e2.slowUntil = Math.max(e2.slowUntil || 0, now + 3200);
+                      e2.slowFactor = Math.min(e2.slowFactor || 1, 0.48);
+                    }
+                  }
+                }
+                const ang = Math.atan2(en.y - turret.y, en.x - turret.x);
+                if (!isKnockbackImmune(en.type)) {
+                  en.x = clamp(en.x + Math.cos(ang) * 4, 0, ARENA_SIZE);
+                  en.y = clamp(en.y + Math.sin(ang) * 4, 0, ARENA_SIZE);
+                }
+              }
+            }
+          }
+          if (tNow.turretDetonate) {
+            for (const turret of nextTurrets) {
+              if ((turret.hp <= 0 || now >= turret.until) && !turret.didDeathBoom) {
+                turret.didDeathBoom = true;
+                const radius = 430;
+                explosionsRef.current = appendCapped(explosionsRef.current, { id: Math.random(), x: turret.x, y: turret.y, r: radius, t: now, life: 620, color: 'rgba(255,112,36,1)', glow: 42, fill: true, alpha: 0.30 }, PERF_EFFECT_CAP);
+                for (const e2 of querySpatialGrid(enemySpatial, turret.x, turret.y, radius + 40)) {
+                  const d2 = Math.hypot(e2.x - turret.x, e2.y - turret.y);
+                  if (d2 <= radius) e2.hp -= (155 + tileDifficulty * 24) * Math.max(0.34, 1 - d2 / radius);
+                }
+              }
+            }
+          }
+          playerTurretsRef.current = nextTurrets.filter((t) => t.hp > 0 && now < t.until);
+          {
+            const liveTurretIds = new Set(playerTurretsRef.current.map((t) => t.id));
+            enemiesRef.current = (enemiesRef.current || []).filter((e) => !e.turretWall || !e.turretId || liveTurretIds.has(e.turretId));
+            movedEnemies = movedEnemies.filter((e) => !e.turretWall || !e.turretId || liveTurretIds.has(e.turretId));
+          }
+        } else {
+          playerTurretsRef.current = [];
+          enemiesRef.current = (enemiesRef.current || []).filter((e) => !e.turretWall);
+          movedEnemies = movedEnemies.filter((e) => !e.turretWall);
+        }
+      }
 
       // -------------------- BULLETS UPDATE (homing/accel) --------------------
       const movedBullets = bulletsRef.current
@@ -3641,7 +4743,7 @@ const beat = plan.beats[plan.idx];
           let y = b.y;
 
           if (b.delay && (b.age || 0) < b.delay) {
-            return { ...b, age: (b.age || 0) + 16, life: b.life - 16 };
+            return { ...b, age: (b.age || 0) + frameDelta, life: b.life - frameDelta };
           }
 
           if (b.accel) {
@@ -3683,8 +4785,8 @@ const beat = plan.beats[plan.idx];
             }
           }
 
-          let nx = x + vx;
-          let ny = y + vy;
+          let nx = x + vx * dtScale;
+          let ny = y + vy * dtScale;
 
           if (b.anchorOnMaxRange && b.maxRange > 0 && !b.anchored) {
             const dd = Math.hypot(nx - b.originX, ny - b.originY);
@@ -3693,7 +4795,7 @@ const beat = plan.beats[plan.idx];
               ny = b.originY + Math.sin(b.dirAngle || 0) * b.maxRange;
               vx = 0;
               vy = 0;
-              return { ...b, x: nx, y: ny, vx, vy, anchored: true, anchoredAt: Date.now(), life: b.life - 16 };
+              return { ...b, x: nx, y: ny, vx, vy, anchored: true, anchoredAt: Date.now(), life: b.life - frameDelta };
             }
           }
 
@@ -3724,13 +4826,13 @@ const beat = plan.beats[plan.idx];
             return { ...b, didSplit: true };
           }
 
-          return { ...b, x: nx, y: ny, vx, vy, age: (b.age || 0) + 16, life: b.life - 16 };
+          return { ...b, x: nx, y: ny, vx, vy, age: (b.age || 0) + frameDelta, life: b.life - frameDelta };
         })
         .filter((b) => b.x > -140 && b.x < ARENA_SIZE + 140 && b.y > -140 && b.y < ARENA_SIZE + 140 && b.life > 0);
 
       // slashes update
       const movedSlashes = slashesRef.current
-        .map((sl) => ({ ...sl, age: (sl.age || 0) + 16 }))
+        .map((sl) => ({ ...sl, age: (sl.age || 0) + frameDelta }))
         .filter((sl) => (sl.age || 0) <= sl.life);
 
       // beams tick damage (LASER) + status
@@ -3777,7 +4879,8 @@ const beat = plan.beats[plan.idx];
         const maxRange2 = maxRange * maxRange;
         let best = null;
         let bestD = Infinity;
-        for (const e of allEnemies) {
+        const pool = enemySpatial ? querySpatialGrid(enemySpatial, fromEnemy.x, fromEnemy.y, maxRange) : allEnemies;
+        for (const e of pool) {
           if (e.id === fromEnemy.id) continue;
           const d = dist2({ x: fromEnemy.x, y: fromEnemy.y }, e);
           if (d > maxRange2) continue;
@@ -3796,13 +4899,17 @@ const beat = plan.beats[plan.idx];
         if (b.hit) return;
         if (b.delay && (b.age || 0) < b.delay) return;
 
-          for (const en of movedEnemies) {
+          const searchRadius = Math.max(90, (b.width || 12) + (b.axeThrow ? 80 : b.swordThrow ? 55 : 42));
+          const collisionCandidates = querySpatialGrid(enemySpatial, b.x, b.y, searchRadius);
+          for (const en of collisionCandidates) {
             if (b.hit) break;
+            if (en.hidden) continue;
             if (en.type === 'ghost_spirit') continue;
+            if (en.turretWall) continue;
 
             const d = Math.hypot(b.x - en.x, b.y - en.y);
             const hitRadius = en.size * 0.7 + (b.axeThrow ? 34 : b.swordThrow ? 16 : 0);
-          if (d < hitRadius) {
+            if (d < hitRadius) {
             const eliteMult = isEliteType(en.type) ? (b.eliteDmgMult ?? 1) : 1;
             const dmgHit = (b.damage || 0) * eliteMult;
 
@@ -3850,7 +4957,7 @@ const beat = plan.beats[plan.idx];
 
             // SNIPER tear-through visuals + shock
             if (b.rail) {
-              railLinesRef.current = [...(railLinesRef.current || []), {
+              railLinesRef.current = appendCapped(railLinesRef.current, {
                 id: Math.random(),
                 x1: b.originX,
                 y1: b.originY,
@@ -3860,9 +4967,10 @@ const beat = plan.beats[plan.idx];
                 t: Date.now(),
                 life: b.railMs || 90,
                 color: b.color
-              }];
+              }, 42);
 
-              for (const e2 of movedEnemies) {
+              const railCandidates = querySpatialGrid(enemySpatial, (b.originX + en.x) * 0.5, (b.originY + en.y) * 0.5, Math.hypot(en.x - b.originX, en.y - b.originY) * 0.5 + (b.railWidth || 18));
+              for (const e2 of railCandidates) {
                 const dd = distPointToSeg(e2.x, e2.y, b.originX, b.originY, en.x, en.y);
                 if (dd <= (b.railWidth || 18) * 0.65) {
                   const eliteMult2 = isEliteType(e2.type) ? (b.eliteDmgMult ?? 1) : 1;
@@ -3899,13 +5007,13 @@ const beat = plan.beats[plan.idx];
               const maxRange2 = 280 * 280;
               let best = null;
               let bestD = Infinity;
-              for (const e2 of movedEnemies) {
+              for (const e2 of querySpatialGrid(enemySpatial, en.x, en.y, 280)) {
                 if (e2.id === en.id) continue;
                 const dd = dist2(en, e2);
                 if (dd < bestD && dd <= maxRange2) { bestD = dd; best = e2; }
               }
               if (best) {
-                arcsRef.current = [...(arcsRef.current || []), { id: Math.random(), x1: en.x, y1: en.y, x2: best.x, y2: best.y, t: Date.now(), life: 150, color: b.color }];
+                arcsRef.current = appendCapped(arcsRef.current, { id: Math.random(), x1: en.x, y1: en.y, x2: best.x, y2: best.y, t: Date.now(), life: 150, color: b.color }, PERF_ARC_CAP);
 
                 const eliteMult2 = isEliteType(best.type) ? (b.eliteDmgMult ?? 1) : 1;
                 bulletHits.set(best.id, (bulletHits.get(best.id) || 0) + (b.damage || 0) * eliteMult2 * 0.60);
@@ -3927,9 +5035,9 @@ const beat = plan.beats[plan.idx];
 
       // explosion damage + status
       if (explosionBursts.length) {
-        for (const burst of explosionBursts) {
-          explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: burst.x, y: burst.y, r: burst.radius, t: Date.now(), life: burst.life || 260, color: burst.color, glow: burst.color ? 22 : undefined, fill: !!burst.color, alpha: burst.color ? 0.16 : undefined }];
-          for (const en of movedEnemies) {
+        for (const burst of explosionBursts.slice(0, 22)) {
+          explosionsRef.current = appendCapped(explosionsRef.current, { id: Math.random(), x: burst.x, y: burst.y, r: burst.radius, t: Date.now(), life: burst.life || 260, color: burst.color, glow: burst.color ? 22 : undefined, fill: !!burst.color, alpha: burst.color ? 0.16 : undefined }, PERF_EFFECT_CAP);
+          for (const en of querySpatialGrid(enemySpatial, burst.x, burst.y, burst.radius + 64)) {
             const d = Math.hypot(en.x - burst.x, en.y - burst.y);
             if (d <= burst.radius) {
               const fall = 1 - d / burst.radius;
@@ -3997,6 +5105,66 @@ const beat = plan.beats[plan.idx];
             eliteDmgMult: 0.85
           });
         };
+
+        playerTurretsRef.current = (playerTurretsRef.current || []).filter((t) => t.hp > 0 && now3 < t.until);
+        for (const turret of playerTurretsRef.current) {
+          if (tNow.turretFlamePillar && turret.flameAt && !turret.flameDone && now3 >= turret.flameAt) {
+            turret.flameDone = true;
+            const radius = 245;
+            explosionsRef.current = appendCapped(explosionsRef.current, {
+              id: `turret_flame_${Math.random()}`,
+              x: turret.x,
+              y: turret.y,
+              r: radius,
+              t: now3,
+              life: 1500,
+              color: 'rgba(255,104,28,1)',
+              glow: 24,
+              fill: true,
+              alpha: 0.24
+            }, PERF_EFFECT_CAP);
+            for (const en of querySpatialGrid(enemySpatial, turret.x, turret.y, radius + 70)) {
+              if (en.turretWall) continue;
+              const d = Math.hypot(en.x - turret.x, en.y - turret.y);
+              if (d > radius) continue;
+              const fall = Math.max(0.25, 1 - d / radius);
+              bulletHits.set(en.id, (bulletHits.get(en.id) || 0) + (120 + tileDifficulty * 18) * fall);
+              const st = statusHits.get(en.id) || {};
+              st.burn = Math.max(st.burn || 0, 5200);
+              st.slow = Math.max(st.slow || 0, 0.12);
+              st.slowDuration = Math.max(st.slowDuration || 0, 1200);
+              statusHits.set(en.id, st);
+            }
+            pushToast('TURRET FLAME PILLAR');
+          }
+          if (now3 < (turret.nextShotAt || 0)) continue;
+          const target = currentEnemies.reduce((closest, en) => {
+            if (en.turretWall) return closest;
+            const d = Math.hypot(en.x - turret.x, en.y - turret.y);
+            if (d > 760) return closest;
+            if (!closest) return en;
+            return d < Math.hypot(closest.x - turret.x, closest.y - turret.y) ? en : closest;
+          }, null);
+          if (target) {
+            fireSupportShot(turret, target, 22, '#ffda6b', 22, 13, 5);
+            turret.nextShotAt = now3 + 155;
+            if (tNow.turretBomb && now3 >= (turret.nextBombAt || 0)) {
+              turret.nextBombAt = now3 + 2300;
+              const a = Math.atan2(target.y - turret.y, target.x - turret.x);
+              const dist = Math.min(520, Math.hypot(target.x - turret.x, target.y - turret.y));
+              playerBombsRef.current = appendCapped(playerBombsRef.current, {
+                id: `turret_bomb_${Math.random()}`,
+                x: turret.x + Math.cos(a) * dist,
+                y: turret.y + Math.sin(a) * dist,
+                detonateAt: now3 + 2000,
+                radius: 185,
+                damage: 85 + tileDifficulty * 12
+              }, 18);
+            }
+          } else {
+            turret.nextShotAt = now3 + 180;
+          }
+        }
 
         if (now3 < fleetUntilRef.current && now3 - (lastFire.current.__fleet || 0) > 190) {
           lastFire.current.__fleet = now3;
@@ -4594,11 +5762,67 @@ const beat = plan.beats[plan.idx];
       }
 
       // -------------------- APPLY DAMAGE (bullets + sword arcs) --------------------
+      {
+        const pendingBombs = playerBombsRef.current || [];
+        if (pendingBombs.length) {
+          const keptBombs = [];
+          for (const bomb of pendingBombs) {
+            if (now3 < bomb.detonateAt) {
+              keptBombs.push(bomb);
+              continue;
+            }
+            const radius = bomb.radius || 185;
+            explosionsRef.current = appendCapped(explosionsRef.current, { id: Math.random(), x: bomb.x, y: bomb.y, r: radius, t: now3, life: 360, color: 'rgba(255,218,107,1)', glow: 26, fill: true, alpha: 0.18 }, PERF_EFFECT_CAP);
+            for (const en of querySpatialGrid(enemySpatial, bomb.x, bomb.y, radius + 64)) {
+              const d = Math.hypot(en.x - bomb.x, en.y - bomb.y);
+              if (d > radius) continue;
+              const fall = Math.max(0.28, 1 - d / radius);
+              bulletHits.set(en.id, (bulletHits.get(en.id) || 0) + (bomb.damage || 80) * fall);
+              const st = statusHits.get(en.id) || {};
+              st.slow = Math.max(st.slow || 0, 0.32);
+              st.slowDuration = Math.max(st.slowDuration || 0, 1800);
+              st.stun = Math.max(st.stun || 0, 90);
+              st.burn = Math.max(st.burn || 0, 600);
+              statusHits.set(en.id, st);
+            }
+          }
+          playerBombsRef.current = keptBombs;
+        }
+      }
       const allSlashes = [...movedSlashes, ...spawnedSlashes];
+      const voidDamageHits = new Map();
+      const voidPullHits = new Map();
+      const anchoredVoids = movedBullets
+        .filter((b) => b.vortexDps && b.anchored)
+        .map((b) => {
+          const grow = clamp((now3 - (b.anchoredAt || now3)) / 760, 0, 1);
+          return { ...b, fieldRadius: Math.max(28, (b.pullRadius || 200) * grow) };
+        })
+        .filter((b) => b.fieldRadius > 0)
+        .slice(-12);
+      for (const v of anchoredVoids) {
+        for (const en of querySpatialGrid(enemySpatial, v.x, v.y, v.fieldRadius + 64)) {
+          if (en.type === 'ghost_spirit') continue;
+          const d = Math.hypot(v.x - en.x, v.y - en.y);
+          if (d >= v.fieldRadius) continue;
+          voidDamageHits.set(en.id, (voidDamageHits.get(en.id) || 0) + (v.vortexDps || 0) * 0.016);
+          if (!freezeWorld && !isControlImmune(en.type) && (v.pull || 0) > (voidPullHits.get(en.id)?.pull || 0)) {
+            voidPullHits.set(en.id, v);
+          }
+          if ((v.slow || 0) > 0 && !isControlImmune(en.type)) {
+            const st = statusHits.get(en.id) || {};
+            st.slow = Math.max(st.slow || 0, v.slow || 0);
+            st.slowDuration = Math.max(st.slowDuration || 0, v.slowDuration || 650);
+            statusHits.set(en.id, st);
+          }
+        }
+      }
       const withDamage = movedEnemies.map((en0) => {
         let en = en0;
+        if (en.hidden) return en;
         if (en.type === 'ghost_spirit') return en;
-        let totalDamage = bulletHits.get(en.id) || 0;
+        if (en.turretWall) return en;
+        let totalDamage = (bulletHits.get(en.id) || 0) + (voidDamageHits.get(en.id) || 0);
 
         if (en.damageReductionUntil && Date.now() < en.damageReductionUntil) {
           totalDamage *= (en.damageReductionMult ?? 0.7);
@@ -4634,36 +5858,16 @@ const beat = plan.beats[plan.idx];
           statusHits.set(en.id, st);
         });
 
-        const voidFields = movedBullets.filter((b) => {
-          if (!b.vortexDps || !b.anchored) return false;
-          const grow = clamp((Date.now() - (b.anchoredAt || Date.now())) / 760, 0, 1);
-          const radius = Math.max(28, (b.pullRadius || 200) * grow);
-          return Math.hypot(b.x - en.x, b.y - en.y) < radius;
-        });
-        if (voidFields.length) {
-          const dps = voidFields.reduce((acc, b) => acc + (b.vortexDps || 0), 0);
-          totalDamage += dps * 0.016;
-
-          if (!freezeWorld && !isControlImmune(en.type)) {
-            const strongest = voidFields.reduce((best, b) => (b.pull || 0) > (best.pull || 0) ? b : best, voidFields[0]);
-            const dx = strongest.x - en.x;
-            const dy = strongest.y - en.y;
-            const d = Math.hypot(dx, dy) || 1;
-            en = { ...en, x: en.x + (dx / d) * (strongest.pull || 1) * 1.65, y: en.y + (dy / d) * (strongest.pull || 1) * 1.65 };
-          }
-
-          // Void slow field support
-          const bestSlow = voidFields.reduce((acc, b) => Math.max(acc, b.slow || 0), 0);
-          const bestSlowDur = voidFields.reduce((acc, b) => Math.max(acc, b.slowDuration || 0), 0);
-          if (bestSlow > 0 && !isControlImmune(en.type)) {
-            const st = statusHits.get(en.id) || {};
-            st.slow = Math.max(st.slow || 0, bestSlow);
-            st.slowDuration = Math.max(st.slowDuration || 0, bestSlowDur || 650);
-            statusHits.set(en.id, st);
-          }
+        const strongestVoid = voidPullHits.get(en.id);
+        if (strongestVoid && !freezeWorld && !isControlImmune(en.type)) {
+          const dx = strongestVoid.x - en.x;
+          const dy = strongestVoid.y - en.y;
+          const d = Math.hypot(dx, dy) || 1;
+          en = { ...en, x: en.x + (dx / d) * (strongestVoid.pull || 1) * 1.65, y: en.y + (dy / d) * (strongestVoid.pull || 1) * 1.65 };
         }
 
         if (totalDamage > 0) {
+          damageDealtRef.current += totalDamage;
           juicePunch(Math.min(0.34, totalDamage / 90), 0.28);
           return { ...en, hp: en.hp - totalDamage };
         }
@@ -4711,10 +5915,13 @@ const beat = plan.beats[plan.idx];
         return out;
       });
 
+      const shieldHeld = withStatus;
+
       // burn tick
-      const burned = withStatus.map((en) => {
+      const burned = shieldHeld.map((en) => {
         if (en.burnUntil && Date.now() < en.burnUntil) {
-          return { ...en, hp: en.hp - (en.burnDps || 3.2) * 0.016 };
+          const hp = en.hp - (en.burnDps || 3.2) * 0.016;
+          return { ...en, hp };
         }
         return en;
       });
@@ -4722,9 +5929,9 @@ const beat = plan.beats[plan.idx];
       // VOID singularity pop on expire
       const expiredVoids = bulletsRef.current.filter((b) => b.singularity && b.life <= 16);
       if (expiredVoids.length) {
-        expiredVoids.forEach((v) => {
-          explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: v.x, y: v.y, r: v.explodeRadius || 120, t: Date.now(), life: 320 }];
-          movedEnemies.forEach((en) => {
+        expiredVoids.slice(0, 8).forEach((v) => {
+          explosionsRef.current = appendCapped(explosionsRef.current, { id: Math.random(), x: v.x, y: v.y, r: v.explodeRadius || 120, t: Date.now(), life: 320 }, PERF_EFFECT_CAP);
+          for (const en of querySpatialGrid(enemySpatial, v.x, v.y, (v.explodeRadius || 120) + 64)) {
             const d = Math.hypot(en.x - v.x, en.y - v.y);
             if (d <= (v.explodeRadius || 120)) {
               const fall = 1 - d / (v.explodeRadius || 120);
@@ -4735,7 +5942,7 @@ const beat = plan.beats[plan.idx];
               st.slowDuration = Math.max(st.slowDuration || 0, 820);
               statusHits.set(en.id, st);
             }
-          });
+          }
           juicePunch(0.9, 0.95);
         });
       }
@@ -4837,7 +6044,7 @@ const beat = plan.beats[plan.idx];
         }
 
         if (en.type === 'ghost' && !en.revivedOnce) {
-          deathFxRef.current = [...(deathFxRef.current || []), { id: Math.random(), x: en.x, y: en.y, t: Date.now(), size: en.size }];
+          deathFxRef.current = appendCapped(deathFxRef.current, { id: Math.random(), x: en.x, y: en.y, t: Date.now(), size: en.size }, PERF_DEATH_FX_CAP);
           alive.push({
             ...en,
             id: `ghost_spirit_${Math.random()}`,
@@ -4856,12 +6063,17 @@ const beat = plan.beats[plan.idx];
           return;
         }
 
-        deathFxRef.current = [...(deathFxRef.current || []), { id: Math.random(), x: en.x, y: en.y, t: Date.now(), size: en.size }];
+        if (en.absorbedByPylon) {
+          return;
+        }
+
+        deathFxRef.current = appendCapped(deathFxRef.current, { id: Math.random(), x: en.x, y: en.y, t: Date.now(), size: en.size }, PERF_DEATH_FX_CAP);
+        if (playerGrabRef.current?.enemyId === en.id) playerGrabRef.current = null;
         onPlayerKill(en);
 
         if (en.deathBurstRadius && en.deathBurstDamage) {
           const radius = en.deathBurstRadius;
-          explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: en.x, y: en.y, r: radius, t: Date.now(), life: 320, color: 'rgba(255,50,20,1)', glow: 24, fill: true, alpha: 0.42 }];
+          explosionsRef.current = appendCapped(explosionsRef.current, { id: Math.random(), x: en.x, y: en.y, r: radius, t: Date.now(), life: 320, color: 'rgba(255,50,20,1)', glow: 24, fill: true, alpha: 0.42 }, PERF_EFFECT_CAP);
           deathBursts.push({ x: en.x, y: en.y, radius, damage: en.deathBurstDamage });
         }
 
@@ -4890,11 +6102,11 @@ const beat = plan.beats[plan.idx];
         }
 
         if ((en.type === 'splitter' || en.type === 'splitter_boss') && (en.splitTier || 0) > 0) {
-          const pieces = en.type === 'splitter_boss' ? 4 : 2;
+          const pieces = en.type === 'splitter_boss' ? 10 : 3;
           for (let i = 0; i < pieces; i += 1) {
             const a = Math.random() * Math.PI * 2;
             const tier = (en.splitTier || 0) - 1;
-            const hp = Math.max(10, Math.round((en.maxHp || 60) * (en.type === 'splitter_boss' ? 0.30 : 0.48)));
+            const hp = Math.max(14, Math.round((en.maxHp || 60) * (en.type === 'splitter_boss' ? 0.22 : 0.44)));
             alive.push({
               ...en,
               id: `splitter_${tier}_${Math.random()}`,
@@ -4904,7 +6116,7 @@ const beat = plan.beats[plan.idx];
               y: clamp(en.y + Math.sin(a) * 38, 20, ARENA_SIZE - 20),
               hp,
               maxHp: hp,
-              size: Math.max(18, (en.size || 42) * (en.type === 'splitter_boss' ? 0.58 : 0.72)),
+              size: Math.max(22, (en.size || 42) * (en.type === 'splitter_boss' ? 0.48 : 0.74)),
               speed: Math.max(0.55, (en.speed || 0.9) * 0.96),
               xp: Math.max(2, Math.round((en.xp || 8) * 0.55)),
               contactDamage: Math.max(4, Math.round((en.contactDamage || 8) * 0.72)),
@@ -4928,7 +6140,7 @@ const beat = plan.beats[plan.idx];
           explosionsRef.current = [...(explosionsRef.current || []), { id: Math.random(), x: en.x, y: en.y, r: 260, t: Date.now(), life: 720, color: 'rgba(180,190,210,1)', glow: 40, fill: true, alpha: 0.26 }];
         }
 
-        const total = en.type === 'boss_split' ? 0 : Math.max(2, Math.floor(en.xp * 0.80));
+        const total = en.type === 'boss_split' ? 0 : Math.max(2, Math.floor(en.xp * 0.90));
         const pack = Math.max(1, Math.round(total / 14));
 
         for (let i = 0; i < (total > 0 ? pack : 0); i += 1) {
@@ -4962,8 +6174,8 @@ const beat = plan.beats[plan.idx];
           maybeDropPickup(en.x, en.y, 'boss');
           if (en.isFinalBoss) {
             if (requiresExtraction) {
-              extractionRef.current = { active: true, progress: 0, x: en.x, y: en.y };
-              setExtractionUI({ active: true, progress: 0, x: en.x, y: en.y });
+              extractionRef.current = { active: true, progress: 0, x: en.x, y: en.y, radius: 172 };
+              setExtractionUI({ active: true, progress: 0, x: en.x, y: en.y, radius: 172 });
               pushToast('EXTRACTION ZONE DEPLOYED');
               juicePunch(1.35, 1.0);
             } else {
@@ -5059,9 +6271,10 @@ const beat = plan.beats[plan.idx];
       }
 
       if (deathBursts.length) {
+        const cappedDeathBursts = deathBursts.slice(0, 28);
         alive = alive.map((en) => {
           let dmg = 0;
-          for (const burst of deathBursts) {
+          for (const burst of cappedDeathBursts) {
             const d = Math.hypot(en.x - burst.x, en.y - burst.y);
             if (d <= burst.radius) dmg += burst.damage * Math.max(0.30, 1 - d / burst.radius);
           }
@@ -5070,7 +6283,7 @@ const beat = plan.beats[plan.idx];
       }
 
       enemiesRef.current = alive;
-      bulletsRef.current = [...nextBullets.filter((b) => !b.hit), ...spawnedBullets];
+      bulletsRef.current = [...nextBullets.filter((b) => !b.hit), ...spawnedBullets].slice(-PERF_BULLET_CAP);
       slashesRef.current = allSlashes;
       if (newOrbs.length) orbsRef.current = [...(orbsRef.current || []), ...newOrbs];
 
@@ -5081,12 +6294,15 @@ const beat = plan.beats[plan.idx];
         const magnet = Date.now() < magnetUntil.current;
         const gravPickup = !!talentsRef.current.gravPickup;
 
-        const clustered = prev.map((o) => {
+        const clustered = prev.length > 120 ? prev : prev.map((o, idx) => {
           let ax = 0;
           let ay = 0;
           let n = 0;
-          for (const o2 of prev) {
-            if (o2.id === o.id) continue;
+          const start = Math.max(0, idx - 12);
+          const end = Math.min(prev.length, idx + 13);
+          for (let j = start; j < end; j += 1) {
+            const o2 = prev[j];
+            if (!o2 || o2.id === o.id) continue;
             const d = Math.hypot(o2.x - o.x, o2.y - o.y);
             if (d > 0 && d < 110) {
               ax += (o2.x - o.x) / d;
@@ -5161,21 +6377,33 @@ const beat = plan.beats[plan.idx];
           gainedLevels += 1;
           const t = getProgressT();
           const late = norm01(t, 0.45, 1.0);
-          const growth = lerp(1.27, 1.20, late); // late: slower requirement increase
+          const earlyLevel = (levelRef.current || 1) <= 3;
+          const growth = earlyLevel ? 1.10 : lerp(1.24, 1.18, late);
           xpTargetRef.current = Math.floor(xpTargetRef.current * growth);
           if (xpRef.current < xpTargetRef.current || gainedLevels >= 12) break;
           xpRef.current -= xpTargetRef.current;
           levelRef.current = (levelRef.current || 1) + 1;
         }
 
-        pendingUpgradeCountRef.current += gainedLevels;
-        if ((upgradeOptionsRef.current || []).length === 0) {
-          const nextOptions = rollUpgradeOptions(selectedWeaponsRef.current, weaponLevelsRef.current, statsRef.current);
-          upgradeOptionsRef.current = nextOptions;
-          setUpgradeOptions(nextOptions);
+        for (let i = 0; i < gainedLevels; i += 1) {
+          const a = Math.random() * Math.PI * 2;
+          const d = 62 + Math.random() * 46;
+          pickupsRef.current = [
+            ...(pickupsRef.current || []),
+            {
+              id: `level_core_${Date.now()}_${i}_${Math.random()}`,
+              type: 'LEVELUP',
+              x: clamp(pPos.x + Math.cos(a) * d, 20, ARENA_SIZE - 20),
+              y: clamp(pPos.y + Math.sin(a) * d, 20, ARENA_SIZE - 20),
+              t: Date.now(),
+              life: PICKUP_DEFS.LEVELUP.life,
+              value: 1
+            }
+          ];
         }
         syncUI(true);
         juicePunch(0.55, 0.55);
+        pushToast(gainedLevels > 1 ? `${gainedLevels} LEVEL CORES` : 'LEVEL CORE SPAWNED');
       }
 
       // -------------------- CONTACT DAMAGE + HAZARDS --------------------
@@ -5189,7 +6417,7 @@ const beat = plan.beats[plan.idx];
         // Thorns: invuln + ram damage
         if (thornsActive) {
           const pp2 = playerRef.current;
-          const ramDmg = (t.thornsRamDamage || 34) * (statsRef.current.damageMult || 1) * crewDamageMult;
+          const ramDmg = (t.thornsRamDamage || 80) * (statsRef.current.damageMult || 1) * crewDamageMult;
           enemiesRef.current = (enemiesRef.current || []).map((en) => {
             if (en.hp <= 0) return en;
             const d = Math.hypot(en.x - pp2.x, en.y - pp2.y);
@@ -5205,9 +6433,11 @@ const beat = plan.beats[plan.idx];
                 ...en,
                 _ramHitAt: now2,
                 hp: en.hp - ramDmg,
+                burnUntil: Math.max(en.burnUntil || 0, now2 + 2600),
+                burnDps: Math.max(en.burnDps || 0, 18 + tileDifficulty * 2),
                 x: clamp(pp2.x + Math.cos(ang) * blockDist + Math.cos(ang) * push, 0, ARENA_SIZE),
                 y: clamp(pp2.y + Math.sin(ang) * blockDist + Math.sin(ang) * push, 0, ARENA_SIZE),
-                dashUntil: en.type === 'mini_charger' ? 0 : en.dashUntil,
+                dashUntil: (en.type === 'mini_charger' || en.type === 'tiny_ram') ? 0 : en.dashUntil,
                 stunnedUntil: immune ? en.stunnedUntil : Math.max(en.stunnedUntil || 0, now2 + 120),
               };
             }
@@ -5236,7 +6466,7 @@ const beat = plan.beats[plan.idx];
             const pp2 = playerRef.current;
             alive.forEach((en) => {
               const d = Math.hypot(en.x - pp2.x, en.y - pp2.y);
-              if (d < en.size * 0.55 + 16) totalDamage += en.contactDamage || 8;
+              if (!en.hidden && d < en.size * 0.55 + 16) totalDamage += Number.isFinite(en.contactDamage) ? en.contactDamage : 8;
             });
 
             if (totalDamage > 0) {
@@ -5258,9 +6488,10 @@ const beat = plan.beats[plan.idx];
         syncUI(true);
         return;
       }
-    }, 16);
+    };
 
-    return () => clearInterval(loop);
+    rafId = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(rafId);
   }, [selectedWeapons.length, tileDifficulty, crewDamageMult, crewSpeedMult, requiresExtraction]);
 
   const chooseUpgrade = (option) => {
@@ -5275,7 +6506,8 @@ const beat = plan.beats[plan.idx];
         logTimeline('upgrade', `${WEAPONS.find((w) => w.id === option.weaponId)?.name || option.weaponId} rank ${option.upgradeLevel}`);
       } else {
         const curWeapons = selectedWeaponsRef.current || [];
-        const nextWeapons = curWeapons.length >= 4 || curWeapons.includes(option.weaponId)
+        const weaponCap = talentsRef.current.extraWeaponSlot ? 6 : DEFAULT_WEAPON_CAP;
+        const nextWeapons = curWeapons.length >= weaponCap || curWeapons.includes(option.weaponId)
           ? curWeapons
           : [...curWeapons, option.weaponId];
         selectedWeaponsRef.current = nextWeapons;
@@ -5290,7 +6522,7 @@ const beat = plan.beats[plan.idx];
     }
     pendingUpgradeCountRef.current = Math.max(0, (pendingUpgradeCountRef.current || 0) - 1);
     if (pendingUpgradeCountRef.current > 0) {
-      const nextOptions = rollUpgradeOptions(selectedWeaponsRef.current, weaponLevelsRef.current, statsRef.current);
+      const nextOptions = rollUpgradeOptions(selectedWeaponsRef.current, weaponLevelsRef.current, statsRef.current, talentsRef.current.extraWeaponSlot ? 6 : DEFAULT_WEAPON_CAP);
       upgradeOptionsRef.current = nextOptions;
       setUpgradeOptions(nextOptions);
     } else {
@@ -5315,6 +6547,7 @@ const beat = plan.beats[plan.idx];
     eventCooldownUntilRef.current = 0;
     reliefUntilRef.current = 0;
     reliefStartedAtRef.current = 0;
+    progressLastSyncRef.current = 0;
     bossReturnPendingRef.current = [];
     bossMilestoneIdxRef.current = 0;
     extractionRef.current = { active: false, progress: 0, x: 0, y: 0 };
@@ -5334,6 +6567,9 @@ const beat = plan.beats[plan.idx];
     orbsRef.current = [];
     pickupsRef.current = [];
     enemyProjectilesRef.current = [];
+    playerTurretsRef.current = [];
+    playerGrabRef.current = null;
+    grabGhostsSpawnedRef.current = 0;
 
     bossSpawnedRef.current = false;
     setBossSpawned(false);
@@ -5344,10 +6580,10 @@ const beat = plan.beats[plan.idx];
     pauseStartedAtRef.current = 0;
 
     xpRef.current = 0;
-    xpTargetRef.current = 140;
+    xpTargetRef.current = 78;
     levelRef.current = 1;
     setXp(0);
-    setXpTarget(140);
+    setXpTarget(78);
     setLevel(1);
 
     const initialWeapons = [weaponId];
@@ -5375,6 +6611,7 @@ const beat = plan.beats[plan.idx];
   const remThorns = thornsActiveUntilRef.current - nowHUD;
   const remDecoy = decoyRef.current ? decoyRef.current.until - nowHUD : 0;
   const remDecoyCd = decoyCooldownUntilRef.current - nowHUD;
+  const remTurretCd = playerTurretCooldownUntilRef.current - nowHUD;
   const remThornsCd = thornsCooldownUntilRef.current - nowHUD;
   const remGhostCd = milGhostCdUntilRef.current - nowHUD;
   const remMagnet = magnetUntil.current - nowHUD;
@@ -5391,6 +6628,7 @@ const beat = plan.beats[plan.idx];
 
   const thornsUnlockedHUD = !!tHUD.thornsUnlocked;
   const decoyUnlockedHUD = !!tHUD.decoyUnlocked;
+  const turretUnlockedHUD = !!tHUD.deployTurretUnlocked;
   const ghostUnlockedHUD = Number(tHUD.ghostRank || 0) > 0;
   const thornsReadyHUD = thornsUnlockedHUD && !showThorns && remThornsCd <= 0;
   const thornsOnCdHUD = thornsUnlockedHUD && !showThorns && remThornsCd > 0;
@@ -5398,6 +6636,7 @@ const beat = plan.beats[plan.idx];
   const ghostOnCdHUD = ghostUnlockedHUD && remGhostCd > 0;
   const decoyReadyHUD = decoyUnlockedHUD && !showDecoy && remDecoyCd <= 0;
   const decoyOnCdHUD = decoyUnlockedHUD && !showDecoy && remDecoyCd > 0;
+  const turretOnCdHUD = turretUnlockedHUD && remTurretCd > 0;
   const matchPassiveHud = [
     stats.regenRank > 0 ? { id: 'REGEN', name: 'Regen', value: `${stats.regenRank}/4` } : null,
   ].filter(Boolean);
@@ -5414,6 +6653,51 @@ const beat = plan.beats[plan.idx];
   const renderViewportH = typeof window !== 'undefined' ? window.innerHeight : 0;
   const renderCamX = renderPlayerPos.x - renderViewportW / 2;
   const renderCamY = renderPlayerPos.y - renderViewportH / 2;
+  const renderRunReport = (accent = 'rgba(0,242,255,0.25)') => {
+    if (!matchSummary) return null;
+    const killRows = Object.entries(matchSummary.killsByType || {})
+      .sort((a, b) => Number(b[1]) - Number(a[1]))
+      .slice(0, 8);
+    const maxKills = Math.max(1, ...killRows.map(([, n]) => Number(n || 0)));
+    const mvpName = WEAPONS.find((w) => w.id === matchSummary.mvpWeapon)?.name || matchSummary.mvpWeapon || 'N/A';
+    return (
+      <div className="run-report" style={{ borderColor: accent }}>
+        <div className="run-stat-grid">
+          <div><span>KILLS</span><b>{matchSummary.kills || 0}</b></div>
+          <div><span>DPS</span><b>{matchSummary.dps || 0}</b></div>
+          <div><span>DAMAGE TAKEN</span><b>{matchSummary.damageTaken || 0}</b></div>
+          <div><span>MVP TECH</span><b>{mvpName}</b></div>
+        </div>
+        <div className="run-report-columns">
+          <div>
+            <strong>WEAPONS</strong>
+            {(matchSummary.weapons || []).map((w) => {
+              const name = WEAPONS.find((x) => x.id === w.id)?.name || w.id;
+              return <div key={w.id} className="summary-row"><span>{name}</span><b>LV {w.level}</b></div>;
+            })}
+          </div>
+          <div>
+            <strong>KILLS BY TYPE</strong>
+            {killRows.length === 0 ? <div className="summary-row"><span>No kills recorded</span></div> : killRows.map(([type, n]) => (
+              <div key={type} className="kill-bar">
+                <span>{getEnemyFamily(type)}</span>
+                <div><i style={{ width: `${(Number(n || 0) / maxKills) * 100}%` }} /></div>
+                <b>{n}</b>
+              </div>
+            ))}
+          </div>
+        </div>
+        <strong className="timeline-title">UPGRADE TIMELINE</strong>
+        <div className="timeline-list">
+          {(matchSummary.timeline || []).length === 0 ? <div className="summary-row"><span>No upgrades recorded.</span></div> : (matchSummary.timeline || []).map((row, i) => (
+            <div key={`${row.t}-${i}`} className="timeline-row">
+              <span>{fmtClock(row.t)}</span><em>{String(row.type || '').toUpperCase()}</em><b>{row.label}</b>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div
@@ -5477,6 +6761,13 @@ const beat = plan.beats[plan.idx];
               <b>2</b>
               <img src={decoyIcon} alt="" draggable={false} />
               <small>{showDecoy ? fmtS(remDecoy) : decoyOnCdHUD ? fmtS(remDecoyCd) : 'READY'}</small>
+            </div>
+          )}
+          {turretUnlockedHUD && (
+            <div className={`ability-slot ${turretOnCdHUD ? 'cooldown' : 'ready'}`}>
+              <b>3</b>
+              <img src={turretIcon} alt="" draggable={false} />
+              <small>{turretOnCdHUD ? fmtS(remTurretCd) : 'READY'}</small>
             </div>
           )}
         </div>
@@ -5731,15 +7022,17 @@ const beat = plan.beats[plan.idx];
         </div>
       )}
 
-      <div className="world-container" ref={worldRef} style={{ willChange: 'transform', transform: `translate(${-renderCamX}px,${-renderCamY}px)` }}>
+      <div className="world-container" ref={worldRef} style={{ willChange: 'transform', transform: `translate3d(${-renderCamX}px,${-renderCamY}px,0)` }}>
         <div className="world-border" />
         <div className="player-tracer" ref={playerTracerRef} />
         <div
   className="player-sprite"
   ref={playerSpriteRef}
   style={{
-    left: renderPlayerPos.x,
-    top: renderPlayerPos.y,
+    left: 0,
+    top: 0,
+    transform: `translate3d(${renderPlayerPos.x}px,${renderPlayerPos.y}px,0) translate(-50%, -50%) scale(1.8)`,
+    willChange: 'transform, filter',
     // ✅ show selected hero portrait instead of the blue square
     backgroundImage: selectedHero?.portrait ? `url(${selectedHero.portrait})` : undefined,
     backgroundSize: selectedHero?.portrait ? "cover" : undefined,
@@ -5778,10 +7071,10 @@ const beat = plan.beats[plan.idx];
               position: 'absolute',
               left: extractionUI.x,
               top: extractionUI.y,
-              width: 264,
-              height: 264,
-              marginLeft: -132,
-              marginTop: -132,
+              width: (extractionUI.radius || 172) * 2,
+              height: (extractionUI.radius || 172) * 2,
+              marginLeft: -(extractionUI.radius || 172),
+              marginTop: -(extractionUI.radius || 172),
               borderRadius: 999,
               border: '4px solid rgba(0,255,160,0.72)',
               background: 'radial-gradient(circle, rgba(0,255,160,0.18) 0%, rgba(0,255,160,0.08) 48%, rgba(0,0,0,0) 70%)',
@@ -5808,6 +7101,61 @@ const beat = plan.beats[plan.idx];
           </div>
         )}
 
+        {(playerTurretsRef.current || []).map((t) => {
+          const pct = clamp((t.hp || 0) / Math.max(1, t.maxHp || 1), 0, 1);
+          return (
+            <div
+              key={t.id}
+              style={{
+                position: 'absolute',
+                left: t.x,
+                top: t.y,
+                width: 48,
+                height: 48,
+                marginLeft: -24,
+                marginTop: -24,
+                border: '3px solid rgba(255,218,107,0.92)',
+                background: 'rgba(30,24,12,0.88)',
+                boxShadow: '0 0 18px rgba(255,218,107,0.34)',
+                transform: `rotate(${((nowHUD / 520) % 360)}deg)`,
+                zIndex: 4,
+                pointerEvents: 'none'
+              }}
+            >
+              <div style={{ position: 'absolute', left: 5, right: 5, bottom: -10, height: 4, background: 'rgba(0,0,0,0.72)' }}>
+                <div style={{ width: `${pct * 100}%`, height: '100%', background: 'rgba(255,218,107,0.95)' }} />
+              </div>
+            </div>
+          );
+        })}
+
+        {(playerBombsRef.current || []).map((b) => {
+          const left = Math.max(0, (b.detonateAt || nowHUD) - nowHUD);
+          const pulse = 0.5 + 0.5 * Math.abs(Math.sin(nowHUD / 90));
+          return (
+            <div
+              key={b.id}
+              style={{
+                position: 'absolute',
+                left: b.x,
+                top: b.y,
+                width: 28,
+                height: 28,
+                marginLeft: -14,
+                marginTop: -14,
+                borderRadius: 999,
+                border: '2px solid rgba(255,218,107,0.9)',
+                background: 'rgba(255,90,28,0.72)',
+                boxShadow: `0 0 ${12 + pulse * 16}px rgba(255,90,28,0.55)`,
+                opacity: 0.72 + pulse * 0.28,
+                zIndex: 4,
+                pointerEvents: 'none'
+              }}
+              title={`${Math.ceil(left / 1000)}s`}
+            />
+          );
+        })}
+
         {pickups.map((pk) => (
           (() => {
             const nowP = Date.now();
@@ -5829,11 +7177,14 @@ const beat = plan.beats[plan.idx];
               marginTop: -17,
               borderRadius: 999,
               background:
+                pk.type === 'LEVELUP' ? 'rgba(255,236,120,0.96)' :
                 pk.type === 'MAGNET' ? 'rgba(180,255,200,0.9)' :
                   pk.type === 'FREEZE' ? 'rgba(160,220,255,0.9)' :
                     pk.type === 'OVERDRIVE' ? 'rgba(255,220,140,0.92)' :
                       'rgba(200,170,255,0.92)',
-              boxShadow: ring ? `${ring}, 0 0 12px rgba(255,255,255,0.45), 0 0 28px rgba(255,255,255,0.25)` : '0 0 12px rgba(255,255,255,0.45), 0 0 28px rgba(255,255,255,0.25)',
+              boxShadow: pk.type === 'LEVELUP'
+                ? '0 0 0 3px rgba(255,255,255,0.78), 0 0 18px rgba(255,218,107,0.78), 0 0 42px rgba(255,218,107,0.42)'
+                : ring ? `${ring}, 0 0 12px rgba(255,255,255,0.45), 0 0 28px rgba(255,255,255,0.25)` : '0 0 12px rgba(255,255,255,0.45), 0 0 28px rgba(255,255,255,0.25)',
               opacity: blink,
             }}
             title={`${PICKUP_DEFS[pk.type]?.title || pk.type}${ttl > 0 ? ` • ${Math.ceil(ttl / 1000)}s` : ''}`}
@@ -5879,22 +7230,7 @@ const beat = plan.beats[plan.idx];
           <div className="victory-blast" />
           <h1>MAP CLEARED</h1>
           <p>{matchSummary?.playerName || playerName || 'Operator'} survived {fmtClock(matchSummary?.elapsedMs || elapsed.current)} with {matchSummary?.kills ?? killCountRef.current} kills.</p>
-          {matchSummary && (
-            <div style={{ width: 'min(760px, calc(100vw - 36px))', maxHeight: '52vh', overflow: 'auto', marginTop: 14, textAlign: 'left', background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(0,242,255,0.25)', padding: 14 }}>
-              <strong style={{ letterSpacing: 2 }}>UPGRADE TIMELINE</strong>
-              {(matchSummary.timeline || []).length === 0 ? <div style={{ opacity: 0.75, marginTop: 8 }}>No upgrades recorded.</div> : (matchSummary.timeline || []).map((row, i) => (
-                <div key={`${row.t}-${i}`} style={{ display: 'grid', gridTemplateColumns: '64px 90px 1fr', gap: 10, padding: '6px 0', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: 12 }}>
-                  <span>{fmtClock(row.t)}</span><span>{String(row.type || '').toUpperCase()}</span><b>{row.label}</b>
-                </div>
-              ))}
-              <strong style={{ display: 'block', letterSpacing: 2, marginTop: 14 }}>TALENTS</strong>
-              {(matchSummary.talents || []).length === 0 ? <div style={{ opacity: 0.75, marginTop: 8 }}>No purchased talents.</div> : (matchSummary.talents || []).map((t) => (
-                <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: 12 }}>
-                  <span>{t.id}</span><b>Rank {t.rank}</b>
-                </div>
-              ))}
-            </div>
-          )}
+          {renderRunReport('rgba(0,242,255,0.35)')}
           <button className="scifi-btn" style={{ marginTop: 16 }} onClick={() => onVictory(matchSummary || buildMatchSummary('CLEARED'))}>CONTINUE</button>
         </div>
       )}
@@ -5904,22 +7240,7 @@ const beat = plan.beats[plan.idx];
           <div className="victory-blast" />
           <h1>CORE BREACH</h1>
           <p>{matchSummary?.playerName || playerName || 'Operator'} fell at {Math.floor((matchSummary?.progress || getProgressT()) * 100)}% after {fmtClock(matchSummary?.elapsedMs || elapsed.current)}.</p>
-          {matchSummary && (
-            <div style={{ width: 'min(760px, calc(100vw - 36px))', maxHeight: '52vh', overflow: 'auto', marginTop: 14, textAlign: 'left', background: 'rgba(0,0,0,0.45)', border: '1px solid rgba(255,0,122,0.25)', padding: 14 }}>
-              <strong style={{ letterSpacing: 2 }}>UPGRADE TIMELINE</strong>
-              {(matchSummary.timeline || []).map((row, i) => (
-                <div key={`${row.t}-${i}`} style={{ display: 'grid', gridTemplateColumns: '64px 90px 1fr', gap: 10, padding: '6px 0', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: 12 }}>
-                  <span>{fmtClock(row.t)}</span><span>{String(row.type || '').toUpperCase()}</span><b>{row.label}</b>
-                </div>
-              ))}
-              <strong style={{ display: 'block', letterSpacing: 2, marginTop: 14 }}>TALENTS</strong>
-              {(matchSummary.talents || []).length === 0 ? <div style={{ opacity: 0.75, marginTop: 8 }}>No purchased talents.</div> : (matchSummary.talents || []).map((t) => (
-                <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderTop: '1px solid rgba(255,255,255,0.08)', fontSize: 12 }}>
-                  <span>{t.id}</span><b>Rank {t.rank}</b>
-                </div>
-              ))}
-            </div>
-          )}
+          {renderRunReport('rgba(255,0,122,0.35)')}
           <button className="scifi-btn" style={{ marginTop: 16 }} onClick={() => onExit(matchSummary || buildMatchSummary('DEFEATED'))}>CONTINUE</button>
         </div>
       )}

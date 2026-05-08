@@ -48,11 +48,11 @@ const BASE_MATCH_MS = 240000;
 const rollMatchLengthMs = (difficulty = 1) => {
   const d = Math.max(1, Math.min(5, Math.round(difficulty || 1)));
   const ranges = {
-    1: [70000, 95000],
-    2: [105000, 145000],
-    3: [180000, 250000],
-    4: [420000, 560000],
-    5: [720000, 920000],
+    1: [175000, 230000],
+    2: [255000, 340000],
+    3: [420000, 560000],
+    4: [720000, 900000],
+    5: [1320000, 1680000],
   };
   const [min, max] = ranges[d] || ranges[3];
   return Math.round(min + Math.random() * (max - min));
@@ -116,6 +116,18 @@ function genUniqueHeroOptions(count = 5) {
   }));
 }
 
+const hashString = (value = "") => {
+  let h = 0;
+  const s = String(value || "");
+  for (let i = 0; i < s.length; i += 1) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+};
+
+const leaderboardPortraitFor = (row = {}) => {
+  if (row.characterPortrait) return row.characterPortrait;
+  return HERO_PORTRAITS[hashString(row.characterName || row.name || row.id || "operator") % HERO_PORTRAITS.length];
+};
+
 // ✅ forced tile id for the tutorial (exists in your 15x15 grid)
 const TUTORIAL_TILE_ID = "7-7";
 
@@ -143,6 +155,8 @@ export default function App() {
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const [leaderboardRows, setLeaderboardRows] = useState([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const [statsOpen, setStatsOpen] = useState(false);
+  const [selectedLeaderboardPlayer, setSelectedLeaderboardPlayer] = useState(null);
   const [leaderboardDeaths, setLeaderboardDeaths] = useState(0);
   const [leaderboardTilesCleared, setLeaderboardTilesCleared] = useState(0);
   const [leaderboardKills, setLeaderboardKills] = useState(0);
@@ -313,6 +327,11 @@ export default function App() {
       const rows = res.ok ? await res.json() : [];
       const mergedRows = await mergeLeaderboardRows(rows);
       const existing = mergedRows.find((r) => normalizeName(r.name) === normalizeName(name)) || null;
+      const pickedWeapons = (snapshot.lastRunSummary?.weapons || []).map((w) => w.id).filter(Boolean);
+      const weaponPickCounts = { ...(existing?.weaponPickCounts || {}) };
+      if (snapshot.lastRunSummary?.result) {
+        pickedWeapons.forEach((id) => { weaponPickCounts[id] = Number(weaponPickCounts[id] || 0) + 1; });
+      }
       const payload = {
         name,
         characterName: snapshot.characterName || selectedHero?.name || existing?.characterName || "",
@@ -324,6 +343,10 @@ export default function App() {
         lastRunPoints: score,
         lastRunKills: Math.max(0, Math.round(snapshot.lastRunKills ?? 0)),
         lastRunSummary: snapshot.lastRunSummary || existing?.lastRunSummary || null,
+        runs: Number(existing?.runs || 0) + (snapshot.lastRunSummary?.result ? 1 : 0),
+        wins: Number(existing?.wins || 0) + (String(snapshot.lastRunSummary?.result || "").toUpperCase() === "CLEARED" ? 1 : 0),
+        losses: Number(existing?.losses || 0) + (String(snapshot.lastRunSummary?.result || "").toUpperCase() === "DEFEATED" ? 1 : 0),
+        weaponPickCounts,
         updatedAt: new Date().toISOString()
       };
       if (existing?.id) {
@@ -379,6 +402,60 @@ export default function App() {
     } finally {
       setLeaderboardLoading(false);
     }
+  };
+
+  const statsOverview = useMemo(() => {
+    const rows = Array.isArray(leaderboardRows) ? leaderboardRows : [];
+    const totalRuns = rows.reduce((sum, r) => sum + Math.max(1, Number(r.runs || 1)), 0);
+    const wins = rows.filter((r) => String(r.lastRunSummary?.result || "").toUpperCase() === "CLEARED").length;
+    const losses = rows.filter((r) => String(r.lastRunSummary?.result || "").toUpperCase() === "DEFEATED").length;
+    const weaponMap = new Map();
+    const enemyMap = new Map();
+    rows.forEach((row) => {
+      const s = row.lastRunSummary || {};
+      (s.weapons || []).forEach((w) => {
+        const key = w.id || "UNKNOWN";
+        const cur = weaponMap.get(key) || { id: key, runs: 0, levels: 0, kills: 0 };
+        cur.runs += 1;
+        cur.levels += Number(w.level || 0);
+        cur.kills += Number(s.kills || 0);
+        weaponMap.set(key, cur);
+      });
+      Object.entries(s.killsByType || {}).forEach(([type, count]) => {
+        enemyMap.set(type, (enemyMap.get(type) || 0) + Number(count || 0));
+      });
+    });
+    return {
+      players: rows.length,
+      totalRuns,
+      wins,
+      losses,
+      successRate: rows.length ? Math.round((wins / rows.length) * 100) : 0,
+      failRate: rows.length ? Math.round((losses / rows.length) * 100) : 0,
+      weapons: [...weaponMap.values()].sort((a, b) => b.kills - a.kills).slice(0, 12),
+      enemies: [...enemyMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12),
+    };
+  }, [leaderboardRows]);
+
+  const getPlayerStats = (row = {}) => {
+    const s = row.lastRunSummary || {};
+    const weapons = Array.isArray(s.weapons) ? s.weapons : [];
+    const favorite = weapons[0]?.id || s.mvpWeapon || "N/A";
+    const allWeapons = ["RIFLE", "SMG", "SHOTGUN", "LASER", "SNIPER", "TESLA", "ROCKET", "VOID", "TIME", "AXE", "KATANA"];
+    const counts = row.weaponPickCounts || {};
+    const hated = [...allWeapons].sort((a, b) => Number(counts[a] || 0) - Number(counts[b] || 0))[0] || "N/A";
+    return {
+      summary: s,
+      weapons,
+      talents: Array.isArray(s.talents) ? s.talents.filter((t) => Number(t.rank || 0) > 1) : [],
+      favorite,
+      hated,
+      runs: Number(row.runs || 0),
+      wins: Number(row.wins || 0),
+      losses: Number(row.losses || 0),
+      killsByType: Object.entries(s.killsByType || {}).sort((a, b) => Number(b[1]) - Number(a[1])),
+      killedByMost: row.killedByMost || s.killedByMost || "Unknown",
+    };
   };
 
   const startWithoutTutorial = () => {
@@ -844,11 +921,12 @@ export default function App() {
                 e.stopPropagation();
                 const next = !leaderboardOpen;
                 setLeaderboardOpen(next);
+                setStatsOpen(false);
                 if (next) loadLeaderboard();
               }}
               style={{
                 position: "fixed",
-                right: 245,
+                right: shopUnlocked ? 245 : 24,
                 top: 24,
                 zIndex: 9200,
                 padding: "14px 18px",
@@ -861,6 +939,32 @@ export default function App() {
               }}
             >
               LEADERBOARD
+            </button>
+          )}
+
+          {view === "galaxy" && (
+            <button
+              className="scifi-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                const next = !statsOpen;
+                setStatsOpen(next);
+                setLeaderboardOpen(false);
+                if (next && leaderboardRows.length === 0) loadLeaderboard();
+              }}
+              style={{
+                position: "fixed",
+                right: 24,
+                top: 88,
+                zIndex: 9200,
+                padding: "14px 18px",
+                letterSpacing: 3,
+                borderRadius: 14,
+                borderColor: "rgba(255,218,107,0.55)",
+                color: "#ffe16b",
+              }}
+            >
+              STATS
             </button>
           )}
 
@@ -913,9 +1017,17 @@ export default function App() {
                 {!leaderboardLoading && leaderboardRows.map((row, i) => {
                   const topColors = ["rgba(255,218,107,0.20)", "rgba(210,230,255,0.16)", "rgba(255,154,82,0.15)"];
                   const rankColor = i === 0 ? "#ffe16b" : i === 1 ? "#d9ecff" : i === 2 ? "#ffb36b" : "rgba(255,255,255,0.72)";
+                  const portraitSrc = leaderboardPortraitFor(row);
+                  const portraitFallback = HERO_PORTRAITS[hashString(row.characterName || row.name || row.id || "operator") % HERO_PORTRAITS.length];
                   return (
                     <div
                       key={row.id || `${row.name}-${i}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setSelectedLeaderboardPlayer(row)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") setSelectedLeaderboardPlayer(row);
+                      }}
                       style={{
                         display: "grid",
                         gridTemplateColumns: "58px minmax(240px, 1fr) 120px 120px 120px 120px",
@@ -925,12 +1037,26 @@ export default function App() {
                         alignItems: "center",
                         background: topColors[i] || "rgba(255,255,255,0.025)",
                         boxShadow: i < 3 ? `inset 3px 0 0 ${rankColor}` : undefined,
+                        cursor: "pointer",
                       }}
                     >
                       <b style={{ color: rankColor, fontSize: 18 }}>{i + 1}</b>
                       <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                        <div style={{ width: 46, height: 46, borderRadius: 8, overflow: "hidden", border: "1px solid rgba(0,242,255,0.35)", background: "rgba(0,242,255,0.08)", flex: "0 0 auto" }}>
-                          {row.characterPortrait ? <img src={row.characterPortrait} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : null}
+                        <div style={{ width: 46, height: 46, borderRadius: 8, overflow: "hidden", border: "1px solid rgba(0,242,255,0.35)", background: "rgba(0,242,255,0.08)", flex: "0 0 auto", position: "relative", display: "grid", placeItems: "center" }}>
+                          <span style={{ position: "absolute", color: "rgba(0,242,255,0.85)", fontWeight: 900 }}>{String(row.name || "?").slice(0, 1).toUpperCase()}</span>
+                          <img
+                            src={portraitSrc}
+                            alt=""
+                            onError={(e) => {
+                              if (e.currentTarget.dataset.fallback !== "1") {
+                                e.currentTarget.dataset.fallback = "1";
+                                e.currentTarget.src = portraitFallback;
+                              } else {
+                                e.currentTarget.style.display = "none";
+                              }
+                            }}
+                            style={{ width: "100%", height: "100%", objectFit: "cover", position: "relative", zIndex: 1 }}
+                          />
                         </div>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontWeight: 900, letterSpacing: 1.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.name || "UNKNOWN"}</div>
@@ -948,6 +1074,195 @@ export default function App() {
             </div>
           )}
 
+          {selectedLeaderboardPlayer && (() => {
+            const row = selectedLeaderboardPlayer;
+            const ps = getPlayerStats(row);
+            const portraitSrc = leaderboardPortraitFor(row);
+            return (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  zIndex: 9600,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: 24,
+                  background: "rgba(0,0,0,0.68)",
+                  backdropFilter: "blur(5px)",
+                }}
+              >
+                <div
+                  style={{
+                    width: "min(880px, calc(100vw - 48px))",
+                    maxHeight: "84vh",
+                    overflow: "auto",
+                    border: "1px solid rgba(0,242,255,0.42)",
+                    background: "linear-gradient(180deg, rgba(5,12,22,0.97), rgba(0,0,0,0.95))",
+                    boxShadow: "0 0 42px rgba(0,242,255,0.20), inset 0 0 28px rgba(0,242,255,0.05)",
+                    padding: 18,
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "center", marginBottom: 16 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
+                      <img src={portraitSrc} alt="" style={{ width: 64, height: 64, borderRadius: 8, objectFit: "cover", border: "1px solid rgba(0,242,255,0.42)" }} />
+                      <div style={{ minWidth: 0 }}>
+                        <h2 style={{ margin: 0, letterSpacing: 4, fontSize: 22, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.name || "UNKNOWN"}</h2>
+                        <div style={{ opacity: 0.72, fontSize: 12, letterSpacing: 2, marginTop: 4 }}>{row.characterName || "Unlisted Operator"}</div>
+                      </div>
+                    </div>
+                    <button className="scifi-btn" onClick={() => setSelectedLeaderboardPlayer(null)} style={{ minWidth: 48, padding: "10px 14px", borderColor: "rgba(255,255,255,0.28)" }}>X</button>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 10, marginBottom: 14 }}>
+                    {[
+                      ["POINTS", Number(row.points || 0)],
+                      ["KILLS", Number(row.kills || 0).toLocaleString()],
+                      ["DEATHS", Number(row.deaths || 0)],
+                      ["TILES", Number(row.tilesCleared || row.tiles || 0)],
+                      ["RUNS", ps.runs || "N/A"],
+                      ["WINS", ps.wins || 0],
+                      ["FAILS", ps.losses || 0],
+                      ["SUCCESS", ps.runs ? `${Math.round((ps.wins / Math.max(1, ps.runs)) * 100)}%` : "N/A"],
+                      ["KILLED BY", ps.killedByMost],
+                    ].map(([label, value]) => (
+                      <div key={label} style={{ border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.04)", padding: 12 }}>
+                        <div style={{ fontSize: 11, opacity: 0.72, letterSpacing: 2 }}>{label}</div>
+                        <strong style={{ display: "block", marginTop: 6, fontSize: 20, color: "#ffe16b" }}>{value}</strong>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                    <div style={{ border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.035)", padding: 14 }}>
+                      <strong style={{ letterSpacing: 3 }}>LOADOUT READ</strong>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+                        <div><span style={{ opacity: 0.7 }}>Favorite</span><b style={{ display: "block", color: "#ffe16b" }}>{ps.favorite}</b></div>
+                        <div><span style={{ opacity: 0.7 }}>Most hated</span><b style={{ display: "block", color: "#ff7a7a" }}>{ps.hated}</b></div>
+                      </div>
+                    </div>
+
+                    <div style={{ border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.035)", padding: 14 }}>
+                      <strong style={{ letterSpacing: 3 }}>TALENTS</strong>
+                      {ps.talents.map((t) => (
+                        <div key={t.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "9px 0", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                          <span>{t.id}</span><b>Rank {t.rank}</b>
+                        </div>
+                      ))}
+                      {ps.talents.length === 0 && <div style={{ opacity: 0.72, paddingTop: 10 }}>No rank 2+ talent data yet.</div>}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {statsOpen && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 9400,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 24,
+                background: "rgba(0,0,0,0.64)",
+                backdropFilter: "blur(5px)",
+              }}
+            >
+              <div
+                style={{
+                  width: "min(1120px, calc(100vw - 48px))",
+                  maxHeight: "84vh",
+                  overflow: "auto",
+                  border: "1px solid rgba(255,218,107,0.42)",
+                  background: "linear-gradient(180deg, rgba(12,10,5,0.96), rgba(0,0,0,0.94))",
+                  boxShadow: "0 0 42px rgba(255,218,107,0.16), inset 0 0 28px rgba(255,218,107,0.05)",
+                  padding: 18,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 16 }}>
+                  <div>
+                    <h2 style={{ margin: 0, letterSpacing: 5, fontSize: 24 }}>STATS</h2>
+                    <div style={{ opacity: 0.72, fontSize: 12, letterSpacing: 2, marginTop: 4 }}>PLAYER RUN INTELLIGENCE</div>
+                  </div>
+                  <button className="scifi-btn" onClick={() => setStatsOpen(false)} style={{ minWidth: 48, padding: "10px 14px", borderColor: "rgba(255,255,255,0.28)" }}>X</button>
+                </div>
+
+                {leaderboardLoading && <div style={{ opacity: 0.75, padding: 18 }}>LOADING...</div>}
+                {!leaderboardLoading && (
+                  <>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 10, marginBottom: 16 }}>
+                      {[
+                        ["PLAYERS", statsOverview.players],
+                        ["RUNS", statsOverview.totalRuns],
+                        ["WINS", statsOverview.wins],
+                        ["FAILS", statsOverview.losses],
+                        ["SUCCESS", `${statsOverview.successRate}%`],
+                        ["FAIL RATE", `${statsOverview.failRate}%`],
+                      ].map(([label, value]) => (
+                        <div key={label} style={{ border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.04)", padding: 12 }}>
+                          <div style={{ fontSize: 11, opacity: 0.72, letterSpacing: 2 }}>{label}</div>
+                          <strong style={{ display: "block", marginTop: 6, fontSize: 22, color: "#ffe16b" }}>{value}</strong>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 16 }}>
+                      <div style={{ border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.035)", padding: 14 }}>
+                        <strong style={{ letterSpacing: 3 }}>WEAPON PERFORMANCE</strong>
+                        {statsOverview.weapons.length === 0 && <div style={{ opacity: 0.72, padding: "12px 0" }}>No weapon stats yet. Finish a run to seed this panel.</div>}
+                        {statsOverview.weapons.map((w) => (
+                          <div key={w.id} style={{ display: "grid", gridTemplateColumns: "1fr 80px 90px 90px", gap: 10, padding: "9px 0", borderTop: "1px solid rgba(255,255,255,0.08)", alignItems: "center" }}>
+                            <b>{w.id}</b>
+                            <span>{w.runs} runs</span>
+                            <span>{Math.round(w.levels / Math.max(1, w.runs) * 10) / 10} avg lvl</span>
+                            <strong style={{ textAlign: "right", color: "#ffe16b" }}>{w.kills} kills</strong>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div style={{ border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.035)", padding: 14 }}>
+                        <strong style={{ letterSpacing: 3 }}>KILLS BY ENEMY</strong>
+                        {statsOverview.enemies.length === 0 && <div style={{ opacity: 0.72, padding: "12px 0" }}>No kill type data yet.</div>}
+                        {statsOverview.enemies.map(([type, count]) => (
+                          <div key={type} style={{ display: "grid", gridTemplateColumns: "1fr 90px", gap: 10, padding: "9px 0", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                            <b>{String(type).toUpperCase()}</b>
+                            <strong style={{ textAlign: "right", color: "#ffe16b" }}>{count}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 16, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.035)", padding: 14 }}>
+                      <strong style={{ letterSpacing: 3 }}>PLAYER SNAPSHOTS</strong>
+                      {leaderboardRows.slice(0, 20).map((row) => {
+                        const s = row.lastRunSummary || {};
+                        const runs = Number(row.runs || 0);
+                        const wins = Number(row.wins || 0);
+                        const losses = Number(row.losses || 0);
+                        const rate = runs ? Math.round((wins / runs) * 100) : (String(s.result || "").toUpperCase() === "CLEARED" ? 100 : 0);
+                        return (
+                          <div key={row.id || row.name} style={{ display: "grid", gridTemplateColumns: "minmax(180px,1fr) 100px 100px 100px 120px minmax(180px,1fr)", gap: 10, padding: "9px 0", borderTop: "1px solid rgba(255,255,255,0.08)", alignItems: "center" }}>
+                            <b>{row.name || "UNKNOWN"}</b>
+                            <span>{Number(row.kills || 0)} kills</span>
+                            <span>{wins}W / {losses}F</span>
+                            <span>{rate}% success</span>
+                            <span>{s.mvpWeapon || "N/A"} MVP</span>
+                            <span style={{ opacity: 0.78, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(s.weapons || []).map((w) => `${w.id} ${w.level}`).join(" / ") || "No loadout data"}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* SHOP PANEL */}
           {shopOpen && (
             <div
@@ -956,7 +1271,7 @@ export default function App() {
                 position: "fixed",
                 left: "50%",
                 transform: "translateX(-50%)",
-                width: "min(1040px, calc(100vw - 40px))",
+                width: "min(1440px, calc(100vw - 28px))",
                 top: 80,
                 bottom: 20,
                 zIndex: 9050,
