@@ -2288,7 +2288,7 @@ const beat = plan.beats[plan.idx];
             const meta = { duration: EVENT_DEFS.ELITE_WALL.duration };
             if (startEvent(EVENT_ELITE_WALL, meta)) {
           const lateWallHp = t >= 0.60 ? 0.60 : 1;
-          enemiesRef.current = [...(enemiesRef.current || []), ...spawnWallSweep(pp, difficulty, { hpMult: 6.45 * lateWallHp, speed: 0.92, count: 58, size: 124 }, t)];
+          enemiesRef.current = [...(enemiesRef.current || []), ...spawnWallSweep(pp, difficulty, { hpMult: 3.225 * lateWallHp, speed: 0.92, count: 58, size: 124 }, t)];
           pushToast('WALL SWEEP');
           juicePunch(0.85, 0.8);
           plan.idx += 1;
@@ -2302,7 +2302,7 @@ const beat = plan.beats[plan.idx];
           radiusStart: 920 + Math.floor(Math.random() * 180),
           encroachSpeed: 0.72 + Math.random() * 0.26,
           minRadius: 135,
-          hpMult: (7.65 + Math.random() * 4.65) * (t >= 0.60 ? 0.60 : 1),
+          hpMult: (3.825 + Math.random() * 2.325) * (t >= 0.60 ? 0.60 : 1),
           size: 132,
           spawned: true
         };
@@ -6406,9 +6406,10 @@ const beat = plan.beats[plan.idx];
 
         for (let i = 0; i < gainedLevels; i += 1) {
           const a = Math.random() * Math.PI * 2;
-          const baseD = 62 + Math.random() * 46;
-          const viewportSafeD = Math.max(150, Math.min(760, ((typeof window !== 'undefined' ? Math.min(window.innerWidth, window.innerHeight) : 900) * 0.44) - 34));
-          const d = Math.min(baseD * (2 + Math.random() * 5), viewportSafeD);
+          const viewportMin = typeof window !== 'undefined' ? Math.min(window.innerWidth, window.innerHeight) : 900;
+          const minD = Math.max(220, viewportMin * 0.24);
+          const maxD = Math.max(minD + 80, Math.min(820, viewportMin * 0.46));
+          const d = minD + Math.random() * (maxD - minD);
           pickupsRef.current = [
             ...(pickupsRef.current || []),
             {
