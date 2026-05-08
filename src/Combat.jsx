@@ -2288,7 +2288,7 @@ const beat = plan.beats[plan.idx];
             const meta = { duration: EVENT_DEFS.ELITE_WALL.duration };
             if (startEvent(EVENT_ELITE_WALL, meta)) {
           const lateWallHp = t >= 0.60 ? 0.60 : 1;
-          enemiesRef.current = [...(enemiesRef.current || []), ...spawnWallSweep(pp, difficulty, { hpMult: 12.90 * lateWallHp, speed: 0.92, count: 58, size: 124 }, t)];
+          enemiesRef.current = [...(enemiesRef.current || []), ...spawnWallSweep(pp, difficulty, { hpMult: 6.45 * lateWallHp, speed: 0.92, count: 58, size: 124 }, t)];
           pushToast('WALL SWEEP');
           juicePunch(0.85, 0.8);
           plan.idx += 1;
@@ -2302,7 +2302,7 @@ const beat = plan.beats[plan.idx];
           radiusStart: 920 + Math.floor(Math.random() * 180),
           encroachSpeed: 0.72 + Math.random() * 0.26,
           minRadius: 135,
-          hpMult: (15.30 + Math.random() * 9.30) * (t >= 0.60 ? 0.60 : 1),
+          hpMult: (7.65 + Math.random() * 4.65) * (t >= 0.60 ? 0.60 : 1),
           size: 132,
           spawned: true
         };
@@ -2657,7 +2657,7 @@ const beat = plan.beats[plan.idx];
 
         if (t.deployTurretUnlocked && pressedThree && now >= playerTurretCooldownUntilRef.current) {
           const p = playerRef.current;
-          const turretHp = 520 + tileDifficulty * 72 + (t.turretFortify ? 220 : 0);
+          const turretHp = Math.round((520 + tileDifficulty * 72 + (t.turretFortify ? 220 : 0)) * 2.5);
           const turretId = `player_turret_${Math.random()}`;
           playerTurretsRef.current = [
             ...(playerTurretsRef.current || []),
@@ -6406,7 +6406,9 @@ const beat = plan.beats[plan.idx];
 
         for (let i = 0; i < gainedLevels; i += 1) {
           const a = Math.random() * Math.PI * 2;
-          const d = 62 + Math.random() * 46;
+          const baseD = 62 + Math.random() * 46;
+          const viewportSafeD = Math.max(150, Math.min(760, ((typeof window !== 'undefined' ? Math.min(window.innerWidth, window.innerHeight) : 900) * 0.44) - 34));
+          const d = Math.min(baseD * (2 + Math.random() * 5), viewportSafeD);
           pickupsRef.current = [
             ...(pickupsRef.current || []),
             {
