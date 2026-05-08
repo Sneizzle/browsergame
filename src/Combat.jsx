@@ -621,7 +621,7 @@ const spawnEnemyBase = (difficulty, t = 0) => {
 
   if (t > 0.32 && roll > 0.905 && roll <= 0.920) {
     const hp = Math.round((720 + difficulty * 96) * ELITE_HP_MULT * diffHp);
-    return { id: Math.random(), type: 'grab_ghost', x, y, hp: Math.round(hp * 5.95), maxHp: Math.round(hp * 5.95), speed: 2.42 + difficulty * 0.038, size: 64, xp: 120, contactDamage: 0, color: '#b9f2ff', grabUntil: 0 };
+    return { id: Math.random(), type: 'grab_ghost', x, y, hp: Math.round(hp * 4.46), maxHp: Math.round(hp * 4.46), speed: 2.42 + difficulty * 0.038, size: 64, xp: 120, contactDamage: 0, color: '#b9f2ff', grabUntil: 0 };
   }
 
   if (t > 0.42 && roll > 0.920 && roll <= 0.935) {
@@ -717,14 +717,14 @@ const spawnEnemy = (difficulty, forcedType = null, t = 0) => {
   }
   if (forcedType === 'grab_ghost') {
     const hp = Math.round((980 + difficulty * 135) * ELITE_HP_MULT * diffHp);
-    return { ...base, type: 'grab_ghost', hp: Math.round(hp * 5.95), maxHp: Math.round(hp * 5.95), speed: 2.50 + difficulty * 0.040, size: 66, xp: 140, contactDamage: 0, color: '#b9f2ff', grabUntil: 0 };
+    return { ...base, type: 'grab_ghost', hp: Math.round(hp * 4.46), maxHp: Math.round(hp * 4.46), speed: 2.50 + difficulty * 0.040, size: 66, xp: 140, contactDamage: 0, color: '#b9f2ff', grabUntil: 0 };
   }
   if (forcedType === 'burrower') {
     const hp = Math.round((78 + difficulty * 10) * TRASH_HP_MULT * lateAddHpMultFromT(t) * diffHp);
     return { ...base, type: 'burrower', hp, maxHp: hp, speed: 1.35 + difficulty * 0.025, size: 32, xp: 24, contactDamage: 13, color: '#c08bff', nextBurrowAt: Date.now() + 1600 + Math.random() * 1400 };
   }
   if (forcedType === 'pylon') {
-    const hp = Math.round((6750 + difficulty * 1150) * ELITE_HP_MULT * diffHp);
+    const hp = Math.round((3510 + difficulty * 598) * ELITE_HP_MULT * diffHp);
     return {
       ...base,
       type: 'pylon',
@@ -736,7 +736,7 @@ const spawnEnemy = (difficulty, forcedType = null, t = 0) => {
       contactDamage: 0,
       color: '#7ff2d7',
       pylonStartedAt: Date.now(),
-      pylonChargeMs: 42000,
+      pylonChargeMs: 9000,
       pylonAbsorbed: 0,
       pylonPullRadius: 680,
       pylonMonster: false
@@ -2287,8 +2287,8 @@ const beat = plan.beats[plan.idx];
       if (id === EVENT_ELITE_WALL) {
             const meta = { duration: EVENT_DEFS.ELITE_WALL.duration };
             if (startEvent(EVENT_ELITE_WALL, meta)) {
-          const lateWallHp = t >= 0.60 ? 0.60 : 1;
-          enemiesRef.current = [...(enemiesRef.current || []), ...spawnWallSweep(pp, difficulty, { hpMult: 3.225 * lateWallHp, speed: 0.92, count: 58, size: 124 }, t)];
+          const lateWallHp = t >= 0.50 ? 1.30 : 1;
+          enemiesRef.current = [...(enemiesRef.current || []), ...spawnWallSweep(pp, difficulty, { hpMult: 3.225 * lateWallHp, speed: t >= 0.50 ? 1.04 : 0.92, count: 58, size: 124 }, t)];
           pushToast('WALL SWEEP');
           juicePunch(0.85, 0.8);
           plan.idx += 1;
@@ -2302,7 +2302,7 @@ const beat = plan.beats[plan.idx];
           radiusStart: 920 + Math.floor(Math.random() * 180),
           encroachSpeed: 0.72 + Math.random() * 0.26,
           minRadius: 135,
-          hpMult: (3.825 + Math.random() * 2.325) * (t >= 0.60 ? 0.60 : 1),
+          hpMult: (3.825 + Math.random() * 2.325) * (t >= 0.50 ? 1.30 : 1),
           size: 132,
           spawned: true
         };
@@ -4344,10 +4344,9 @@ const beat = plan.beats[plan.idx];
             return { ...en, x: en.x + (dx / d) * spd, y: en.y + (dy / d) * spd };
           }
           const age = now2 - (en.pylonStartedAt || now2);
-          const timeCharge = clamp(age / (en.pylonChargeMs || 42000), 0, 1);
+          const timeCharge = clamp(age / (en.pylonChargeMs || 9000), 0, 1);
           let absorbed = en.pylonAbsorbed || 0;
-          const absorbNeed = 24 + tileDifficulty * 6;
-          const charge = clamp(Math.max(timeCharge * 0.45, absorbed / absorbNeed), 0, 1);
+          const charge = timeCharge;
           const pullRadius = (en.pylonPullRadius || 680) * (0.9 + charge * 0.35);
           for (const victim of nextEnemies || []) {
             if (!victim || victim.id === en.id || victim.hp <= 0 || victim.type === 'wall' || victim.type === 'boss' || victim.type === 'pylon' || victim.type === 'boss_split') continue;
@@ -4366,10 +4365,10 @@ const beat = plan.beats[plan.idx];
             }
           }
           if (charge >= 1) {
-            const hp = Math.round((36000 + tileDifficulty * 6200) * difficultyHpMult(tileDifficulty));
+            const hp = Math.round((18720 + tileDifficulty * 3224) * difficultyHpMult(tileDifficulty));
             explosionsRef.current = appendCapped(explosionsRef.current, { id: Math.random(), x: en.x, y: en.y, r: 460, t: now2, life: 720, color: 'rgba(127,242,215,1)', glow: 42, fill: true, alpha: 0.25 }, PERF_EFFECT_CAP);
             pushToast('PYLON BEAST AWAKENED');
-            return { ...en, pylonMonster: true, hp, maxHp: hp, speed: 0.62 + tileDifficulty * 0.015, size: 535, contactDamage: 42, xp: 700, color: '#35ffd5', pylonCharge: 1, pylonAbsorbed: absorbed };
+            return { ...en, pylonMonster: true, hp, maxHp: hp, speed: 0.62 + tileDifficulty * 0.015, size: 482, contactDamage: 42, xp: 700, color: '#35ffd5', pylonCharge: 1, pylonAbsorbed: absorbed };
           }
           return { ...en, speed: 0, size: 108 + charge * 34, pylonCharge: charge, pylonAbsorbed: absorbed };
         }
