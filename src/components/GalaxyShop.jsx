@@ -104,8 +104,8 @@ const MIL_NODES = [
       "ACTIVE - Key 1\n" +
       "Cooldown: 25s base, reduced by Quick Rearm.\n" +
       "Duration: 5.6s base, increased by Quick Rearm.\n" +
-      "Damage: 43.2 + 4.8 per map difficulty before bonuses.\n" +
-      "While active: invulnerable, body-blocks ram enemies, and burns enemies touching you.",
+      "Damage: 89.9 + 12.4 per map difficulty before bonuses.\n" +
+      "While active: invulnerable, body-blocks ram enemies, and makes touching enemies bleed.",
   },
   {
     // IMPORTANT: Combat.jsx expects this key for the Katana talent.
@@ -331,6 +331,98 @@ const RES_LINES = [
   ["RES_GRAV_PICKUP", "RES_SLOW_PULSE"],
 ];
 
+// -------------------- TREE 3: ENGINEERING BAY --------------------
+const ENG_NODES = [
+  {
+    id: "ENG_DEPLOY_TURRET",
+    name: "DEPLOY TURRET",
+    type: "ability",
+    rarity: "major",
+    row: 0,
+    col: 1,
+    maxRank: 1,
+    icon: 20,
+    tags: ["KEY 3 ability"],
+    desc:
+      "ACTIVE - Key 3\n" +
+      "Cooldown: 45s. Duration: 10s.\n" +
+      "Drops a high-HP static turret. It draws enemies and fires heavy support shots.",
+  },
+  {
+    id: "ENG_TURRET_DETONATE",
+    name: "DEATH CHARGE",
+    type: "passive",
+    rarity: "major",
+    row: 1,
+    col: 0,
+    maxRank: 1,
+    icon: 7,
+    prereqAll: ["ENG_DEPLOY_TURRET"],
+    desc: "TURRET UPGRADE\nWhen the turret dies or expires, it detonates in a large damaging blast.",
+  },
+  {
+    id: "ENG_TURRET_BOMB",
+    name: "SIEGE PACKAGE",
+    type: "passive",
+    rarity: "major",
+    row: 1,
+    col: 2,
+    maxRank: 1,
+    icon: 3,
+    prereqAll: ["ENG_DEPLOY_TURRET"],
+    desc:
+      "TURRET UPGRADE\nTurret throws bombs that detonate after 2s.\n" +
+      "The first time each turret takes damage, it releases a huge knockback and slow circle.",
+  },
+  {
+    id: "ENG_TURRET_FORTIFY",
+    name: "FORTIFIED DROP",
+    type: "passive",
+    rarity: "major",
+    row: 2,
+    col: 0,
+    maxRank: 1,
+    icon: 15,
+    prereqAll: ["ENG_DEPLOY_TURRET"],
+    desc:
+      "TURRET UPGRADE\nTurret gains more HP, lasts longer, and deploys a square of blocker walls around itself.",
+  },
+  {
+    id: "ENG_TURRET_FLAME",
+    name: "FLAME PILLAR",
+    type: "passive",
+    rarity: "major",
+    row: 2,
+    col: 2,
+    maxRank: 1,
+    icon: 20,
+    prereqAny: ["ENG_TURRET_DETONATE", "ENG_TURRET_BOMB"],
+    desc:
+      "TURRET UPGRADE\nOnce per deployment, the turret vents a large flame pillar that burns enemies in the area.",
+  },
+  {
+    id: "ENG_EXTRA_WEAPON",
+    name: "EXPANDED HARNESS",
+    type: "passive",
+    rarity: "capstone",
+    row: 3,
+    col: 1,
+    maxRank: 1,
+    icon: 12,
+    prereqAny: ["ENG_TURRET_FORTIFY", "ENG_TURRET_FLAME"],
+    desc: "PASSIVE LOADOUT\nMatch weapon cap +1 again. Base cap is 5, with this talent you can carry 6 weapons.",
+  },
+];
+
+const ENG_LINES = [
+  ["ENG_DEPLOY_TURRET", "ENG_TURRET_DETONATE"],
+  ["ENG_DEPLOY_TURRET", "ENG_TURRET_BOMB"],
+  ["ENG_TURRET_DETONATE", "ENG_TURRET_FORTIFY"],
+  ["ENG_TURRET_BOMB", "ENG_TURRET_FLAME"],
+  ["ENG_TURRET_FORTIFY", "ENG_EXTRA_WEAPON"],
+  ["ENG_TURRET_FLAME", "ENG_EXTRA_WEAPON"],
+];
+
 function Tree({
   treeId,
   title,
@@ -382,10 +474,10 @@ function Tree({
   }
 
   // layout
-  const cellW = 150;
-  const cellH = 116;
-  const padX = 24;
-  const padY = 22;
+  const cellW = 126;
+  const cellH = 106;
+  const padX = 18;
+  const padY = 18;
   const width = padX * 2 + grid.cols * cellW;
   const height = padY * 2 + grid.rows * cellH;
 
@@ -397,9 +489,10 @@ function Tree({
   const spaceOwned = {
     thorns: Number(purchased["MIL_THORNS"] || 0) > 0,
     decoy: Number(purchased["RES_DECOY_HOLO"] || 0) > 0,
+    turret: Number(purchased["ENG_DEPLOY_TURRET"] || 0) > 0,
   };
 
-  const showAbilityKeys = spaceOwned.thorns || spaceOwned.decoy;
+  const showAbilityKeys = spaceOwned.thorns || spaceOwned.decoy || spaceOwned.turret;
 
   return (
     <div className="xshop-tree">
@@ -424,6 +517,7 @@ function Tree({
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
             {spaceOwned.thorns && <span className="xshop-radio"><b>1</b> Thorns</span>}
             {spaceOwned.decoy && <span className="xshop-radio"><b>2</b> Decoy Hologram</span>}
+            {spaceOwned.turret && <span className="xshop-radio"><b>3</b> Deploy Turret</span>}
             <div style={{ opacity: 0.78, fontSize: 12 }}>No mutual exclusion. Buy both, use both.</div>
           </div>
         </div>
@@ -447,8 +541,9 @@ function Tree({
             const hasA = Number(purchased[a] || 0) > 0;
             const hasB = Number(purchased[b] || 0) > 0;
             const lineOn = hasA && (hasB || prereqOk(nb, purchased));
-            const midY = (A.y + B.y) / 2;
-            const d = `M ${A.x} ${A.y + 34} L ${A.x} ${midY} L ${B.x} ${midY} L ${B.x} ${B.y - 34}`;
+            const c1y = A.y + Math.max(36, Math.abs(B.y - A.y) * 0.42);
+            const c2y = B.y - Math.max(36, Math.abs(B.y - A.y) * 0.42);
+            const d = `M ${A.x} ${A.y + 38} C ${A.x} ${c1y}, ${B.x} ${c2y}, ${B.x} ${B.y - 38}`;
 
             return (
               <path
@@ -477,7 +572,7 @@ function Tree({
             const rank = Number(purchased[node.id] || 0);
             const state = nodeState(node);
             const lockedText = state === "locked" ? lockReason(node, purchased, nodeById) : "";
-            const isSpace = (node.tags || []).includes("SPACE ability");
+            const isSpace = (node.tags || []).includes("SPACE ability") || (node.tags || []).includes("KEY 3 ability");
 
 
             return (
@@ -493,12 +588,12 @@ function Tree({
                   `${node.name}\n\n${node.desc}` +
                   (lockedText ? `\n\nLOCKED: ${lockedText}` : "") +
                   `\n\nRank: ${rank}/${node.maxRank}` +
-                  (isSpace ? `\n\nCombat key: ${node.id === "MIL_THORNS" ? "1" : "2"}` : "")
+                  (isSpace ? `\n\nCombat key: ${node.id === "MIL_THORNS" ? "1" : node.id === "RES_DECOY_HOLO" ? "2" : "3"}` : "")
                 }
               >
                 <div className="xshop-icon">
                   <img src={iconUrl(node.icon)} alt="" draggable={false} />
-                  {isSpace && <div className="xshop-badge">SPACE</div>}
+                  {isSpace && <div className="xshop-badge">{node.id === "ENG_DEPLOY_TURRET" ? "KEY 3" : "KEY"}</div>}
                 </div>
                 <div className="xshop-name">{node.name}</div>
                 <div className="xshop-stat">{String(node.desc || "").split("\n").slice(0, 3).join(" ")}</div>
@@ -627,6 +722,11 @@ export default function GalaxyShopV2({
     for (const n of RES_NODES) out[n.id] = purchased[n.id] || 0;
     return out;
   }, [purchased]);
+  const engPurchased = useMemo(() => {
+    const out = {};
+    for (const n of ENG_NODES) out[n.id] = purchased[n.id] || 0;
+    return out;
+  }, [purchased]);
 
   const setMilPurchased = (updater) => {
     setPurchased((prev) => {
@@ -642,6 +742,15 @@ export default function GalaxyShopV2({
       const base = { ...(prev || {}) };
       const nextRes = typeof updater === "function" ? updater(resPurchased) : updater;
       for (const k of Object.keys(nextRes || {})) base[k] = nextRes[k];
+      return base;
+    });
+  };
+
+  const setEngPurchased = (updater) => {
+    setPurchased((prev) => {
+      const base = { ...(prev || {}) };
+      const nextEng = typeof updater === "function" ? updater(engPurchased) : updater;
+      for (const k of Object.keys(nextEng || {})) base[k] = nextEng[k];
       return base;
     });
   };
@@ -720,11 +829,11 @@ export default function GalaxyShopV2({
 
         .xshopTrees{
           display:grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 18px;
+          grid-template-columns: repeat(3, minmax(330px, 1fr));
+          gap: 12px;
           align-items:start;
         }
-        @media (max-width: 980px){
+        @media (max-width: 1180px){
           .xshopTrees{ grid-template-columns: 1fr; }
         }
 
@@ -743,7 +852,7 @@ export default function GalaxyShopV2({
           justify-content:space-between;
           align-items:flex-start;
           gap: 10px;
-          padding: 12px 14px 10px;
+          padding: 10px 12px 8px;
           border-bottom: 1px solid rgba(255,255,255,0.08);
           background: rgba(0,0,0,0.18);
         }
@@ -801,12 +910,13 @@ export default function GalaxyShopV2({
 
         .xshop-gridWrap{
           position:relative;
-          padding: 14px 16px 18px;
+          padding: 10px 10px 12px;
+          overflow:hidden;
         }
         .xshop-lines{
           position:absolute;
-          left: 16px;
-          top: 14px;
+          left: 10px;
+          top: 10px;
           pointer-events:none;
           opacity: 0.95;
         }
@@ -817,13 +927,13 @@ export default function GalaxyShopV2({
         }
 
         .xshop-node{
-          width: 136px;
-          height: 102px;
-          border-radius: 10px;
+          width: 112px;
+          height: 94px;
+          border-radius: 8px;
           border: 1px solid rgba(255,255,255,0.12);
           background: rgba(0,0,0,0.26);
           box-shadow: 0 0 0 rgba(0,0,0,0);
-          padding: 9px 10px 8px;
+          padding: 7px 8px 6px;
           text-align:left;
           cursor:pointer;
           transition: transform 120ms ease, filter 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
@@ -865,8 +975,8 @@ export default function GalaxyShopV2({
 
         .xshop-icon{
           position:relative;
-          width: 34px;
-          height: 34px;
+          width: 28px;
+          height: 28px;
           border-radius: 8px;
           overflow:hidden;
           border: 1px solid rgba(255,255,255,0.14);
@@ -896,18 +1006,18 @@ export default function GalaxyShopV2({
 
         .xshop-name{
           margin-top: 5px;
-          font-size: 10.5px;
+          font-size: 8.8px;
           font-weight: 900;
           letter-spacing: 0.4px;
           line-height: 1.15;
           text-transform: uppercase;
-          min-height: 23px;
+          min-height: 20px;
         }
         .xshop-stat{
-          font-size: 9px;
+          font-size: 8px;
           line-height: 1.15;
           color: rgba(190,208,240,0.82);
-          height: 22px;
+          height: 26px;
           overflow: hidden;
           margin-top: 2px;
           letter-spacing: 0;
@@ -950,7 +1060,7 @@ export default function GalaxyShopV2({
           </button>
           <div style={{ fontSize: 12, opacity: 0.75, textAlign: "right" }}>
             Spent: <b>{pointsSpent}</b><br />
-            Abilities: <b>1 Thorns / 2 Decoy</b>
+            Abilities: <b>1 Thorns / 2 Decoy / 3 Turret</b>
           </div>
         </div>
       </div>
@@ -977,6 +1087,18 @@ export default function GalaxyShopV2({
           credits={credits}
           purchased={resPurchased}
           setPurchased={setResPurchased}
+          onSpend={onSpend}
+        />
+
+        <Tree
+          treeId="eng"
+          title="ENGINEERING BAY"
+          subtitle="Deployables and expanded match loadouts."
+          nodes={ENG_NODES}
+          lines={ENG_LINES}
+          credits={credits}
+          purchased={engPurchased}
+          setPurchased={setEngPurchased}
           onSpend={onSpend}
         />
       </div>
