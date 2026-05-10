@@ -64,8 +64,8 @@ const BOSS_ADD_INTERVAL_MULT = 1.25;    // boss fight should stay populated
 const BOSS_ADD_COUNT_MULT = 1.0;        // keep pressure during boss
 // -------------------- PLAYER FEEDBACK TWEAKS --------------------
 const AFTER40_ENEMY_MULT = 1.50;     // +50% enemies after 40% progress
-const WALL_HP_MULT = 0.67;           // thicker pressure walls, still breakable
-const RAM_HP_MULT = 0.21;            // RAM should be about 35% of the previous tuned HP
+const WALL_HP_MULT = 0.57;           // pressure walls, 15% less HP than previous tune
+const RAM_HP_MULT = 0.2625;          // big RAM +25% HP from previous tune
 const RELIEF_SPAWN_INTERVAL_MULT = 1.00; // keep pressure; avoid dead-air breaks
 
 const DEFAULT_WEAPON_CAP = 5;
@@ -212,6 +212,7 @@ const isControlImmune = (type) => {
     t === 'lane_elite' ||
     t === 'pylon' ||
     t === 'grab_ghost' ||
+    t === 'tiny_grabber' ||
     t === 'splitter_boss' ||
     t.startsWith('mini_')
   );
@@ -267,7 +268,7 @@ const capEnemyBudget = (list, playerPos) => {
   for (const e of src) {
     if (!e || e.hp <= 0) continue;
     if (e.type === 'wall') walls.push(e);
-    else if (e.type === 'boss' || e.type === 'boss_split' || e.type === 'pylon' || String(e.type || '').startsWith('mini_') || e.type === 'tiny_ram' || e.type === 'turret') specials.push(e);
+    else if (e.type === 'boss' || e.type === 'boss_split' || e.type === 'pylon' || String(e.type || '').startsWith('mini_') || e.type === 'tiny_ram' || e.type === 'turret' || e.type === 'ghost_spirit' || e.type === 'grab_ghost' || e.type === 'tiny_grabber') specials.push(e);
     else normals.push(e);
   }
   const score = (e) => {
@@ -544,6 +545,7 @@ const EVENT_ABOMINATION = 'ABOMINATION';
 const EVENT_ELITE_WALL = 'ELITE_WALL';
 const EVENT_PYLON = 'PYLON';
 const EVENT_GRAB_GHOST = 'GRAB_GHOST';
+const EVENT_TINY_GRABBER = 'TINY_GRABBER';
 
 const EVENT_DEFS = {
   SWARM: { id: 'SWARM', duration: 16000 },
@@ -556,6 +558,7 @@ const EVENT_DEFS = {
   ELITE_WALL: { id: EVENT_ELITE_WALL, duration: 11000 },
   PYLON: { id: EVENT_PYLON, duration: 25000 },
   GRAB_GHOST: { id: EVENT_GRAB_GHOST, duration: 8500 },
+  TINY_GRABBER: { id: EVENT_TINY_GRABBER, duration: 6500 },
   RELIEF: { id: 'RELIEF', duration: 5200 }
 };
 
@@ -620,8 +623,8 @@ const spawnEnemyBase = (difficulty, t = 0) => {
   }
 
   if (t > 0.32 && roll > 0.905 && roll <= 0.920) {
-    const hp = Math.round((720 + difficulty * 96) * ELITE_HP_MULT * diffHp);
-    return { id: Math.random(), type: 'grab_ghost', x, y, hp: Math.round(hp * 4.46), maxHp: Math.round(hp * 4.46), speed: 2.42 + difficulty * 0.038, size: 64, xp: 120, contactDamage: 0, color: '#b9f2ff', grabUntil: 0 };
+    const hp = Math.round((92 + difficulty * 13) * TRASH_HP_MULT * lateAddHpMultFromT(t) * diffHp);
+    return { id: Math.random(), type: 'burrower', x, y, hp, maxHp: hp, speed: 1.38 + difficulty * 0.026, size: 32, xp: 24, contactDamage: 13, color: '#c08bff', nextBurrowAt: Date.now() + 1300 + Math.random() * 1200 };
   }
 
   if (t > 0.42 && roll > 0.920 && roll <= 0.935) {
@@ -717,7 +720,28 @@ const spawnEnemy = (difficulty, forcedType = null, t = 0) => {
   }
   if (forcedType === 'grab_ghost') {
     const hp = Math.round((980 + difficulty * 135) * ELITE_HP_MULT * diffHp);
-    return { ...base, type: 'grab_ghost', hp: Math.round(hp * 4.46), maxHp: Math.round(hp * 4.46), speed: 2.50 + difficulty * 0.040, size: 66, xp: 140, contactDamage: 0, color: '#b9f2ff', grabUntil: 0 };
+    return { ...base, type: 'grab_ghost', hp: Math.round(hp * 4.46), maxHp: Math.round(hp * 4.46), speed: (2.50 + difficulty * 0.040) * 1.15, size: 66, xp: 140, contactDamage: 0, color: '#b9f2ff', grabUntil: 0 };
+  }
+  if (forcedType === 'tiny_grabber') {
+    const hp = Math.round((980 + difficulty * 135) * ELITE_HP_MULT * diffHp * 4.46 * 0.40);
+    const dashAngle = Math.random() * Math.PI * 2;
+    return {
+      ...base,
+      type: 'tiny_grabber',
+      hp,
+      maxHp: hp,
+      speed: (2.50 + difficulty * 0.040) * 1.15,
+      size: 48,
+      xp: 80,
+      contactDamage: 0,
+      color: '#79ecff',
+      grabUntil: 0,
+      tinyDashDone: false,
+      tinyDashDir: dashAngle,
+      tinyDashAt: Date.now() + 180 + Math.random() * 260,
+      tinyDashMs: 1150,
+      tinyDashSpd: 20.5
+    };
   }
   if (forcedType === 'burrower') {
     const hp = Math.round((78 + difficulty * 10) * TRASH_HP_MULT * lateAddHpMultFromT(t) * diffHp);
@@ -1297,6 +1321,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   const playerTurretsRef = useRef([]);
   const playerGrabRef = useRef(null);
   const grabGhostsSpawnedRef = useRef(0);
+  const tinyGrabbersSpawnedRef = useRef(0);
   const pylonSpawnedRef = useRef(false);
   const playerBombsRef = useRef([]);
   const fleetNextAtRef = useRef(Date.now() + 40000);
@@ -1438,6 +1463,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   const overdriveUntil = useRef(0);
   const shieldUntil = useRef(0);
   const doubleDamageUntil = useRef(0);
+  const specialPickupCooldownUntilRef = useRef(0);
 
   const selectingWeapon = selectedWeapons.length === 0;
   const liveUpgradeSelect = false;
@@ -1908,7 +1934,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     kills: killCountRef.current || 0,
     killsByType: { ...(killsByTypeRef.current || {}) },
     damageTaken: Math.round(damageTakenRef.current || 0),
-    killedByMost: Object.entries(damageSourcesRef.current || {}).sort((a, b) => Number(b[1]) - Number(a[1]))[0]?.[0] || '',
+    killedByMost: result === 'DEFEATED' ? (Object.entries(damageSourcesRef.current || {}).sort((a, b) => Number(b[1]) - Number(a[1]))[0]?.[0] || '') : '',
     damageDealt: Math.round(damageDealtRef.current || 0),
     dps: Math.round(((damageDealtRef.current || 0) / Math.max(1, (elapsed.current || 0) / 1000)) * 10) / 10,
     level: levelRef.current || 1,
@@ -1958,7 +1984,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     // Danish feedback: early WALL was happening too often / too punishing with fast early spawn ramp.
     const pickLateEventId = (swarmBias = 0.45) => (Math.random() < swarmBias ? 'SWARM' : 'WALL');
     const addExtraPressure = (from, to, count) => {
-      const ids = ['SWARM', 'TINY_RAMS', 'WALL', EVENT_ELITE_WALL, EVENT_GRAB_GHOST, 'SPLITTER'];
+      const ids = ['SWARM', 'TINY_RAMS', 'WALL', EVENT_ELITE_WALL, EVENT_GRAB_GHOST, EVENT_TINY_GRABBER, 'SPLITTER'];
       for (let i = 0; i < count; i += 1) {
         const band = (to - from) / Math.max(1, count);
         const atPct = from + band * i + r(0.02, Math.max(0.03, band * 0.72));
@@ -1972,6 +1998,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     if (tileDifficulty >= 2) beats.push({ kind: 'EVENT', atPct: r(0.18, 0.30), id: EVENT_GHOST_WAVE });
     beats.push({ kind: 'EVENT', atPct: r(0.16, 0.24), id: 'TINY_RAMS' });
     beats.push({ kind: 'EVENT', atPct: ghostGrabPct, id: EVENT_GRAB_GHOST });
+    beats.push({ kind: 'EVENT', atPct: r(0.26, 0.42), id: EVENT_TINY_GRABBER });
     if (tileDifficulty >= 2) beats.push({ kind: 'MINI', atPct: firstMiniPct, count: 1, mix: 'charger' });
 
     beats.push({ kind: 'EVENT', atPct: secondEventPct, id: 'SWARM' });
@@ -1986,6 +2013,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     beats.push({ kind: 'EVENT', atPct: thirdEventPct, id: 'SWARM' });
     beats.push({ kind: 'EVENT', atPct: r(0.44, 0.56), id: Math.random() < 0.5 ? 'SWARM' : EVENT_GHOST_WAVE });
     beats.push({ kind: 'EVENT', atPct: ghostGrabLatePct, id: EVENT_GRAB_GHOST });
+    beats.push({ kind: 'EVENT', atPct: r(0.62, 0.80), id: EVENT_TINY_GRABBER });
     beats.push({ kind: 'EVENT', atPct: splitterPct, id: 'SPLITTER' });
     beats.push({ kind: 'EVENT', atPct: wallPct, id: Math.random() < 0.66 ? 'WALL' : EVENT_ELITE_WALL });
     beats.push({ kind: 'EVENT', atPct: r(0.52, 0.64), id: Math.random() < 0.62 ? 'WALL' : EVENT_ELITE_WALL });
@@ -2002,6 +2030,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     beats.push({ kind: 'EVENT', atPct: r(0.82, 0.90), id: Math.random() < 0.5 ? 'WALL' : EVENT_ELITE_WALL });
     beats.push({ kind: 'EVENT', atPct: r(0.86, 0.94), id: 'SWARM' });
     if (tileDifficulty >= 3) beats.push({ kind: 'EVENT', atPct: r(0.78, 0.90), id: EVENT_GRAB_GHOST });
+    if (tileDifficulty >= 3) beats.push({ kind: 'EVENT', atPct: r(0.74, 0.92), id: EVENT_TINY_GRABBER });
     if (tileDifficulty >= 5) {
       beats.push({ kind: 'EVENT', atPct: r(0.14, 0.22), id: 'SWARM' });
       beats.push({ kind: 'EVENT', atPct: r(0.60, 0.74), id: Math.random() < 0.55 ? 'WALL' : EVENT_ELITE_WALL });
@@ -2012,6 +2041,10 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     const pressureMult = tileDifficulty <= 1 ? 1.5 : tileDifficulty === 2 ? 2 : tileDifficulty === 3 ? 2.5 : tileDifficulty === 4 ? 3 : 5;
     addExtraPressure(0.40, 0.80, Math.max(1, Math.round(pressureMult)));
     addExtraPressure(0.80, 0.96, Math.max(1, Math.round(pressureMult * 0.72)));
+    if (tileDifficultyRank(tileDifficulty) >= 2) {
+      const eventsAfter10 = beats.filter((b) => b.kind === 'EVENT' && b.atPct >= 0.10).length;
+      addExtraPressure(0.10, 0.96, Math.max(1, Math.round(eventsAfter10 * 0.20)));
+    }
 
     beats.sort((a, b) => a.atPct - b.atPct);
 
@@ -2092,7 +2125,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     if (t === 'brute' || t === 'juggernaut' || t === 'abomination' || t === 'merge_brute') return 'BRUTE';
     if (t === 'mini_charger' || t === 'tiny_ram') return 'RAM';
     if (t === 'spitter') return 'SPITTER';
-    if (t === 'grab_ghost') return 'GHOST';
+    if (t === 'grab_ghost' || t === 'tiny_grabber') return 'GHOST';
     if (t === 'splitter' || t === 'splitter_boss' || t === 'boss_split') return 'SPLITTER';
     if (t === 'burrower' || t === 'ghost' || t === 'ghost_spirit') return 'BURROWER';
     if (t === 'wall') return 'BLOCKER';
@@ -2342,7 +2375,8 @@ const beat = plan.beats[plan.idx];
 
       if (id === EVENT_GRAB_GHOST) {
         const meta = { duration: EVENT_DEFS.GRAB_GHOST.duration };
-        if (grabGhostsSpawnedRef.current < 3 && startEvent(EVENT_GRAB_GHOST, meta)) {
+        const bigGrabberAlive = (enemiesRef.current || []).some((e) => e.type === 'grab_ghost' && e.hp > 0);
+        if (grabGhostsSpawnedRef.current < 3 && !bigGrabberAlive && startEvent(EVENT_GRAB_GHOST, meta)) {
           const a = Math.random() * Math.PI * 2;
           const d = 620 + Math.random() * 160;
           const gh = spawnEnemy(difficulty + 1, 'grab_ghost', t);
@@ -2356,7 +2390,33 @@ const beat = plan.beats[plan.idx];
           plan.idx += 1;
           return;
         }
-        if (grabGhostsSpawnedRef.current >= 3) {
+        if (grabGhostsSpawnedRef.current >= 3 || bigGrabberAlive) {
+          if (bigGrabberAlive && grabGhostsSpawnedRef.current < 3) return;
+          plan.idx += 1;
+          return;
+        }
+      }
+
+      if (id === EVENT_TINY_GRABBER) {
+        const meta = { duration: EVENT_DEFS.TINY_GRABBER.duration };
+        const tinyGrabberAlive = (enemiesRef.current || []).some((e) => e.type === 'tiny_grabber' && e.hp > 0);
+        if (tinyGrabbersSpawnedRef.current < 5 && !tinyGrabberAlive && startEvent(EVENT_TINY_GRABBER, meta)) {
+          const a = Math.random() * Math.PI * 2;
+          const d = 820 + Math.random() * 260;
+          const gh = spawnEnemy(difficulty + 1, 'tiny_grabber', t);
+          const dashDir = Math.atan2(pp.y - (pp.y + Math.sin(a) * d), pp.x - (pp.x + Math.cos(a) * d)) + (Math.random() - 0.5) * 0.22;
+          tinyGrabbersSpawnedRef.current += 1;
+          enemiesRef.current = [
+            ...(enemiesRef.current || []),
+            { ...gh, x: clamp(pp.x + Math.cos(a) * d, 60, ARENA_SIZE - 60), y: clamp(pp.y + Math.sin(a) * d, 60, ARENA_SIZE - 60), tinyDashDir: dashDir }
+          ];
+          pushToast('TINY GRABBER');
+          juicePunch(0.70, 0.75);
+          plan.idx += 1;
+          return;
+        }
+        if (tinyGrabbersSpawnedRef.current >= 5 || tinyGrabberAlive) {
+          if (tinyGrabberAlive && tinyGrabbersSpawnedRef.current < 5) return;
           plan.idx += 1;
           return;
         }
@@ -2465,6 +2525,13 @@ const beat = plan.beats[plan.idx];
     else if ((r -= wFrz) <= 0) type = 'FREEZE';
     else type = 'DOUBLE_DAMAGE';
 
+    const sharedCooldownTypes = new Set(['MAGNET', 'OVERDRIVE', 'DOUBLE_DAMAGE']);
+    if (sharedCooldownTypes.has(type) && Date.now() < specialPickupCooldownUntilRef.current) {
+      if (Math.random() < 0.62) type = 'FREEZE';
+      else return;
+    }
+    if (sharedCooldownTypes.has(type)) specialPickupCooldownUntilRef.current = Date.now() + 15000;
+
     pickupsRef.current = [...(pickupsRef.current || []), { id: Math.random(), type, x, y, t: Date.now(), life: 24000 }];
   };
 
@@ -2514,6 +2581,30 @@ const beat = plan.beats[plan.idx];
     }
     syncPlayerCameraDom(playerRef.current);
 
+    const resolvePlayerWallCollision = (pos, walls = enemiesRef.current || []) => {
+      let nx = pos.x;
+      let ny = pos.y;
+      let checkedWalls = 0;
+      for (const wall of walls) {
+        if (wall.type !== 'wall' || wall.hp <= 0 || wall.blocksPlayer === false) continue;
+        if (wall.turretWall) continue;
+        checkedWalls += 1;
+        if (checkedWalls > 96) break;
+        const minD = (wall.size || 46) * 0.5 + 20;
+        const dx = nx - wall.x;
+        const dy = ny - wall.y;
+        const d = Math.hypot(dx, dy);
+        if (d > 0 && d < minD) {
+          const push = minD - d;
+          nx = clamp(nx + (dx / d) * push, 0, ARENA_SIZE);
+          ny = clamp(ny + (dy / d) * push, 0, ARENA_SIZE);
+        } else if (d === 0) {
+          nx = clamp(nx + minD, 0, ARENA_SIZE);
+        }
+      }
+      return { x: nx, y: ny };
+    };
+
     const stepPlayerCamera = (dtScale = 1) => {
       const prev = playerRef.current;
       const nowMove = Date.now();
@@ -2554,24 +2645,7 @@ const beat = plan.beats[plan.idx];
       nx = clamp(nx, 0, ARENA_SIZE);
       ny = clamp(ny, 0, ARENA_SIZE);
 
-      let checkedWalls = 0;
-      for (const wall of (enemiesRef.current || [])) {
-        if (wall.type !== 'wall' || wall.hp <= 0 || wall.blocksPlayer === false) continue;
-        if (wall.turretWall) continue;
-        checkedWalls += 1;
-        if (checkedWalls > 48) break;
-        const minD = (wall.size || 46) * 0.5 + 20;
-        const dx = nx - wall.x;
-        const dy = ny - wall.y;
-        const d = Math.hypot(dx, dy);
-        if (d > 0 && d < minD) {
-          const push = minD - d;
-          nx = clamp(nx + (dx / d) * push, 0, ARENA_SIZE);
-          ny = clamp(ny + (dy / d) * push, 0, ARENA_SIZE);
-        }
-      }
-
-      const np = { x: nx, y: ny };
+      const np = resolvePlayerWallCollision({ x: nx, y: ny });
       playerRef.current = np;
       syncPlayerCameraDom(np);
     };
@@ -2657,7 +2731,7 @@ const beat = plan.beats[plan.idx];
 
         if (t.deployTurretUnlocked && pressedThree && now >= playerTurretCooldownUntilRef.current) {
           const p = playerRef.current;
-          const turretHp = Math.round((520 + tileDifficulty * 72 + (t.turretFortify ? 220 : 0)) * 2.5);
+          const turretHp = Math.round((520 + tileDifficulty * 72 + (t.turretFortify ? 220 : 0)) * 2.5 * 0.60);
           const turretId = `player_turret_${Math.random()}`;
           playerTurretsRef.current = [
             ...(playerTurretsRef.current || []),
@@ -3115,14 +3189,14 @@ const beat = plan.beats[plan.idx];
             ctx.arc(0, -e.size * 0.05, e.size * 0.18, 0, Math.PI * 2);
             ctx.fill();
             ctx.restore();
-          } else if (e.type === 'grab_ghost') {
+          } else if (e.type === 'grab_ghost' || e.type === 'tiny_grabber') {
             ctx.save();
             ctx.translate(sx, sy);
             const pulse = 0.86 + Math.abs(Math.sin(Date.now() / 120)) * 0.14;
-            ctx.shadowColor = 'rgba(185,242,255,0.85)';
+            ctx.shadowColor = e.type === 'tiny_grabber' ? 'rgba(121,236,255,0.92)' : 'rgba(185,242,255,0.85)';
             ctx.shadowBlur = perfCrowded ? 8 : 22;
             ctx.scale(pulse, pulse);
-            ctx.fillStyle = '#b9f2ff';
+            ctx.fillStyle = e.type === 'tiny_grabber' ? '#79ecff' : '#b9f2ff';
             ctx.beginPath();
             ctx.moveTo(0, -e.size * 0.68);
             ctx.quadraticCurveTo(e.size * 0.62, -e.size * 0.26, e.size * 0.34, e.size * 0.38);
@@ -4137,7 +4211,7 @@ const beat = plan.beats[plan.idx];
           if (bestTurret && wantsTurret && bestTurretD < 900) targetPoint = bestTurret;
         }
 
-        if (en.type === 'grab_ghost') {
+        if (en.type === 'grab_ghost' || en.type === 'tiny_grabber') {
           const now2 = Date.now();
           const activeGrab = playerGrabRef.current;
           if (activeGrab?.enemyId === en.id && now2 < (activeGrab.until || 0)) {
@@ -4151,6 +4225,20 @@ const beat = plan.beats[plan.idx];
           }
 
           if (activeGrab?.enemyId === en.id && now2 >= (activeGrab.until || 0)) playerGrabRef.current = null;
+
+          if (en.type === 'tiny_grabber' && !en.tinyDashDone) {
+            if (now2 < (en.tinyDashAt || 0)) return en;
+            if (!en.tinyDashUntil) return { ...en, tinyDashUntil: now2 + (en.tinyDashMs || 1150) };
+            if (now2 < en.tinyDashUntil) {
+              const spd = (en.tinyDashSpd || 20.5) * dtScale;
+              return {
+                ...en,
+                x: clamp(en.x + Math.cos(en.tinyDashDir || 0) * spd, 0, ARENA_SIZE),
+                y: clamp(en.y + Math.sin(en.tinyDashDir || 0) * spd, 0, ARENA_SIZE)
+              };
+            }
+            return { ...en, tinyDashDone: true, tinyDashUntil: 0 };
+          }
 
           const dx = pPos.x - en.x;
           const dy = pPos.y - en.y;
@@ -4368,7 +4456,7 @@ const beat = plan.beats[plan.idx];
             const hp = Math.round((18720 + tileDifficulty * 3224) * difficultyHpMult(tileDifficulty));
             explosionsRef.current = appendCapped(explosionsRef.current, { id: Math.random(), x: en.x, y: en.y, r: 460, t: now2, life: 720, color: 'rgba(127,242,215,1)', glow: 42, fill: true, alpha: 0.25 }, PERF_EFFECT_CAP);
             pushToast('PYLON BEAST AWAKENED');
-            return { ...en, pylonMonster: true, hp, maxHp: hp, speed: 0.62 + tileDifficulty * 0.015, size: 482, contactDamage: 42, xp: 700, color: '#35ffd5', pylonCharge: 1, pylonAbsorbed: absorbed };
+            return { ...en, pylonMonster: true, hp, maxHp: hp, speed: 0.62 + tileDifficulty * 0.015, size: 434, contactDamage: 42, xp: 700, color: '#35ffd5', pylonCharge: 1, pylonAbsorbed: absorbed };
           }
           return { ...en, speed: 0, size: 108 + charge * 34, pylonCharge: charge, pylonAbsorbed: absorbed };
         }
@@ -4661,6 +4749,13 @@ const beat = plan.beats[plan.idx];
       // Filter despawned and apply a small separation force so enemies don't stack perfectly.
       let movedEnemies = movedEnemiesRaw.filter((e) => !e.despawn);
       movedEnemies = applyEnemySeparation(movedEnemies);
+      {
+        const pushedPlayer = resolvePlayerWallCollision(playerRef.current, movedEnemies);
+        if (pushedPlayer.x !== playerRef.current.x || pushedPlayer.y !== playerRef.current.y) {
+          playerRef.current = pushedPlayer;
+          syncPlayerCameraDom(pushedPlayer);
+        }
+      }
       {
         const enemyBlocks = movedEnemies.filter((e) => e.type === 'wall' && e.blocksEnemies && e.hp > 0);
         if (enemyBlocks.length) {
@@ -6589,6 +6684,8 @@ const beat = plan.beats[plan.idx];
     playerTurretsRef.current = [];
     playerGrabRef.current = null;
     grabGhostsSpawnedRef.current = 0;
+    tinyGrabbersSpawnedRef.current = 0;
+    specialPickupCooldownUntilRef.current = 0;
     pylonSpawnedRef.current = false;
 
     bossSpawnedRef.current = false;
@@ -7198,10 +7295,10 @@ const beat = plan.beats[plan.idx];
               borderRadius: 999,
               background:
                 pk.type === 'LEVELUP' ? 'rgba(255,236,120,0.96)' :
-                pk.type === 'MAGNET' ? 'rgba(180,255,200,0.9)' :
+                pk.type === 'MAGNET' ? 'rgba(80,255,165,0.92)' :
                   pk.type === 'FREEZE' ? 'rgba(160,220,255,0.9)' :
-                    pk.type === 'OVERDRIVE' ? 'rgba(255,220,140,0.92)' :
-                      'rgba(200,170,255,0.92)',
+                    pk.type === 'OVERDRIVE' ? 'rgba(0,242,255,0.94)' :
+                      'rgba(255,65,145,0.94)',
               boxShadow: pk.type === 'LEVELUP'
                 ? '0 0 0 3px rgba(255,255,255,0.78), 0 0 18px rgba(255,218,107,0.78), 0 0 42px rgba(255,218,107,0.42)'
                 : ring ? `${ring}, 0 0 12px rgba(255,255,255,0.45), 0 0 28px rgba(255,255,255,0.25)` : '0 0 12px rgba(255,255,255,0.45), 0 0 28px rgba(255,255,255,0.25)',

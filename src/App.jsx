@@ -454,7 +454,7 @@ export default function App() {
       wins: Number(row.wins || 0),
       losses: Number(row.losses || 0),
       killsByType: Object.entries(s.killsByType || {}).sort((a, b) => Number(b[1]) - Number(a[1])),
-      killedByMost: row.killedByMost || s.killedByMost || "Unknown",
+      killedByMost: Number(row.deaths || 0) > 0 ? (row.killedByMost || s.killedByMost || "Unknown") : "N/A",
     };
   };
 
@@ -554,7 +554,6 @@ export default function App() {
     }
 
     if ((clearedHexes[focusPlanet.id] || []).includes(selectedHex)) return;
-
     setShopOpen(false);
 
     setCombatCtx({
