@@ -139,6 +139,8 @@ const pickDistinctTargets = (enemies, origin, count) => {
   return pool.slice(0, Math.min(count, pool.length));
 };
 
+const isGrabberType = (type) => type === 'grab_ghost' || type === 'tiny_grabber';
+
 // Keep enemies from perfectly stacking on top of each other.
 // Allows clumping, but applies a small separation when their hitboxes overlap.
 const applyEnemySeparation = (list) => {
@@ -152,12 +154,14 @@ const applyEnemySeparation = (list) => {
     const a = enemies[i];
     if (!a || a.despawn) continue;
     if (a.type === 'wall') continue;
+    if (isGrabberType(a.type)) continue;
 
     const jLimit = n > 170 ? Math.min(n, i + 18) : n;
     for (let j = i + 1; j < jLimit; j += 1) {
       const b = enemies[j];
       if (!b || b.despawn) continue;
       if (b.type === 'wall') continue;
+      if (isGrabberType(b.type)) continue;
 
       // Keep minis from overlapping each other more aggressively (RAM stacking complaint)
       const aMini = String(a.type || '').startsWith('mini_');
@@ -720,26 +724,27 @@ const spawnEnemy = (difficulty, forcedType = null, t = 0) => {
   }
   if (forcedType === 'grab_ghost') {
     const hp = Math.round((980 + difficulty * 135) * ELITE_HP_MULT * diffHp);
-    return { ...base, type: 'grab_ghost', hp: Math.round(hp * 4.46), maxHp: Math.round(hp * 4.46), speed: (2.50 + difficulty * 0.040) * 1.15, size: 66, xp: 140, contactDamage: 0, color: '#b9f2ff', grabUntil: 0 };
+    return { ...base, type: 'grab_ghost', hp: Math.round(hp * 4.46 * 0.65), maxHp: Math.round(hp * 4.46 * 0.65), speed: (2.50 + difficulty * 0.040) * 1.15, size: 66, xp: 140, contactDamage: 0, color: '#b9f2ff', grabUntil: 0, grabCooldownUntil: 0 };
   }
   if (forcedType === 'tiny_grabber') {
-    const hp = Math.round((980 + difficulty * 135) * ELITE_HP_MULT * diffHp * 4.46 * 0.40 * 0.84);
+    const hp = Math.round((980 + difficulty * 135) * ELITE_HP_MULT * diffHp * 4.46 * 0.40 * 0.84 * 0.37);
     const dashAngle = Math.random() * Math.PI * 2;
     return {
       ...base,
       type: 'tiny_grabber',
       hp,
       maxHp: hp,
-      speed: (2.50 + difficulty * 0.040) * 1.15,
+      speed: (2.50 + difficulty * 0.040) * 1.15 * 1.12,
       size: 48,
       xp: 80,
       contactDamage: 0,
       color: '#79ecff',
       grabUntil: 0,
+      grabCooldownUntil: 0,
       tinyDashDone: false,
       tinyDashDir: dashAngle,
       tinyDashAt: Date.now() + 180 + Math.random() * 260,
-      tinyDashMs: 1150,
+      tinyDashMs: 2100,
       tinyDashSpd: 16.4
     };
   }
@@ -2038,10 +2043,10 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
       addExtraPressure(0.10, 0.96, Math.max(1, Math.round(eventsAfter10 * 0.20)));
     }
 
-    [r(0.08, 0.14), r(0.30, 0.42), r(0.58, 0.72)].forEach((atPct) => {
+    [r(0.25, 0.32), r(0.48, 0.60), r(0.72, 0.88)].forEach((atPct) => {
       beats.push({ kind: 'EVENT', atPct, id: EVENT_GRAB_GHOST });
     });
-    [r(0.05, 0.10), r(0.18, 0.26), r(0.32, 0.42), r(0.48, 0.60), r(0.66, 0.80)].forEach((atPct) => {
+    [r(0.18, 0.22), r(0.30, 0.40), r(0.46, 0.58), r(0.64, 0.76), r(0.82, 0.94)].forEach((atPct) => {
       beats.push({ kind: 'EVENT', atPct, id: EVENT_TINY_GRABBER });
     });
 
@@ -2377,7 +2382,7 @@ const beat = plan.beats[plan.idx];
         const bigGrabberAlive = (enemiesRef.current || []).some((e) => e.type === 'grab_ghost' && e.hp > 0);
         if (grabGhostsSpawnedRef.current < 3 && !bigGrabberAlive && startEvent(EVENT_GRAB_GHOST, meta)) {
           const a = Math.random() * Math.PI * 2;
-          const d = 620 + Math.random() * 160;
+          const d = 660 + Math.random() * 180;
           const gh = spawnEnemy(difficulty + 1, 'grab_ghost', t);
           grabGhostsSpawnedRef.current += 1;
           enemiesRef.current = [
@@ -2401,7 +2406,7 @@ const beat = plan.beats[plan.idx];
         const tinyGrabberAlive = (enemiesRef.current || []).some((e) => e.type === 'tiny_grabber' && e.hp > 0);
         if (tinyGrabbersSpawnedRef.current < 5 && !tinyGrabberAlive && startEvent(EVENT_TINY_GRABBER, meta)) {
           const a = Math.random() * Math.PI * 2;
-          const d = 820 + Math.random() * 260;
+          const d = 980 + Math.random() * 340;
           const gh = spawnEnemy(difficulty + 1, 'tiny_grabber', t);
           const dashDir = Math.atan2(pp.y - (pp.y + Math.sin(a) * d), pp.x - (pp.x + Math.cos(a) * d)) + (Math.random() - 0.5) * 0.22;
           tinyGrabbersSpawnedRef.current += 1;
@@ -2529,9 +2534,9 @@ const beat = plan.beats[plan.idx];
       if (Math.random() < 0.62) type = 'FREEZE';
       else return;
     }
-    if (sharedCooldownTypes.has(type)) specialPickupCooldownUntilRef.current = Date.now() + 15000;
+    if (sharedCooldownTypes.has(type)) specialPickupCooldownUntilRef.current = Date.now() + 25000;
 
-    pickupsRef.current = [...(pickupsRef.current || []), { id: Math.random(), type, x, y, t: Date.now(), life: 24000 }];
+    pickupsRef.current = [...(pickupsRef.current || []), { id: Math.random(), type, x, y, t: Date.now(), life: 15000 }];
   };
 
   const activatePickup = (type) => {
@@ -2548,7 +2553,10 @@ const beat = plan.beats[plan.idx];
       return;
     }
     if (type === 'MAGNET') magnetUntil.current = Math.max(magnetUntil.current, now + PICKUP_DEFS.MAGNET.life);
-    if (type === 'FREEZE') freezeUntil.current = Math.max(freezeUntil.current, now + PICKUP_DEFS.FREEZE.life);
+    if (type === 'FREEZE') {
+      freezeUntil.current = Math.max(freezeUntil.current, now + PICKUP_DEFS.FREEZE.life);
+      playerGrabRef.current = null;
+    }
     if (type === 'OVERDRIVE') overdriveUntil.current = Math.max(overdriveUntil.current, now + PICKUP_DEFS.OVERDRIVE.life);
     if (type === 'DOUBLE_DAMAGE') doubleDamageUntil.current = Math.max(doubleDamageUntil.current, now + PICKUP_DEFS.DOUBLE_DAMAGE.life);
     juicePunch(0.95, 0.95);
@@ -2610,7 +2618,8 @@ const beat = plan.beats[plan.idx];
       const grab = playerGrabRef.current;
       if (grab && nowMove < (grab.until || 0)) {
         const holderAlive = (enemiesRef.current || []).some((e) => e.id === grab.enemyId && e.hp > 0);
-        if (holderAlive) {
+        const freezeWorldNow = nowMove < freezeUntil.current;
+        if (holderAlive && !freezeWorldNow) {
           syncPlayerCameraDom(prev);
           return;
         }
@@ -2730,7 +2739,7 @@ const beat = plan.beats[plan.idx];
 
         if (t.deployTurretUnlocked && pressedThree && now >= playerTurretCooldownUntilRef.current) {
           const p = playerRef.current;
-          const turretHp = Math.round((520 + tileDifficulty * 72 + (t.turretFortify ? 220 : 0)) * 2.5 * 0.60);
+          const turretHp = Math.round((520 + tileDifficulty * 72 + (t.turretFortify ? 220 : 0)) * 2.5 * 0.24);
           const turretId = `player_turret_${Math.random()}`;
           playerTurretsRef.current = [
             ...(playerTurretsRef.current || []),
@@ -4194,6 +4203,7 @@ const beat = plan.beats[plan.idx];
 
       // -------------------- ENEMY MOVE / AI --------------------
       const movedEnemiesRaw = nextEnemies.map((en) => {
+        if (freezeWorld && isGrabberType(en.type)) return en;
         if (freezeWorld && !isControlImmune(en.type)) return en;
         if (en.stunnedUntil && Date.now() < en.stunnedUntil) return en;
         const decoy = decoyRef.current && Date.now() < decoyRef.current.until ? decoyRef.current : null;
@@ -4216,6 +4226,7 @@ const beat = plan.beats[plan.idx];
           const now2 = Date.now();
           const activeGrab = playerGrabRef.current;
           if (activeGrab?.enemyId === en.id && now2 < (activeGrab.until || 0)) {
+            applyPlayerDamage((en.type === 'tiny_grabber' ? 4 : 16) * (frameDelta / 1000), en.type === 'tiny_grabber' ? 'tiny grab' : 'ghost grab');
             const grabA = Math.atan2(pPos.y - en.y, pPos.x - en.x);
             return {
               ...en,
@@ -4225,7 +4236,10 @@ const beat = plan.beats[plan.idx];
             };
           }
 
-          if (activeGrab?.enemyId === en.id && now2 >= (activeGrab.until || 0)) playerGrabRef.current = null;
+          if (activeGrab?.enemyId === en.id && now2 >= (activeGrab.until || 0)) {
+            playerGrabRef.current = null;
+            en = { ...en, grabUntil: 0, grabCooldownUntil: now2 + (en.type === 'tiny_grabber' ? 2400 : 1800) };
+          }
 
           if (en.type === 'tiny_grabber' && !en.tinyDashDone) {
             if (now2 < (en.tinyDashAt || 0)) return en;
@@ -4235,7 +4249,7 @@ const beat = plan.beats[plan.idx];
               const nx = clamp(en.x + Math.cos(en.tinyDashDir || 0) * spd, 0, ARENA_SIZE);
               const ny = clamp(en.y + Math.sin(en.tinyDashDir || 0) * spd, 0, ARENA_SIZE);
               const hitD = distPointToSeg(pPos.x, pPos.y, en.x, en.y, nx, ny);
-              if (hitD < (en.size || 48) * 0.5 + 18 && (!playerGrabRef.current || now2 >= (playerGrabRef.current.until || 0))) {
+              if (hitD < (en.size || 48) * 0.5 + 18 && now2 >= (en.grabCooldownUntil || 0) && (!playerGrabRef.current || now2 >= (playerGrabRef.current.until || 0))) {
                 const until = now2 + 3000;
                 playerGrabRef.current = { enemyId: en.id, until };
                 pushToast('TINY HOLD');
@@ -4253,8 +4267,12 @@ const beat = plan.beats[plan.idx];
           const dx = pPos.x - en.x;
           const dy = pPos.y - en.y;
           const d = Math.hypot(dx, dy) || 1;
-          if (d < (en.size || 36) * 0.5 + 30 && (!playerGrabRef.current || now2 >= (playerGrabRef.current.until || 0))) {
-            const until = now2 + 3000;
+          if (en.type === 'tiny_grabber') {
+            const spdTiny = (en.speed || 2.9) * dtScale;
+            return { ...en, x: clamp(en.x + (dx / d) * spdTiny, 0, ARENA_SIZE), y: clamp(en.y + (dy / d) * spdTiny, 0, ARENA_SIZE) };
+          }
+          if (d < (en.size || 36) * 0.5 + 30 && now2 >= (en.grabCooldownUntil || 0) && (!playerGrabRef.current || now2 >= (playerGrabRef.current.until || 0))) {
+            const until = now2 + (en.type === 'tiny_grabber' ? 3000 : 3600);
             playerGrabRef.current = { enemyId: en.id, until };
             pushToast('GHOST HOLD');
             return { ...en, grabUntil: until, stunnedUntil: Math.max(en.stunnedUntil || 0, until) };
@@ -5251,7 +5269,7 @@ const beat = plan.beats[plan.idx];
               const d = Math.hypot(en.x - turret.x, en.y - turret.y);
               if (d > radius) continue;
               const fall = Math.max(0.25, 1 - d / radius);
-              bulletHits.set(en.id, (bulletHits.get(en.id) || 0) + (120 + tileDifficulty * 18) * fall);
+              bulletHits.set(en.id, (bulletHits.get(en.id) || 0) + (120 + tileDifficulty * 18) * 1.10 * fall);
               const st = statusHits.get(en.id) || {};
               st.burn = Math.max(st.burn || 0, 5200);
               st.slow = Math.max(st.slow || 0, 0.12);
@@ -5269,7 +5287,7 @@ const beat = plan.beats[plan.idx];
             return d < Math.hypot(closest.x - turret.x, closest.y - turret.y) ? en : closest;
           }, null);
           if (target) {
-            fireSupportShot(turret, target, 22, '#ffda6b', 22, 13, 5);
+            fireSupportShot(turret, target, 24.2, '#ffda6b', 22, 13, 5);
             turret.nextShotAt = now3 + 155;
             if (tNow.turretBomb && now3 >= (turret.nextBombAt || 0)) {
               turret.nextBombAt = now3 + 2300;
@@ -5281,7 +5299,7 @@ const beat = plan.beats[plan.idx];
                 y: turret.y + Math.sin(a) * dist,
                 detonateAt: now3 + 2000,
                 radius: 185,
-                damage: 85 + tileDifficulty * 12
+                damage: (85 + tileDifficulty * 12) * 1.10
               }, 18);
             }
           } else {
