@@ -967,14 +967,17 @@ export default function App() {
               }}
               style={{
                 position: "fixed",
-                right: 24,
-                top: 88,
+                right: shopUnlocked ? 475 : 255,
+                top: 24,
                 zIndex: 9200,
                 padding: "14px 18px",
                 letterSpacing: 3,
                 borderRadius: 14,
-                borderColor: "rgba(255,218,107,0.55)",
+                border: "2px solid rgba(255,218,107,0.55)",
+                boxShadow: "0 0 18px rgba(255,218,107,0.18)",
+                background: "rgba(255,218,107,0.10)",
                 color: "#ffe16b",
+                fontWeight: 900,
               }}
             >
               STATS

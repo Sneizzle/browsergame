@@ -96,7 +96,7 @@ body {
   box-shadow:
     0 0 0 4px rgba(255,255,255,0.95),
     0 0 18px rgba(0,242,255,0.95),
-    0 0 36px rgba(255,0,122,0.72),
+    0 0 36px rgba(0,255,210,0.76),
     inset 0 0 18px rgba(0,242,255,0.82) !important;
   animation: selectedHexPulse 0.95s ease-in-out infinite;
 }
@@ -105,8 +105,8 @@ body {
   position: absolute;
   inset: 9px;
   clip-path: inherit;
-  background: rgba(255,0,122,0.84);
-  box-shadow: 0 0 12px rgba(255,0,122,0.9);
+  background: rgba(0,242,255,0.86);
+  box-shadow: 0 0 14px rgba(0,255,210,0.95), inset 0 0 10px rgba(255,255,255,0.55);
   pointer-events: none;
 }
 @keyframes selectedHexPulse {
