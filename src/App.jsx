@@ -1496,9 +1496,14 @@ export default function App() {
                   const cleared = (clearedHexes[p.id] || []).includes(h.id);
                   const difficulty = Math.min(5, h.difficulty + (p.difficulty - 1));
                   const locked = difficulty > highestUnlockedDifficulty && !cleared;
-                  const shade = Math.max(0, Math.min(4, difficulty - 1));
-                  const unlockedAlpha = 0.14 + shade * 0.08;
-                  const lockedAlpha = 0.035 + shade * 0.035;
+                  const tileColors = {
+                    1: { bg: "rgba(0,145,255,0.34)", glow: "rgba(0,190,255,0.62)" },
+                    2: { bg: "rgba(166,75,255,0.34)", glow: "rgba(190,105,255,0.62)" },
+                    3: { bg: "rgba(255,142,36,0.36)", glow: "rgba(255,176,64,0.66)" },
+                    4: { bg: "rgba(255,38,58,0.38)", glow: "rgba(255,64,86,0.70)" },
+                    5: { bg: "rgba(0,0,0,0.88)", glow: "rgba(255,255,255,0.82)" },
+                  };
+                  const tileColor = tileColors[difficulty] || tileColors[5];
 
                   return (
                     <div
@@ -1509,12 +1514,10 @@ export default function App() {
                         left: `calc(50% + ${h.x}px)`,
                         top: `calc(50% + ${h.y}px)`,
                         transform: "translate(-50%,-50%)",
-                        background: cleared
-                          ? undefined
-                          : `rgba(${64 + shade * 20}, ${72 + shade * 22}, ${84 + shade * 24}, ${locked ? lockedAlpha : unlockedAlpha})`,
+                        background: cleared ? undefined : locked ? "rgba(16,18,24,0.18)" : tileColor.bg,
                         boxShadow: locked
-                          ? "inset 0 0 10px rgba(0,0,0,0.58)"
-                          : `inset 0 0 14px rgba(${110 + shade * 18}, ${130 + shade * 16}, ${150 + shade * 14}, 0.42)`,
+                          ? "inset 0 0 10px rgba(0,0,0,0.78)"
+                          : `inset 0 0 16px ${tileColor.glow}, 0 0 10px ${tileColor.glow}`,
                       }}
                       onClick={(e) => {
                         e.stopPropagation();

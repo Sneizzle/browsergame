@@ -65,7 +65,7 @@ const BOSS_ADD_COUNT_MULT = 1.0;        // keep pressure during boss
 // -------------------- PLAYER FEEDBACK TWEAKS --------------------
 const AFTER40_ENEMY_MULT = 1.50;     // +50% enemies after 40% progress
 const WALL_HP_MULT = 0.57;           // pressure walls, 15% less HP than previous tune
-const RAM_HP_MULT = 0.2625;          // big RAM +25% HP from previous tune
+const RAM_HP_MULT = 0.525;           // big RAM doubled from previous tune
 const RELIEF_SPAWN_INTERVAL_MULT = 1.00; // keep pressure; avoid dead-air breaks
 
 const DEFAULT_WEAPON_CAP = 5;
@@ -723,7 +723,7 @@ const spawnEnemy = (difficulty, forcedType = null, t = 0) => {
     return { ...base, type: 'grab_ghost', hp: Math.round(hp * 4.46), maxHp: Math.round(hp * 4.46), speed: (2.50 + difficulty * 0.040) * 1.15, size: 66, xp: 140, contactDamage: 0, color: '#b9f2ff', grabUntil: 0 };
   }
   if (forcedType === 'tiny_grabber') {
-    const hp = Math.round((980 + difficulty * 135) * ELITE_HP_MULT * diffHp * 4.46 * 0.40);
+    const hp = Math.round((980 + difficulty * 135) * ELITE_HP_MULT * diffHp * 4.46 * 0.40 * 0.84);
     const dashAngle = Math.random() * Math.PI * 2;
     return {
       ...base,
@@ -740,7 +740,7 @@ const spawnEnemy = (difficulty, forcedType = null, t = 0) => {
       tinyDashDir: dashAngle,
       tinyDashAt: Date.now() + 180 + Math.random() * 260,
       tinyDashMs: 1150,
-      tinyDashSpd: 20.5
+      tinyDashSpd: 16.4
     };
   }
   if (forcedType === 'burrower') {
@@ -1548,8 +1548,6 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
   }, [paused]);
   useEffect(() => { playerRef.current = player; }, [player]);
   useEffect(() => { statsRef.current = stats; }, [stats]);
-  useEffect(() => { xpRef.current = xp; }, [xp]);
-  useEffect(() => { xpTargetRef.current = xpTarget; }, [xpTarget]);
   useEffect(() => { selectedWeaponsRef.current = selectedWeapons; }, [selectedWeapons]);
   useEffect(() => { weaponLevelsRef.current = weaponLevels; }, [weaponLevels]);
   useEffect(() => { upgradeOptionsRef.current = upgradeOptions; }, [upgradeOptions]);
@@ -1562,8 +1560,8 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     uiLastSyncRef.current = now;
 
     setStats({ ...statsRef.current });
-    setXp(xpRef.current);
-    setXpTarget(xpTargetRef.current);
+    setXp(Math.floor(xpRef.current));
+    setXpTarget(Math.floor(xpTargetRef.current));
     setLevel(levelRef.current);
     setPickups([...(pickupsRef.current || [])]);
   };
@@ -1984,7 +1982,7 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     // Danish feedback: early WALL was happening too often / too punishing with fast early spawn ramp.
     const pickLateEventId = (swarmBias = 0.45) => (Math.random() < swarmBias ? 'SWARM' : 'WALL');
     const addExtraPressure = (from, to, count) => {
-      const ids = ['SWARM', 'TINY_RAMS', 'WALL', EVENT_ELITE_WALL, EVENT_GRAB_GHOST, EVENT_TINY_GRABBER, 'SPLITTER'];
+      const ids = ['SWARM', 'TINY_RAMS', 'WALL', EVENT_ELITE_WALL, 'SPLITTER'];
       for (let i = 0; i < count; i += 1) {
         const band = (to - from) / Math.max(1, count);
         const atPct = from + band * i + r(0.02, Math.max(0.03, band * 0.72));
@@ -1997,8 +1995,6 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     beats.push({ kind: 'EVENT', atPct: firstEventPct, id: 'SWARM' });
     if (tileDifficulty >= 2) beats.push({ kind: 'EVENT', atPct: r(0.18, 0.30), id: EVENT_GHOST_WAVE });
     beats.push({ kind: 'EVENT', atPct: r(0.16, 0.24), id: 'TINY_RAMS' });
-    beats.push({ kind: 'EVENT', atPct: ghostGrabPct, id: EVENT_GRAB_GHOST });
-    beats.push({ kind: 'EVENT', atPct: r(0.26, 0.42), id: EVENT_TINY_GRABBER });
     if (tileDifficulty >= 2) beats.push({ kind: 'MINI', atPct: firstMiniPct, count: 1, mix: 'charger' });
 
     beats.push({ kind: 'EVENT', atPct: secondEventPct, id: 'SWARM' });
@@ -2012,8 +2008,6 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
 
     beats.push({ kind: 'EVENT', atPct: thirdEventPct, id: 'SWARM' });
     beats.push({ kind: 'EVENT', atPct: r(0.44, 0.56), id: Math.random() < 0.5 ? 'SWARM' : EVENT_GHOST_WAVE });
-    beats.push({ kind: 'EVENT', atPct: ghostGrabLatePct, id: EVENT_GRAB_GHOST });
-    beats.push({ kind: 'EVENT', atPct: r(0.62, 0.80), id: EVENT_TINY_GRABBER });
     beats.push({ kind: 'EVENT', atPct: splitterPct, id: 'SPLITTER' });
     beats.push({ kind: 'EVENT', atPct: wallPct, id: Math.random() < 0.66 ? 'WALL' : EVENT_ELITE_WALL });
     beats.push({ kind: 'EVENT', atPct: r(0.52, 0.64), id: Math.random() < 0.62 ? 'WALL' : EVENT_ELITE_WALL });
@@ -2029,8 +2023,6 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
     beats.push({ kind: 'EVENT', atPct: fourthEventPct, id: Math.random() < 0.28 ? EVENT_GHOST_WAVE : pickLateEventId(0.45) });
     beats.push({ kind: 'EVENT', atPct: r(0.82, 0.90), id: Math.random() < 0.5 ? 'WALL' : EVENT_ELITE_WALL });
     beats.push({ kind: 'EVENT', atPct: r(0.86, 0.94), id: 'SWARM' });
-    if (tileDifficulty >= 3) beats.push({ kind: 'EVENT', atPct: r(0.78, 0.90), id: EVENT_GRAB_GHOST });
-    if (tileDifficulty >= 3) beats.push({ kind: 'EVENT', atPct: r(0.74, 0.92), id: EVENT_TINY_GRABBER });
     if (tileDifficulty >= 5) {
       beats.push({ kind: 'EVENT', atPct: r(0.14, 0.22), id: 'SWARM' });
       beats.push({ kind: 'EVENT', atPct: r(0.60, 0.74), id: Math.random() < 0.55 ? 'WALL' : EVENT_ELITE_WALL });
@@ -2045,6 +2037,13 @@ export default function Combat({ crew, onExit, onVictory, tileDifficulty = 1, se
       const eventsAfter10 = beats.filter((b) => b.kind === 'EVENT' && b.atPct >= 0.10).length;
       addExtraPressure(0.10, 0.96, Math.max(1, Math.round(eventsAfter10 * 0.20)));
     }
+
+    [r(0.08, 0.14), r(0.30, 0.42), r(0.58, 0.72)].forEach((atPct) => {
+      beats.push({ kind: 'EVENT', atPct, id: EVENT_GRAB_GHOST });
+    });
+    [r(0.05, 0.10), r(0.18, 0.26), r(0.32, 0.42), r(0.48, 0.60), r(0.66, 0.80)].forEach((atPct) => {
+      beats.push({ kind: 'EVENT', atPct, id: EVENT_TINY_GRABBER });
+    });
 
     beats.sort((a, b) => a.atPct - b.atPct);
 
@@ -4079,7 +4078,9 @@ const beat = plan.beats[plan.idx];
           // after 40%: keep the arena busy
           const after40 = norm01(progT, 0.40, 0.60);
           count = Math.max(1, Math.round(count * lerp(1.0, AFTER40_ENEMY_MULT, after40)));
-          const lateDifficultyBonus = 1 + lateT * Math.max(0, tileDifficultyRank(tileDifficulty) - 1) * 0.20;
+          const lateEnemyRamp = norm01(progT, 0.50, 1.0);
+          const lateEnemyMaxByDifficulty = [0, 0.40, 0.60, 0.80, 1.00, 2.00][tileDifficultyRank(tileDifficulty)] || 0.40;
+          const lateDifficultyBonus = progT >= 0.50 ? lerp(1.01, 1 + lateEnemyMaxByDifficulty, lateEnemyRamp) : 1.0;
           count = Math.max(1, Math.round(count * lateDifficultyBonus));
 
           // boss: reduce count hard
@@ -4231,10 +4232,19 @@ const beat = plan.beats[plan.idx];
             if (!en.tinyDashUntil) return { ...en, tinyDashUntil: now2 + (en.tinyDashMs || 1150) };
             if (now2 < en.tinyDashUntil) {
               const spd = (en.tinyDashSpd || 20.5) * dtScale;
+              const nx = clamp(en.x + Math.cos(en.tinyDashDir || 0) * spd, 0, ARENA_SIZE);
+              const ny = clamp(en.y + Math.sin(en.tinyDashDir || 0) * spd, 0, ARENA_SIZE);
+              const hitD = distPointToSeg(pPos.x, pPos.y, en.x, en.y, nx, ny);
+              if (hitD < (en.size || 48) * 0.5 + 18 && (!playerGrabRef.current || now2 >= (playerGrabRef.current.until || 0))) {
+                const until = now2 + 3000;
+                playerGrabRef.current = { enemyId: en.id, until };
+                pushToast('TINY HOLD');
+                return { ...en, x: clamp(pPos.x - Math.cos(en.tinyDashDir || 0) * 34, 0, ARENA_SIZE), y: clamp(pPos.y - Math.sin(en.tinyDashDir || 0) * 34, 0, ARENA_SIZE), tinyDashDone: true, tinyDashUntil: 0, grabUntil: until, stunnedUntil: Math.max(en.stunnedUntil || 0, until) };
+              }
               return {
                 ...en,
-                x: clamp(en.x + Math.cos(en.tinyDashDir || 0) * spd, 0, ARENA_SIZE),
-                y: clamp(en.y + Math.sin(en.tinyDashDir || 0) * spd, 0, ARENA_SIZE)
+                x: nx,
+                y: ny
               };
             }
             return { ...en, tinyDashDone: true, tinyDashUntil: 0 };
@@ -6383,6 +6393,26 @@ const beat = plan.beats[plan.idx];
         }
       }
 
+      {
+        const milestones = bossMilestonesForDifficulty(tileDifficulty);
+        const finalBossSequenceDone =
+          (bossMilestoneIdxRef.current || 0) >= milestones.length &&
+          getProgressT() >= 0.995 &&
+          !bossReturnPendingRef.current?.length &&
+          !alive.some((en) => (en.type === 'boss' || en.type === 'boss_split') && en.hp > 0);
+        if (finalBossSequenceDone && !victory && !defeat && !extractionRef.current.active) {
+          const pp = playerRef.current;
+          if (requiresExtraction) {
+            extractionRef.current = { active: true, progress: 0, x: pp.x, y: pp.y, radius: 172 };
+            setExtractionUI({ active: true, progress: 0, x: pp.x, y: pp.y, radius: 172 });
+            pushToast('EXTRACTION ZONE DEPLOYED');
+            juicePunch(1.35, 1.0);
+          } else {
+            setVictory(true);
+          }
+        }
+      }
+
       if (deathBursts.length) {
         const cappedDeathBursts = deathBursts.slice(0, 28);
         alive = alive.map((en) => {
@@ -6897,7 +6927,7 @@ const beat = plan.beats[plan.idx];
             </div>
             <div className="xp-bar">
               <div className="xp-bar-fill" style={{ width: `${Math.min(100, (xp / xpTarget) * 100)}%` }} />
-              <span>XP LVL {level} - {xp}/{xpTarget}</span>
+              <span>XP LVL {level} - {Math.floor(xp)}/{Math.floor(xpTarget)}</span>
             </div>
           </div>
           <div className="core-bars">
