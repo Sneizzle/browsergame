@@ -423,6 +423,32 @@ const ENG_LINES = [
   ["ENG_TURRET_FLAME", "ENG_EXTRA_WEAPON"],
 ];
 
+const NODE_BUZZWORDS = {
+  MIL_THORNS: ["ACTIVE", "INVULNERABLE", "BLEED"],
+  MIL_KATANA_BACKUP: ["AUTO", "SLASHES", "BLEED"],
+  MIL_FIELD_ARMOR: ["MAX HP", "STURDY", "STACKS"],
+  MIL_GHOST_PROTOCOL: ["EMERGENCY", "FREEZE", "BLAST"],
+  MIL_QUICK_REARM: ["COOLDOWN", "DURATION", "THORNS"],
+  MIL_PLATE_CARRIER: ["REDUCTION", "ARMOR", "STACKS"],
+  MIL_ADRENAL: ["CLUTCH", "OVERDRIVE", "BURST"],
+  MIL_THRONS_DISCHARGE: ["DETONATE", "KNOCKBACK", "THORNS"],
+  MIL_TITANIUM_PLATES: ["BLOCK", "PLATES", "CAPSTONE"],
+  RES_ONBOARD_PROD: ["SIDEARM", "AUTO", "PISTOL"],
+  RES_DECOY_HOLO: ["ACTIVE", "DECOY", "TAUNT"],
+  RES_COMBUSTION: ["CHAIN", "BOMBS", "EXPLOSIVE"],
+  RES_DRONE_ORBIT: ["DRONE", "BURST", "SUPPORT"],
+  RES_GRAV_PICKUP: ["VACUUM", "XP", "RANGE"],
+  RES_SLOW_PULSE: ["PULSE", "SLOW", "CONTROL"],
+  ENG_DEPLOY_TURRET: ["ACTIVE", "TURRET", "TAUNT"],
+  ENG_TURRET_DETONATE: ["DEATH", "BLAST", "TURRET"],
+  ENG_TURRET_BOMB: ["SIEGE", "BOMBS", "SLOW"],
+  ENG_TURRET_FORTIFY: ["WALLS", "HP", "FORTIFY"],
+  ENG_TURRET_FLAME: ["FLAME", "BURN", "AREA"],
+  ENG_EXTRA_WEAPON: ["LOADOUT", "WEAPON", "CAPSTONE"],
+};
+
+const buzzwordsFor = (node) => NODE_BUZZWORDS[node.id] || (node.tags || []).slice(0, 4);
+
 function Tree({
   treeId,
   title,
@@ -474,8 +500,8 @@ function Tree({
   }
 
   // layout
-  const cellW = 126;
-  const cellH = 106;
+  const cellW = 140;
+  const cellH = 138;
   const padX = 18;
   const padY = 18;
   const width = padX * 2 + grid.cols * cellW;
@@ -541,15 +567,13 @@ function Tree({
             const hasA = Number(purchased[a] || 0) > 0;
             const hasB = Number(purchased[b] || 0) > 0;
             const lineOn = hasA && (hasB || prereqOk(nb, purchased));
-            const c1y = A.y + Math.max(36, Math.abs(B.y - A.y) * 0.42);
-            const c2y = B.y - Math.max(36, Math.abs(B.y - A.y) * 0.42);
-            const d = `M ${A.x} ${A.y + 38} C ${A.x} ${c1y}, ${B.x} ${c2y}, ${B.x} ${B.y - 38}`;
-
             return (
-              <path
+              <line
                 key={i}
-                d={d}
-                fill="none"
+                x1={A.x}
+                y1={A.y + 58}
+                x2={B.x}
+                y2={B.y - 58}
                 stroke={lineOn ? "rgba(0,242,255,0.55)" : "rgba(34,48,86,0.9)"}
                 strokeWidth={lineOn ? 2.2 : 1.2}
                 strokeLinecap="round"
@@ -573,12 +597,13 @@ function Tree({
             const state = nodeState(node);
             const lockedText = state === "locked" ? lockReason(node, purchased, nodeById) : "";
             const isSpace = (node.tags || []).includes("SPACE ability") || (node.tags || []).includes("KEY 3 ability");
+            const abilityClass = node.id === "MIL_THORNS" ? "ability-thorns" : node.id === "RES_DECOY_HOLO" ? "ability-decoy" : node.id === "ENG_DEPLOY_TURRET" ? "ability-turret" : "";
 
 
             return (
               <button
                 key={node.id}
-                className={`xshop-node ${state} ${node.rarity || ""} ${isSpace ? "space" : ""}`}
+                className={`xshop-node ${state} ${node.rarity || ""} ${isSpace ? "space" : ""} ${abilityClass}`}
                 style={{
                   gridColumn: node.col + 1,
                   gridRow: node.row + 1,
@@ -593,10 +618,11 @@ function Tree({
               >
                 <div className="xshop-icon">
                   <img src={iconUrl(node.icon)} alt="" draggable={false} />
-                  {isSpace && <div className="xshop-badge">{node.id === "ENG_DEPLOY_TURRET" ? "KEY 3" : "KEY"}</div>}
                 </div>
                 <div className="xshop-name">{node.name}</div>
-                <div className="xshop-stat">{String(node.desc || "").split("\n").slice(0, 3).join(" ")}</div>
+                <div className="xshop-tags">
+                  {buzzwordsFor(node).slice(0, 4).map((word) => <span key={word}>{word}</span>)}
+                </div>
                 <div className="xshop-rank">
                   <span>{rank}/{node.maxRank}</span>
                   {state === "available" ? <em>BUY</em> : state === "maxed" ? <em>MAX</em> : <em>{state.toUpperCase()}</em>}
@@ -805,9 +831,26 @@ export default function GalaxyShopV2({
 
         .xshopActions{
           display:flex;
-          flex-direction:column;
+          flex-direction:row;
           gap:10px;
-          align-items:flex-end;
+          align-items:center;
+        }
+        .xshopUpgradeBox{
+          display:flex;
+          align-items:baseline;
+          gap: 10px;
+          padding: 10px 14px;
+          border-radius: 12px;
+          border: 1px solid rgba(0,242,255,0.28);
+          background: rgba(0,0,0,0.26);
+          box-shadow: 0 0 18px rgba(0,242,255,0.08);
+          letter-spacing: 2px;
+          font-weight: 900;
+        }
+        .xshopUpgradeBox strong{
+          color:#4CFF9A;
+          font-size: 22px;
+          letter-spacing: 0;
         }
         .xshopBtn{
           cursor:pointer;
@@ -868,7 +911,7 @@ export default function GalaxyShopV2({
           letter-spacing: 1px;
         }
         .xshop-points{
-          display:flex;
+          display:none;
           align-items:baseline;
           gap: 8px;
           padding: 8px 10px;
@@ -884,10 +927,10 @@ export default function GalaxyShopV2({
         }
 
         .xshop-spacePick{
+          display:none;
           padding: 10px 14px 12px;
           border-bottom: 1px solid rgba(255,255,255,0.08);
           background: rgba(0,0,0,0.16);
-          display:flex;
           flex-direction:column;
           gap: 10px;
         }
@@ -927,14 +970,14 @@ export default function GalaxyShopV2({
         }
 
         .xshop-node{
-          width: 112px;
-          height: 94px;
+          width: 132px;
+          height: 126px;
           border-radius: 8px;
           border: 1px solid rgba(255,255,255,0.12);
           background: rgba(0,0,0,0.26);
           box-shadow: 0 0 0 rgba(0,0,0,0);
-          padding: 7px 8px 6px;
-          text-align:left;
+          padding: 8px 9px 7px;
+          text-align:center;
           cursor:pointer;
           transition: transform 120ms ease, filter 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
         }
@@ -967,6 +1010,18 @@ export default function GalaxyShopV2({
         .xshop-node.space{
           border-color: rgba(0,242,255,0.32);
         }
+        .xshop-node.ability-thorns{
+          border-color: rgba(76,255,154,0.78);
+          box-shadow: 0 0 18px rgba(76,255,154,0.16);
+        }
+        .xshop-node.ability-decoy{
+          border-color: rgba(182,145,255,0.82);
+          box-shadow: 0 0 18px rgba(182,145,255,0.16);
+        }
+        .xshop-node.ability-turret{
+          border-color: rgba(255,209,106,0.85);
+          box-shadow: 0 0 18px rgba(255,209,106,0.16);
+        }
         .xshop-node.activeSpace{
           box-shadow: 0 0 22px rgba(0,242,255,0.18);
           border-color: rgba(0,242,255,0.55);
@@ -975,13 +1030,14 @@ export default function GalaxyShopV2({
 
         .xshop-icon{
           position:relative;
-          width: 28px;
-          height: 28px;
+          width: 62px;
+          height: 62px;
           border-radius: 8px;
           overflow:hidden;
           border: 1px solid rgba(255,255,255,0.14);
           background: rgba(255,255,255,0.06);
           box-shadow: 0 0 18px rgba(0,0,0,0.25);
+          margin: 0 auto;
         }
         .xshop-icon img{
           width:100%;
@@ -1005,22 +1061,32 @@ export default function GalaxyShopV2({
         }
 
         .xshop-name{
-          margin-top: 5px;
-          font-size: 8.8px;
+          margin-top: 7px;
+          font-size: 9.5px;
           font-weight: 900;
           letter-spacing: 0.4px;
           line-height: 1.15;
           text-transform: uppercase;
           min-height: 20px;
         }
-        .xshop-stat{
-          font-size: 8px;
-          line-height: 1.15;
-          color: rgba(190,208,240,0.82);
-          height: 26px;
-          overflow: hidden;
-          margin-top: 2px;
-          letter-spacing: 0;
+        .xshop-tags{
+          display:flex;
+          justify-content:center;
+          gap: 4px;
+          flex-wrap:wrap;
+          height: 28px;
+          overflow:hidden;
+          margin-top: 4px;
+        }
+        .xshop-tags span{
+          font-size: 7px;
+          line-height: 1;
+          color: rgba(220,235,255,0.92);
+          border: 1px solid rgba(255,255,255,0.12);
+          background: rgba(255,255,255,0.055);
+          padding: 3px 5px;
+          border-radius: 999px;
+          letter-spacing: 0.4px;
         }
         .xshop-rank{
           display:flex;
@@ -1055,13 +1121,14 @@ export default function GalaxyShopV2({
         </div>
 
         <div className="xshopActions">
+          <div className="xshopUpgradeBox">
+            <span>UPGRADES</span>
+            <strong>{credits}</strong>
+            <span style={{ opacity: 0.62 }}>SPENT {pointsSpent}</span>
+          </div>
           <button className="xshopBtn" onClick={resetAll}>
             RESET TALENTS
           </button>
-          <div style={{ fontSize: 12, opacity: 0.75, textAlign: "right" }}>
-            Spent: <b>{pointsSpent}</b><br />
-            Abilities: <b>1 Thorns / 2 Decoy / 3 Turret</b>
-          </div>
         </div>
       </div>
 

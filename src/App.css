@@ -45,15 +45,15 @@ body {
 
 .first-planet-arrow {
   position: absolute;
-  left: calc(50% - 560px);
+  left: calc(50% - 600px);
   top: calc(50% - 210px);
-  width: 132px;
+  width: 240px;
   height: 8px;
   z-index: 850;
   pointer-events: none;
   background: linear-gradient(90deg, rgba(0,255,136,0), rgba(0,255,136,0.95));
   box-shadow: 0 0 18px rgba(0,255,136,0.88);
-  transform: rotate(18deg);
+  transform: rotate(22deg);
   transform-origin: right center;
   animation: firstPlanetArrowPulse 0.95s ease-in-out infinite;
 }
