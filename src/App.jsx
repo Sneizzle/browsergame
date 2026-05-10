@@ -437,6 +437,13 @@ export default function App() {
     };
   }, [leaderboardRows]);
 
+  const mostKillsChampion = useMemo(() => {
+    const rows = Array.isArray(leaderboardRows) ? leaderboardRows : [];
+    return rows
+      .filter((row) => Number(row.kills || 0) > 0)
+      .sort((a, b) => Number(b.kills || 0) - Number(a.kills || 0))[0] || null;
+  }, [leaderboardRows]);
+
   const getPlayerStats = (row = {}) => {
     const s = row.lastRunSummary || {};
     const weapons = Array.isArray(s.weapons) ? s.weapons : [];
@@ -690,12 +697,11 @@ export default function App() {
       {view === "hero_select" && (
         <div className="ui-layer" style={{ background: "rgba(0,0,0,0.85)", padding: 24 }}>
           <h1 style={{ marginTop: 0, letterSpacing: 6 }}>CHOOSE YOUR OPERATIVE</h1>
-          <p style={{ opacity: 0.85, marginTop: 6 }}>Pick one. Traits are placeholder only.</p>
 
           <input
             value={playerName}
             onChange={(e) => setPlayerName(e.target.value.slice(0, 24))}
-            placeholder="ENTER LEADERBOARD NAME"
+            placeholder="Enter Name"
             style={{
               width: "min(420px, calc(100vw - 48px))",
               marginTop: 12,
@@ -844,9 +850,6 @@ export default function App() {
             </button>
           </div>
 
-          <div style={{ marginTop: 10, opacity: 0.8, fontSize: 12, textAlign: "center" }}>
-            Lives remain {lives}. (No changes)
-          </div>
         </div>
       )}
 
@@ -895,10 +898,7 @@ export default function App() {
           {/* HUD */}
           <div className="hud" onClick={(e) => e.stopPropagation()}>
             <div>NAME: {cleanPlayerName()}</div>
-            <div>XP: {crewXp}</div>
-            <div>RES: {resources}</div>
-            <div>PTS: {leaderboardPoints}</div>
-            <div>HP: {Math.max(0, lives)}</div>
+            <div>LIVES: {Math.max(0, lives)}</div>
           </div>
 
           {/* ✅ DISTINCT SHOP BUTTON (top-right), only after first win */}
@@ -1001,7 +1001,7 @@ export default function App() {
             >
               <div
                 style={{
-                  width: "min(980px, calc(100vw - 48px))",
+                  width: "min(1280px, calc(100vw - 48px))",
                   maxHeight: "82vh",
                   overflow: "auto",
                   border: "1px solid rgba(0,242,255,0.42)",
@@ -1024,68 +1024,129 @@ export default function App() {
                   </button>
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "58px minmax(240px, 1fr) 120px 120px 120px 120px", gap: 12, padding: "10px 12px", color: "rgba(190,235,255,0.82)", fontSize: 11, letterSpacing: 2, borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
-                  <b>RANK</b><b>PLAYER</b><b style={{ textAlign: "right" }}>POINTS</b><b style={{ textAlign: "right" }}>TILES</b><b style={{ textAlign: "right" }}>DEATHS</b><b style={{ textAlign: "right" }}>KILLS</b>
-                </div>
-
-                {leaderboardLoading && <div style={{ opacity: 0.75, padding: 18 }}>LOADING...</div>}
-                {!leaderboardLoading && leaderboardRows.length === 0 && <div style={{ opacity: 0.75, padding: 18 }}>NO SCORES YET</div>}
-                {!leaderboardLoading && leaderboardRows.map((row, i) => {
-                  const topColors = ["rgba(255,218,107,0.20)", "rgba(210,230,255,0.16)", "rgba(255,154,82,0.15)"];
-                  const rankColor = i === 0 ? "#ffe16b" : i === 1 ? "#d9ecff" : i === 2 ? "#ffb36b" : "rgba(255,255,255,0.72)";
-                  const portraitSrc = leaderboardPortraitFor(row);
-                  const portraitFallback = HERO_PORTRAITS[hashString(row.characterName || row.name || row.id || "operator") % HERO_PORTRAITS.length];
-                  return (
-                    <div
-                      key={row.id || `${row.name}-${i}`}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => setSelectedLeaderboardPlayer(row)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") setSelectedLeaderboardPlayer(row);
-                      }}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "58px minmax(240px, 1fr) 120px 120px 120px 120px",
-                        gap: 12,
-                        padding: "12px",
-                        borderBottom: "1px solid rgba(255,255,255,0.08)",
-                        alignItems: "center",
-                        background: topColors[i] || "rgba(255,255,255,0.025)",
-                        boxShadow: i < 3 ? `inset 3px 0 0 ${rankColor}` : undefined,
-                        cursor: "pointer",
-                      }}
-                    >
-                      <b style={{ color: rankColor, fontSize: 18 }}>{i + 1}</b>
-                      <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                        <div style={{ width: 46, height: 46, borderRadius: 8, overflow: "hidden", border: "1px solid rgba(0,242,255,0.35)", background: "rgba(0,242,255,0.08)", flex: "0 0 auto", position: "relative", display: "grid", placeItems: "center" }}>
-                          <span style={{ position: "absolute", color: "rgba(0,242,255,0.85)", fontWeight: 900 }}>{String(row.name || "?").slice(0, 1).toUpperCase()}</span>
-                          <img
-                            src={portraitSrc}
-                            alt=""
-                            onError={(e) => {
-                              if (e.currentTarget.dataset.fallback !== "1") {
-                                e.currentTarget.dataset.fallback = "1";
-                                e.currentTarget.src = portraitFallback;
-                              } else {
-                                e.currentTarget.style.display = "none";
-                              }
+                <div style={{ display: "grid", gridTemplateColumns: "300px minmax(720px, 1fr)", gap: 18, alignItems: "start" }}>
+                  <div
+                    style={{
+                      border: "1px solid rgba(255,55,80,0.50)",
+                      background: "radial-gradient(circle at 50% 18%, rgba(255,0,45,0.30), rgba(20,0,5,0.82) 58%, rgba(0,0,0,0.92))",
+                      boxShadow: "0 0 36px rgba(255,0,45,0.28), inset 0 0 30px rgba(255,0,45,0.12)",
+                      padding: 16,
+                      minHeight: 430,
+                      textAlign: "center",
+                    }}
+                  >
+                    <div style={{ color: "#ff3958", letterSpacing: 4, fontWeight: 900, fontSize: 14 }}>MOST KILLS</div>
+                    {mostKillsChampion ? (() => {
+                      const portraitSrc = leaderboardPortraitFor(mostKillsChampion);
+                      const portraitFallback = HERO_PORTRAITS[hashString(mostKillsChampion.characterName || mostKillsChampion.name || mostKillsChampion.id || "operator") % HERO_PORTRAITS.length];
+                      return (
+                        <>
+                          <div
+                            style={{
+                              width: 210,
+                              height: 210,
+                              margin: "18px auto 14px",
+                              borderRadius: 12,
+                              overflow: "hidden",
+                              border: "2px solid rgba(255,57,88,0.70)",
+                              background: "rgba(255,255,255,0.08)",
+                              boxShadow: "0 0 32px rgba(255,0,45,0.52)",
+                              position: "relative",
+                              display: "grid",
+                              placeItems: "center",
                             }}
-                            style={{ width: "100%", height: "100%", objectFit: "cover", position: "relative", zIndex: 1 }}
-                          />
-                        </div>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 900, letterSpacing: 1.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.name || "UNKNOWN"}</div>
-                          <div style={{ opacity: 0.72, fontSize: 12, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.characterName || "Unlisted Operator"}</div>
-                        </div>
-                      </div>
-                      <strong style={{ color: "#ffe16b", textAlign: "right", fontSize: 18 }}>{Number(row.points || 0)}</strong>
-                      <span style={{ opacity: 0.88, textAlign: "right" }}>{Number(row.tilesCleared || row.tiles || 0)} cleared</span>
-                      <span style={{ opacity: 0.88, textAlign: "right" }}>{Number(row.deaths || 0)} deaths</span>
-                      <span style={{ opacity: 0.88, textAlign: "right" }}>{Number(row.kills || 0).toLocaleString()} kills</span>
+                          >
+                            <span style={{ position: "absolute", color: "rgba(255,57,88,0.70)", fontSize: 74, fontWeight: 900 }}>{String(mostKillsChampion.name || "?").slice(0, 1).toUpperCase()}</span>
+                            <img
+                              src={portraitSrc}
+                              alt=""
+                              onError={(e) => {
+                                if (e.currentTarget.dataset.fallback !== "1") {
+                                  e.currentTarget.dataset.fallback = "1";
+                                  e.currentTarget.src = portraitFallback;
+                                } else {
+                                  e.currentTarget.style.display = "none";
+                                }
+                              }}
+                              style={{ width: "100%", height: "100%", objectFit: "cover", position: "relative", zIndex: 1 }}
+                            />
+                          </div>
+                          <h3 style={{ margin: "0 auto", maxWidth: 250, fontSize: 23, letterSpacing: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mostKillsChampion.name || "UNKNOWN"}</h3>
+                          <div style={{ marginTop: 6, opacity: 0.78, fontSize: 12, letterSpacing: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{mostKillsChampion.characterName || "Unlisted Operator"}</div>
+                          <strong style={{ display: "block", marginTop: 18, color: "#ff3958", fontSize: 34, letterSpacing: 2 }}>{Number(mostKillsChampion.kills || 0).toLocaleString()}</strong>
+                          <div style={{ marginTop: 4, letterSpacing: 3, color: "rgba(255,230,235,0.88)", fontWeight: 900 }}>ZENOS SLAIN</div>
+                        </>
+                      );
+                    })() : (
+                      <div style={{ marginTop: 120, opacity: 0.72, letterSpacing: 2, lineHeight: 1.5 }}>NO KILL CHAMPION YET</div>
+                    )}
+                  </div>
+
+                  <div style={{ minWidth: 0, overflowX: "auto" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "58px minmax(240px, 1fr) 120px 120px 120px 120px", gap: 12, padding: "10px 12px", color: "rgba(190,235,255,0.82)", fontSize: 11, letterSpacing: 2, borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
+                      <b>RANK</b><b>PLAYER</b><b style={{ textAlign: "right" }}>POINTS</b><b style={{ textAlign: "right" }}>TILES</b><b style={{ textAlign: "right" }}>DEATHS</b><b style={{ textAlign: "right" }}>KILLS</b>
                     </div>
-                  );
-                })}
+
+                    {leaderboardLoading && <div style={{ opacity: 0.75, padding: 18 }}>LOADING...</div>}
+                    {!leaderboardLoading && leaderboardRows.length === 0 && <div style={{ opacity: 0.75, padding: 18 }}>NO SCORES YET</div>}
+                    {!leaderboardLoading && leaderboardRows.map((row, i) => {
+                      const topColors = ["rgba(255,218,107,0.20)", "rgba(210,230,255,0.16)", "rgba(255,154,82,0.15)"];
+                      const rankColor = i === 0 ? "#ffe16b" : i === 1 ? "#d9ecff" : i === 2 ? "#ffb36b" : "rgba(255,255,255,0.72)";
+                      const portraitSrc = leaderboardPortraitFor(row);
+                      const portraitFallback = HERO_PORTRAITS[hashString(row.characterName || row.name || row.id || "operator") % HERO_PORTRAITS.length];
+                      return (
+                        <div
+                          key={row.id || `${row.name}-${i}`}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setSelectedLeaderboardPlayer(row)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") setSelectedLeaderboardPlayer(row);
+                          }}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "58px minmax(240px, 1fr) 120px 120px 120px 120px",
+                            gap: 12,
+                            padding: "12px",
+                            borderBottom: "1px solid rgba(255,255,255,0.08)",
+                            alignItems: "center",
+                            background: topColors[i] || "rgba(255,255,255,0.025)",
+                            boxShadow: i < 3 ? `inset 3px 0 0 ${rankColor}` : undefined,
+                            cursor: "pointer",
+                          }}
+                        >
+                          <b style={{ color: rankColor, fontSize: 18 }}>{i + 1}</b>
+                          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                            <div style={{ width: 46, height: 46, borderRadius: 8, overflow: "hidden", border: "1px solid rgba(0,242,255,0.35)", background: "rgba(0,242,255,0.08)", flex: "0 0 auto", position: "relative", display: "grid", placeItems: "center" }}>
+                              <span style={{ position: "absolute", color: "rgba(0,242,255,0.85)", fontWeight: 900 }}>{String(row.name || "?").slice(0, 1).toUpperCase()}</span>
+                              <img
+                                src={portraitSrc}
+                                alt=""
+                                onError={(e) => {
+                                  if (e.currentTarget.dataset.fallback !== "1") {
+                                    e.currentTarget.dataset.fallback = "1";
+                                    e.currentTarget.src = portraitFallback;
+                                  } else {
+                                    e.currentTarget.style.display = "none";
+                                  }
+                                }}
+                                style={{ width: "100%", height: "100%", objectFit: "cover", position: "relative", zIndex: 1 }}
+                              />
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontWeight: 900, letterSpacing: 1.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.name || "UNKNOWN"}</div>
+                              <div style={{ opacity: 0.72, fontSize: 12, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.characterName || "Unlisted Operator"}</div>
+                            </div>
+                          </div>
+                          <strong style={{ color: "#ffe16b", textAlign: "right", fontSize: 18 }}>{Number(row.points || 0)}</strong>
+                          <span style={{ opacity: 0.88, textAlign: "right" }}>{Number(row.tilesCleared || row.tiles || 0)} cleared</span>
+                          <span style={{ opacity: 0.88, textAlign: "right" }}>{Number(row.deaths || 0)} deaths</span>
+                          <span style={{ opacity: 0.88, textAlign: "right" }}>{Number(row.kills || 0).toLocaleString()} kills</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
           )}
@@ -1427,7 +1488,7 @@ export default function App() {
               style={{
                 position: "fixed",
                 left: 24,
-                top: 110,
+                top: 86,
                 zIndex: 9100,
                 padding: "10px 14px",
                 letterSpacing: 2,
@@ -1442,6 +1503,10 @@ export default function App() {
             >
               SHOW ALL
             </button>
+          )}
+
+          {!focusPlanet && Object.keys(clearedHexes || {}).length === 0 && (
+            <div className="first-planet-arrow" aria-hidden="true" />
           )}
 
           {/* PLANETS */}
