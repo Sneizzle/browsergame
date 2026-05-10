@@ -4238,7 +4238,7 @@ const beat = plan.beats[plan.idx];
 
           if (activeGrab?.enemyId === en.id && now2 >= (activeGrab.until || 0)) {
             playerGrabRef.current = null;
-            en = { ...en, grabUntil: 0, grabCooldownUntil: now2 + (en.type === 'tiny_grabber' ? 2400 : 1800) };
+            en = { ...en, grabUntil: 0, grabCooldownUntil: now2 + (en.type === 'tiny_grabber' ? 5000 : 1800) };
           }
 
           if (en.type === 'tiny_grabber' && !en.tinyDashDone) {
@@ -4267,14 +4267,10 @@ const beat = plan.beats[plan.idx];
           const dx = pPos.x - en.x;
           const dy = pPos.y - en.y;
           const d = Math.hypot(dx, dy) || 1;
-          if (en.type === 'tiny_grabber') {
-            const spdTiny = (en.speed || 2.9) * dtScale;
-            return { ...en, x: clamp(en.x + (dx / d) * spdTiny, 0, ARENA_SIZE), y: clamp(en.y + (dy / d) * spdTiny, 0, ARENA_SIZE) };
-          }
           if (d < (en.size || 36) * 0.5 + 30 && now2 >= (en.grabCooldownUntil || 0) && (!playerGrabRef.current || now2 >= (playerGrabRef.current.until || 0))) {
             const until = now2 + (en.type === 'tiny_grabber' ? 3000 : 3600);
             playerGrabRef.current = { enemyId: en.id, until };
-            pushToast('GHOST HOLD');
+            pushToast(en.type === 'tiny_grabber' ? 'TINY HOLD' : 'GHOST HOLD');
             return { ...en, grabUntil: until, stunnedUntil: Math.max(en.stunnedUntil || 0, until) };
           }
           const spd = (en.speed || 2.55) * dtScale;
