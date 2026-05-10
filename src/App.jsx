@@ -540,6 +540,19 @@ export default function App() {
     return (clearedHexes[focusPlanet.id] || []).includes(selectedHex);
   }, [focusPlanet?.id, selectedHex, clearedHexes]);
 
+  const highestUnlockedDifficulty = useMemo(() => {
+    let highestCleared = 0;
+    for (const p of PLANETS) {
+      const cleared = new Set(clearedHexes[p.id] || []);
+      if (!cleared.size) continue;
+      for (const h of hexGrid) {
+        if (!cleared.has(h.id)) continue;
+        highestCleared = Math.max(highestCleared, Math.min(5, h.difficulty + (p.difficulty - 1)));
+      }
+    }
+    return Math.min(5, Math.max(1, highestCleared + 1));
+  }, [clearedHexes, hexGrid]);
+
   const dropToHex = async () => {
     if (!focusPlanet?.id || !selectedHex) return;
 
@@ -554,6 +567,7 @@ export default function App() {
     }
 
     if ((clearedHexes[focusPlanet.id] || []).includes(selectedHex)) return;
+    if ((selectedHexInfo?.difficulty || 1) > highestUnlockedDifficulty) return;
     setShopOpen(false);
 
     setCombatCtx({
@@ -1480,16 +1494,27 @@ export default function App() {
               <div className="hex-grid-container">
                 {hexGrid.map((h) => {
                   const cleared = (clearedHexes[p.id] || []).includes(h.id);
+                  const difficulty = Math.min(5, h.difficulty + (p.difficulty - 1));
+                  const locked = difficulty > highestUnlockedDifficulty && !cleared;
+                  const shade = Math.max(0, Math.min(4, difficulty - 1));
+                  const unlockedAlpha = 0.14 + shade * 0.08;
+                  const lockedAlpha = 0.035 + shade * 0.035;
 
                   return (
                     <div
                       key={h.id}
                       data-hex-id={h.id}
-                      className={`hex-unit ${selectedHex === h.id ? "active" : ""} ${cleared ? "cleared" : ""}`}
+                      className={`hex-unit hex-d${difficulty} ${selectedHex === h.id ? "active" : ""} ${cleared ? "cleared" : ""} ${locked ? "locked" : "unlocked"}`}
                       style={{
                         left: `calc(50% + ${h.x}px)`,
                         top: `calc(50% + ${h.y}px)`,
                         transform: "translate(-50%,-50%)",
+                        background: cleared
+                          ? undefined
+                          : `rgba(${64 + shade * 20}, ${72 + shade * 22}, ${84 + shade * 24}, ${locked ? lockedAlpha : unlockedAlpha})`,
+                        boxShadow: locked
+                          ? "inset 0 0 10px rgba(0,0,0,0.58)"
+                          : `inset 0 0 14px rgba(${110 + shade * 18}, ${130 + shade * 16}, ${150 + shade * 14}, 0.42)`,
                       }}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1498,7 +1523,11 @@ export default function App() {
                         // ✅ Tutorial step 2: ONLY allow selecting the forced tile
                         if (tutorialVisible && tutorialStep === 2 && h.id !== TUTORIAL_TILE_ID) return;
 
-                        const difficulty = h.difficulty + (p.difficulty - 1);
+                        if (locked) {
+                          setSelectedHex(null);
+                          setSelectedHexInfo(null);
+                          return;
+                        }
                         setSelectedHex(h.id);
                         setSelectedHexInfo({
                           difficulty,
